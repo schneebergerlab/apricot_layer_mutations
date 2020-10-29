@@ -1,0 +1,8 @@
+rule cr_index_ref:
+    input:
+        ref="data/cur.fasta"
+        json="data/currot_contig_defs.json"
+    output:
+        "data/refdata-cur/fasta/genome.fa"
+    shell:
+        "cellranger-dna mkref {input.ref} {input.json}"
