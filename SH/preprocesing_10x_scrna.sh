@@ -74,3 +74,25 @@ for sample in ${samples[@]}; do
      &
 #  "
 done
+
+
+############### Run for the second MUT_15 leaf ########
+indir=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scrna/project_4917/
+## Run for v1.1 assembly
+refdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/cur/
+cwd=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/v1.1/cur/
+cd $cwd
+samples=( '4917_A_run677_SI-GA-A2' )
+for sample in ${samples[@]}; do
+#  bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=30000]" -M 30000 -oo ${sample}.log -eo ${sample}.err "
+    export MKL_NUM_THREADS=1
+    export NUMEXPR_NUM_THREADS=1
+    export OMP_NUM_THREADS=1
+    cellranger count --id=$sample \
+     --fastqs=$indir \
+     --transcriptome=$refdir \
+     --sample=$sample \
+     --localcores=50 \
+     --localmem=100 \
+#  "
+done
