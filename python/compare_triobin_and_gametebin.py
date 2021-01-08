@@ -122,3 +122,160 @@ if __name__ == '__main__':
 
 
 
+#### MERYL and KMC based KMER validation for gamete-binning and trio-binning kmers
+
+# Meryl results for gamete-binning
+INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/read_phasing/gamete_binning/apricot_hifi_snp_marker_separated_pbreads/'
+
+meryl_gb = {}
+for i in range(1, 9):
+    for s in ['PPP', 'MMM']:
+        cursum = 0
+        orasum = 0
+        with open(INDIR + str(i) + '_' + s + '_hapmers/currot.inherited.hist') as f:
+            for line in f:
+                line = line.strip().split()
+                if int(line[0]) > 5:
+                    cursum += int(line[1])
+        with open(INDIR + str(i) + '_' + s + '_hapmers/orangered.inherited.hist') as f:
+            for line in f:
+                line = line.strip().split()
+                if int(line[0]) > 5:
+                    orasum += int(line[1])
+        meryl_gb[str(i) + '_' + s] = [cursum/(cursum+orasum), orasum/(cursum+orasum)]
+        print(cursum, orasum)
+
+# KMC results for gamete-binning
+kmc_gb = {}
+for i in range(1, 9):
+    for s in ['PPP', 'MMM']:
+        cursum = 0
+        orasum = 0
+        with open('{indir}/intersect_{i}_{s}/{i}_{s}_currot_21mers.histo'.format(indir=INDIR, i=i, s=s)) as f:
+            for line in f:
+                line = line.strip().split()
+                if int(line[0]) > 5:
+                    cursum += int(line[1])
+        with open('{indir}/intersect_{i}_{s}/{i}_{s}_orangered_21mers.histo'.format(indir=INDIR, i=i, s=s)) as f:
+            for line in f:
+                line = line.strip().split()
+                if int(line[0]) > 5:
+                    orasum += int(line[1])
+
+        kmc_gb[str(i) + '_' + s] = [cursum/(cursum+orasum), orasum/(cursum+orasum)]
+        print(cursum, orasum)
+
+# Meryl results for trio-binning
+INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/read_phasing/trio_binning/'
+
+meryl_tb = {}
+for s in ['cur', 'ora']:
+    cursum = 0
+    orasum = 0
+    with open('{indir}/{s}_hapmers/currot.inherited.hist'.format(indir=INDIR, s=s)) as f:
+        for line in f:
+            line = line.strip().split()
+            if int(line[0]) > 5:
+                cursum += int(line[1])
+
+    with open('{indir}/{s}_hapmers/orangered.inherited.hist'.format(indir=INDIR, i=i, s=s)) as f:
+        for line in f:
+            line = line.strip().split()
+            if int(line[0]) > 5:
+                orasum += int(line[1])
+    meryl_tb[s] = [cursum/(cursum+orasum), orasum/(cursum+orasum)]
+
+# KMC results for trio-binning
+kmc_tb = {}
+for s in ['cur', 'ora']:
+    cursum = 0
+    orasum = 0
+    with open('{indir}/intersect_{s}/{s}_currot_21mers.histo'.format(indir=INDIR, s=s)) as f:
+        for line in f:
+            line = line.strip().split()
+            if int(line[0]) > 5:
+                cursum += int(line[1])
+
+    with open('{indir}/intersect_{s}/{s}_orangered_21mers.histo'.format(indir=INDIR, i=i, s=s)) as f:
+        for line in f:
+            line = line.strip().split()
+            if int(line[0]) > 5:
+                orasum += int(line[1])
+    kmc_tb[s] = [cursum/(cursum+orasum), orasum/(cursum+orasum)]
+
+markers = {1:"v",
+           2:"^",
+           3:"<",
+           4:">",
+           5:"1",
+           6:"2",
+           7:"3",
+           8:"4",
+           }
+colors = {"PPP" : 'red',
+          "MMM" : 'black'
+          }
+
+from matplotlib import pyplot as plt
+fig = plt.figure(figsize=[8, 10])
+# fig = plt.figure()
+
+ax = fig.add_subplot(2, 2, 1)
+for i in range(1, 9):
+    for s in ['PPP', 'MMM']:
+        ax.scatter([meryl_gb[str(i)+"_"+s][0]],
+                   [meryl_gb[str(i)+"_"+s][1]],
+                   c=colors[s],
+                   marker=markers[i],
+                   label=str(i)+"_"+s)
+ax.set_xlim([0,1])
+ax.legend(ncol=2)
+ax.set_xlabel("parent cur")
+ax.set_ylabel("parent ora")
+ax.set_title("Meryl validation of GB phased reads")
+
+ax = fig.add_subplot(2, 2, 3)
+for i in range(1, 9):
+    for s in ['PPP', 'MMM']:
+        ax.scatter([kmc_gb[str(i)+"_"+s][0]],
+                   [kmc_gb[str(i)+"_"+s][1]],
+                   c=colors[s],
+                   marker=markers[i],
+                   label=str(i)+"_"+s)
+ax.set_xlim([0,1])
+ax.legend(ncol=2)
+ax.set_xlabel("parent cur")
+ax.set_ylabel("parent ora")
+ax.set_title("KMC validation of GB phased reads")
+
+ax = fig.add_subplot(2, 2, 2)
+ax.scatter([v[0] for v in meryl_tb.values()],
+           [v[1] for v in meryl_tb.values()],
+           c = "black")
+ax.set_xlabel("parent cur")
+ax.set_ylabel("parent ora")
+ax.set_title("Meryl validation of TB phased reads")
+
+
+ax = fig.add_subplot(2, 2, 4)
+ax.scatter([v[0] for v in kmc_tb.values()],
+           [v[1] for v in kmc_tb.values()],
+           c="black")
+ax.set_xlabel("parent cur")
+ax.set_ylabel("parent ora")
+ax.set_title("KMC validation of TB phased reads")
+
+plt.subplots_adjust(left=0.075, bottom=0.05, right=0.98, top=0.95, wspace=0.2, hspace=0.2)
+plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/read_phasing/meryl_kmc_validation_of_gb_and_tb_phasing.pdf')
+
+indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/read_phasing/gamete_binning/apricot_hifi_snp_marker_separated_pbreads/'
+for i in range(1, 9):
+    for s in ['PPP', 'MMM']:
+        with open("{indir}/intersect_{i}_{s}/{i}_{s}_currot_21mers.count".format(indir=indir, i=i, s=s)) as f:
+            for line in f:
+                cur_cnt = int(line.strip().split()[0])
+
+        with open("{indir}/intersect_{i}_{s}/{i}_{s}_orangered_21mers.count".format(indir=indir, i=i, s=s)) as f:
+            for line in f:
+                ora_cnt = int(line.strip().split()[0])
+        print(str(i)+s, cur_cnt, ora_cnt, (cur_cnt/ (cur_cnt + ora_cnt)), (ora_cnt/ (cur_cnt + ora_cnt)))

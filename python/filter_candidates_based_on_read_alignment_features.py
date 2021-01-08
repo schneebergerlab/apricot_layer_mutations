@@ -4,20 +4,24 @@ QS= "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghij
 
 
 if __name__ == '__main__':
-    """
-    For each candidate sSNV position, check the mpileup data to see whether is there:
-        1) Read strand bias, i.e. reads on the position are biased towards one strand (Using binomial test)
-        2) Allele strand bias, i.e. reference and alternate alleles have different distribution on the strands (Using binomial test)
-        3) Base quality of the alternate alleles different from base quality of the reference alleles (Using Mann–Whitney U test)
-        4) Mapping quality of the alternate alleles different from mapping quality of the reference alleles (Using Mann–Whitney U test)
-        5) Alignment Score of the reads with alternate alleles too different from the reads with reference alleles (Using Mann–Whitney U test)
-        6) Read position bias, i.e. the variant bases are on one position on a read
-    
-    Check the SAM file to see:
-        1) If the positions is represented by both Read1 and Read2
-        
-    
-    """
+    #
+    # For each candidate sSNV position, check the mpileup data to see whether is there:
+    #     1) Read strand bias, i.e. reads on the position are biased towards one strand (Using binomial test)
+    #     2) Allele strand bias, i.e. reference and alternate alleles have different distribution on the strands (Using binomial test)
+
+        # TODO
+        # 3) Base quality of the alternate alleles different from base quality of the reference alleles (Using Mann–Whitney U test)
+        # TODO
+        # 4) Mapping quality of the alternate alleles different from mapping quality of the reference alleles (Using Mann–Whitney U test)
+        # TODO
+        # 5) Alignment Score of the reads with alternate alleles too different from the reads with reference alleles (Using Mann–Whitney U test)
+        # TODO
+        # 6) Read position bias, i.e. the variant bases are on one position on a read
+
+    # Check the SAM file to see:
+    #     1) If the positions is represented by both Read1 and Read2
+
+
     parser = argparse.ArgumentParser("Select positions which are supported by read-level features",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
