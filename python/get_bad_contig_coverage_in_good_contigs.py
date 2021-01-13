@@ -177,7 +177,7 @@ def get_stats_plot(f, fout, fout2):
         pdf.savefig()
         plt.close()
 
-def minimap2_filt(indir, fout, fout2):
+def minimap2_filt(indir, chrsize, fout, fout2):
     import os
     import sys
     import numpy as np
@@ -186,6 +186,7 @@ def minimap2_filt(indir, fout, fout2):
     from myUsefulFunctions import mergeRanges
 
     INDIR   = indir
+    CHRSIZE = chrsize
     FOUT    = fout
     FOUT2   = fout2
     #
@@ -195,16 +196,18 @@ def minimap2_filt(indir, fout, fout2):
 
     pafs = [i for i in os.listdir(INDIR) if "fasta.paf" in i]
 
+    chrsizes = {l.strip().split()[0]: int(l.strip().split()[1]) for l in open(CHRSIZE, 'r')}
+
     outdict = {}
     for paf in pafs:
         id = paf.split('.')[0]
         with open(INDIR + paf, 'r') as f:
+            l = chrsizes[id]
             r = deque()
             for line in f:
                 line = line.strip().split()
                 if int(line[9])/int(line[10])>=0.9 and int(line[9])>1000:
                     r.append([int(line[2]), int(line[3])])
-            l = int(line[1])
             r = mergeRanges(np.array(r))
             try:
                 m = sum(r[:,1] - r[:, 0] + 1)
@@ -232,6 +235,29 @@ def minimap2_filt(indir, fout, fout2):
                 except TypeError as e:
                     print(k, v)
                     # return
+
+def select_save_contigs(paf):
+    import pandas as pd
+    import numpy as np
+    import sys
+    sys.path.insert(0, paf)
+    from myUsefulFunctions import mergeRanges
+
+    df = pd.read_table(paf, header=None)
+    ctg = df[0].unique()
+
+    ctg_ovl = {}
+    for c in ctg:
+        ctg_df = df.loc[df[0]==c]
+        ctg_l = pd.unique(ctg_df[1])[0]
+        ctg_df = ctg_df.loc[ctg_df[5]!=c]
+        ctg_df_filt = ctg_df.loc[(ctg_df[9] >= 10000) & (ctg_df[9]/ctg_df[10] >= 0.9)]
+        ctg_df_filt = ctg_df.loc[(ctg_df[9] >= 10000) & (ctg_df[9]/ctg_df[10] >= 0.9) & (ctg_df[1]<ctg_df[6])]
+        rngs = mergeRanges(np.array(ctg_df_filt[[2,3]]))
+        ctg_ovl[c] = [ctg_l, sum([r[1] - r[0] + 1 for r in rngs]), rngs]
+
+    select = [k for k,v in ctg_ovl.items() if v[1]/v[0] < 0.1]
+    return select
 
 
 if __name__ == '__main__':

@@ -67,7 +67,7 @@ def read_coverage(depthfin, fout, mm2_good, y_cut=10):
     cnts = deque()
     chr_dep = {}
 
-    # depthfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/candidate.contigs.v1.unmapped_cursr.sorted.depth'
+    # depthfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/candidate.contigs.v3.unmapped_cursr.sorted.depth'
     with open(depthfin, 'r') as f:
         chr = ''
         for line in f:
@@ -81,14 +81,14 @@ def read_coverage(depthfin, fout, mm2_good, y_cut=10):
                 chr_dep[chr] = {}
                 cnts = np.array(cnts)
                 for i in range(0, len(cnts), 10000):
-                    chr_dep[chr][(i + min(i+55000, len(cnts)))/2] = np.mean(cnts[i : min(i+50000, len(cnts))])
+                    chr_dep[chr][(i + min(i+50000, len(cnts)))/2] = np.mean(cnts[i: min(i+50000, len(cnts))])
                 cnts = deque()
                 chr = c
                 cnts.append(int(d))
         chr_dep[chr] = {}
         cnts = np.array(cnts)
         for i in range(0, len(cnts), 10000):
-            chr_dep[chr][(i + min(i+55000, len(cnts)))/2] = np.mean(cnts[i : min(i+50000, len(cnts))])
+            chr_dep[chr][(i + min(i+50000, len(cnts)))/2] = np.mean(cnts[i: min(i+50000, len(cnts))])
 
 
 

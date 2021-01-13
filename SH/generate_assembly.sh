@@ -536,7 +536,7 @@ read_coverage(indir + 'candidate.contigs.v1.unmapped_cursr.sorted.depth', indir 
 
 
 # Select bad contigs (low coverage) manually from the candidate.contigs.v1.unmapped_cursr.sorted.depth.pdf
-# Saved in remove_contigs.v1.txt
+# Removed in remove_contigs.v1.txt
 cat contigs.txt remove_contigs.v1.txt | sort | uniq -c | grep "1 " | cut -d' ' -f8 > saved.contigs.v1.txt
 hometools getchr -F saved.contigs.v1.txt -o saved.contigs.v1.fasta cur_unk.p_utg.fasta
 
@@ -621,7 +621,7 @@ hometools getchr -F saved.contigs.v2.txt -o saved.contigs.v2.fasta cur_unk.p_utg
 cat filtered.contigs.v2.fasta saved.contigs.v2.fasta > cur.v2.fasta
 hometools seqsize cur.v2.fasta > cur.v2.fasta.chrsize
 
-# Third round of CUR assembly correction
+# THIRD ROUND of CUR assembly correction
 minimap2 -ax sr -t 70 -R '@RG\tID:cursr\tSM:cursr' cur.v2.fasta ${curR1} ${curR2} \
   | samtools sort -O BAM -@ 70 - \
   > cur.v2.sorted.bam
@@ -676,12 +676,68 @@ awk  'NR>1 {if($3>10){print $1}}' remove_contigs.v2.unmapped3.stats > saved.cont
 hometools getchr -F saved.contigs.v3.txt -o saved.contigs.v3.fasta cur_unk.p_utg.fasta
 hometools seqsize saved.contigs.v3.fasta > saved.contigs.v3.fasta.chrsize
 
-
 cat saved.contigs.v3.fasta >> candidate_save.contigs.v3.fasta
 hometools seqsize candidate_save.contigs.v3.fasta > candidate_save.contigs.v3.fasta.chrsize
+cat saved.contigs.v3.txt >> candidate_save.contigs.v3.txt
 
 
+samtools view -u -@ 60 -f 4  -F 264 filtered.contigs.v3.cursr.sorted.bam  > v3.tmp1.bam
+samtools view -u -@ 60 -f 8  -F 260 filtered.contigs.v3.cursr.sorted.bam  > v3.tmp2.bam
+samtools view -u -@ 60 -f 12 -F 256 filtered.contigs.v3.cursr.sorted.bam  > v3.tmp3.bam
+samtools merge -u - v3.tmp[123].bam | samtools sort -n -@ 60 -O bam -o unmapped3.bam -
+samtools fastq -@ 60 -1 unmapped3_R1.fastq -2 unmapped3_R2.fastq unmapped3.bam
+# map unmapped reads to the candidate save contigs
+minimap2 -ax sr -t 70 -R '@RG\tID:cursr\tSM:cursr' candidate_save.contigs.v3.fasta unmapped3_R1.fastq unmapped3_R2.fastq \
+  | samtools sort -O BAM -@ 70 - \
+  > candidate.contigs.v3.unmapped_cursr.sorted.bam
+samtools depth -a candidate.contigs.v3.unmapped_cursr.sorted.bam > candidate.contigs.v3.unmapped_cursr.sorted.depth
+df = read_depth_summary(indir + 'candidate.contigs.v3.unmapped_cursr.sorted.depth',
+                        indir + 'candidate_save.contigs.v3.fasta.chrsize',
+                        indir + 'candidate_save.contigs.v3.unmapped3.pdf', min=100)
+df.to_csv(indir + 'candidate_save.contigs.v3.unmapped3.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
 
+# Check overlap of candidate contigs
+cd minimap2_check3
+while read r; do
+#  bsub -q short -n 1 -R "rusage[mem=8000] span[hosts=1]" -M 10000 -oo ${r}.log -eo ${r}.err "
+    hometools getchr -o ${r}.fasta ../cur.v2.fasta --chrs ${r}
+    minimap2 -x asm10 -c --eqx -t 10 ../filtered.contigs.v3.fasta ${r}.fasta > ${r}.fasta.paf
+#  "
+  echo $r
+done < ../candidate_save.contigs.v3.txt
+
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/minimap2_check3/'
+minimap2_filt(indir, indir + 'contigs.overlap.pdf', indir + 'contigs.low_overlap.txt')
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/'
+read_coverage(indir + 'candidate.contigs.v3.unmapped_cursr.sorted.depth', indir + 'candidate.contigs.v3.unmapped_cursr.sorted.depth.pdf', indir + 'minimap2_check3/contigs.low_overlap.txt', y_cut=20)
+
+## Remove candidates contigs which are overlapping with larger candidate contigs
+minimap2 -x asm5 -c -t 60 -p 0 candidate_save.contigs.v3.fasta candidate_save.contigs.v3.fasta > candidate_self.paf
+selected = select_save_contigs('candidate_save.paf')
+# removed low coverage (<5) contigs[utg000186l,utg000340l,utg000327l,utg000881l,utg000232l] from selected and saved in saved.contigs.v4a.txt
+
+hometools getchr -F saved.contigs.v4a.txt -o saved.contigs.v4a.fasta candidate_save.contigs.v3.fasta
+hometools seqsize saved.contigs.v4a.fasta > saved.contigs.v4a.fasta.chrsize
+minimap2 -ax sr -t 70 -R '@RG\tID:cursr\tSM:cursr' saved.contigs.v4a.fasta unmapped3_R1.fastq unmapped3_R2.fastq \
+  | samtools sort -O BAM -@ 70 - \
+  > saved.contigs.v4a.bam
+samtools depth -a saved.contigs.v4a.bam > saved.contigs.v4a.depth
+
+df = read_depth_summary(indir + 'saved.contigs.v4a.depth',
+                        indir + 'saved.contigs.v4a.fasta.chrsize',
+                        indir + 'saved.contigs.v4a.sorted.pdf', min=100)
+df.to_csv(indir + 'saved.contigs.v4a.sorted.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+awk 'NR>1 {if($3>20){print $1}}' saved.contigs.v4a.sorted.stats > saved.contigs.v4b.txt
+hometools getchr -F saved.contigs.v4b.txt -o saved.contigs.v4.fasta candidate_save.contigs.v3.fasta
+
+cat filtered.contigs.v3.fasta saved.contigs.v4.fasta > cur.v3.fasta
+hometools seqsize cur.v3.fasta > cur.v3.fasta.chrsize
+
+
+################################################################################
+################################################################################
+################################################################################
+################################################################################
 ################################################################################
 # Filter orangered assembly
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/
@@ -757,64 +813,210 @@ samtools depth -a candidate.contigs.v1.unmapped_orasr.sorted.bam > candidate.con
 indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
 read_coverage(indir + 'candidate.contigs.v1.unmapped_orasr.sorted.depth', indir + 'candidate.contigs.v1.unmapped_orasr.sorted.depth.pdf', indir + 'minimap2_check/contigs.low_overlap.txt')
 
+## Removed contigs are saved in remove_contigs_v1.txt
+cut -f1 minimap2_check/contigs.low_overlap.txt > contigs.txt
+cat contigs.txt remove_contigs.v1.txt | sort | uniq -c | grep "1 " | cut -d' ' -f8 > saved.contigs.v1.txt
+hometools getchr -F saved.contigs.v1.txt -o saved.contigs.v1.fasta ora_unk.p_utg.fasta
+
+# Merge the contigs
+cat filtered.contigs.v1.fasta saved.contigs.v1.fasta > ora.v1.fasta
+hometools seqsize ora.v1.fasta > ora.v1.fasta.chrsize
+
+
+
+# Second round of ORA assembly correction
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' ora.v1.fasta ${oraR1} ${oraR2} \
+  | samtools sort -O BAM -@ 70 - \
+  > ora.v1.sorted.bam
+samtools index ora.v1.sorted.bam
+t=60
+samtools sort -O BAM -@ 60 -n ora.v1.sorted.bam  \
+| samtools fixmate -@ 60 -c -m -O SAM - - \
+| samtools sort -O BAM -@ $t - \
+| samtools markdup -@ $t -S -s -O SAM - - \
+| samtools view -F 1024 -F 256 -F 2048 -h -O SAM -@ $t - \
+| samtools sort -O SAM -@ $t - \
+| grep -v 'SA:' \
+| samtools view -O BAM -h -@ $t - \
+> ora.v1.F256_F1024_F2048.deduped.sorted.bam
+samtools depth -a ora.v1.F256_F1024_F2048.deduped.sorted.bam > ora.v1.noMQfilter.depth
+
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
+df = read_depth_summary(indir + 'ora.v1.noMQfilter.depth',
+                        indir + 'ora.v1.fasta.chrsize',
+                        indir + 'ora.v1.orasr.pdf', min=100)
+df.to_csv(indir + 'ora.v1.orasr.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+tail +2 ora.v1.orasr.stats | awk '{if($3<33 || $2<100000){print $1}}' > candidate_save.contigs.v2.txt
+hometools getchr -v -F candidate_save.contigs.v2.txt -o filtered.contigs.v2.fasta ora.v1.fasta
+hometools getchr -F candidate_save.contigs.v2.txt -o candidate_save.contigs.v2.fasta ora_unk.p_utg.fasta
+
+hometools seqsize candidate_save.contigs.v2.fasta > candidate_save.contigs.v2.fasta.chrsize
+hometools seqsize filtered.contigs.v2.fasta > filtered.contigs.v2.fasta.chrsize
+
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' filtered.contigs.v2.fasta ${oraR1} ${oraR2} \
+  | samtools sort -O BAM -@ 70 - \
+  > filtered.contigs.v2.orasr.sorted.bam
+samtools index filtered.contigs.v2.orasr.sorted.bam
+
+
+# Check overlap of candidate contigs
+cd minimap2_check2
+while read r; do
+  bsub -q short -n 1 -R "rusage[mem=8000] span[hosts=1]" -M 10000 -oo ${r}.log -eo ${r}.err "
+    hometools getchr -o ${r}.fasta ../ora.v1.fasta --chrs ${r}
+    minimap2 -x asm10 -c --eqx -t 1 ../filtered.contigs.v2.fasta ${r}.fasta > ${r}.fasta.paf
+  "
+  echo $r
+done < ../candidate_save.contigs.v2.txt
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/minimap2_check2/'
+minimap2_filt(indir, indir + 'contigs.overlap.pdf', indir + 'contigs.low_overlap.txt')
+
+
+# get unmapped reads
+samtools view -u -@ 60 -f 4  -F 264 filtered.contigs.v2.orasr.sorted.bam  > v2.tmp1.bam
+samtools view -u -@ 60 -f 8  -F 260 filtered.contigs.v2.orasr.sorted.bam  > v2.tmp2.bam
+samtools view -u -@ 60 -f 12 -F 256 filtered.contigs.v2.orasr.sorted.bam  > v2.tmp3.bam
+
+samtools merge -u - v2.tmp[123].bam | samtools sort -n -@ 60 -O bam -o unmapped2.bam -
+samtools fastq -@ 60 -1 unmapped2_R1.fastq -2 unmapped2_R2.fastq unmapped2.bam
+
+# map unmapped reads to the candidate save contigs
+  minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' candidate_save.contigs.v2.fasta unmapped2_R1.fastq unmapped2_R2.fastq \
+    | samtools sort -O BAM -@ 70 - \
+    > candidate.contigs.v2.unmapped_orasr.sorted.bam
+  samtools index candidate.contigs.v2.unmapped_orasr.sorted.bam
+  samtools depth -a candidate.contigs.v2.unmapped_orasr.sorted.bam > candidate.contigs.v2.unmapped_orasr.sorted.depth
+
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
+read_coverage(indir + 'candidate.contigs.v2.unmapped_orasr.sorted.depth', indir + 'candidate.contigs.v2.unmapped_orasr.sorted.depth.pdf', indir + 'minimap2_check2/contigs.low_overlap.txt', y_cut=20)
+
+# Select bad contigs (low coverage) manually fro  m the candidate.contigs.v1.unmapped_orasr.sorted.depth.pdf
+# Saved in remove_contigs.v2.txt
+cut -f1 minimap2_check2/contigs.low_overlap.txt > contigs2.txt
+cat contigs2.txt remove_contigs.v2.txt | sort | uniq -c | grep "1 " | cut -d' ' -f8 > saved.contigs.v2.txt
+hometools getchr -F saved.contigs.v2.txt -o saved.contigs.v2.fasta ora_unk.p_utg.fasta
+
+# Merge the contigs
+cat filtered.contigs.v2.fasta saved.contigs.v2.fasta > ora.v2.fasta
+hometools seqsize ora.v2.fasta > ora.v2.fasta.chrsize
+
+
+# THIRD ROUND of CUR assembly correction
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' ora.v2.fasta ${oraR1} ${oraR2} \
+  | samtools sort -O BAM -@ 70 - \
+  > ora.v2.sorted.bam
+samtools index ora.v2.sorted.bam
+t=70
+samtools sort -O BAM -@ $t -n ora.v2.sorted.bam  \
+| samtools fixmate -@ $t -c -m -O SAM - - \
+| samtools sort -O BAM -@ $t - \
+| samtools markdup -@ $t -S -s -O SAM - - \
+| samtools view -F 1024 -F 256 -F 2048 -h -O SAM -@ $t - \
+| samtools sort -O SAM -@ $t - \
+| grep -v 'SA:' \
+| samtools view -O BAM -h -@ $t - \
+> ora.v2.F256_F1024_F2048.deduped.sorted.bam
+samtools depth -a ora.v2.F256_F1024_F2048.deduped.sorted.bam > ora.v2.noMQfilter.depth
+
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
+df = read_depth_summary(indir + 'ora.v2.noMQfilter.depth',
+                        indir + 'ora.v2.fasta.chrsize',
+                        indir + 'ora.v2.orasr.pdf', min=100)
+df.to_csv(indir + 'ora.v2.orasr.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+
+tail +2 ora.v2.orasr.stats | awk '{if($3<30){print $1}}' > candidate_save.contigs.v3.txt
+hometools getchr -v -F candidate_save.contigs.v3.txt -o filtered.contigs.v3.fasta ora.v2.fasta
+hometools getchr -F candidate_save.contigs.v3.txt -o candidate_save.contigs.v3.fasta ora.v2.fasta
+hometools seqsize filtered.contigs.v3.fasta > filtered.contigs.v3.fasta.chrsize
+
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' filtered.contigs.v3.fasta ${oraR1} ${oraR2} \
+  | samtools sort -O BAM -@ 70 - \
+  > filtered.contigs.v3.orasr.sorted.bam
+
+## Save contigs that were removed in the previous step but have high coverage for reads not mapping with ora.v2.fasta
+samtools view -u -@ 60 -f 4  -F 264 ora.v2.sorted.bam  > v3.tmp1.bam
+samtools view -u -@ 60 -f 8  -F 260 ora.v2.sorted.bam  > v3.tmp2.bam
+samtools view -u -@ 60 -f 12 -F 256 ora.v2.sorted.bam  > v3.tmp3.bam
+samtools merge -u - v3.tmp[123].bam | samtools sort -n -@ 60 -O bam -o unmapped3.bam -
+samtools fastq -@ 60 -1 unmapped3_R1.fastq -2 unmapped3_R2.fastq unmapped3.bam
+hometools getchr -F remove_contigs.v2.txt -o remove_contigs.v2.fasta ora_unk.p_utg.fasta
+hometools seqsize remove_contigs.v2.fasta > remove_contigs.v2.fasta.chrsize
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' remove_contigs.v2.fasta unmapped3_R1.fastq unmapped3_R2.fastq \
+  | samtools sort -O BAM -@ 70 - \
+  > remove_contigs.v2.sorted.bam
+samtools depth -a remove_contigs.v2.sorted.bam > remove_contigs.v2.sorted.depth
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
+df = read_depth_summary(indir + 'remove_contigs.v2.sorted.depth',
+                        indir + 'remove_contigs.v2.fasta.chrsize',
+                        indir + 'remove_contigs.v2.unmapped3.pdf', min=100)
+df.to_csv(indir + 'remove_contigs.v2.unmapped3.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+awk  'NR>1 {if($3>8){print $1}}' remove_contigs.v2.unmapped3.stats > saved.contigs.v3.txt
+hometools getchr -F saved.contigs.v3.txt -o saved.contigs.v3.fasta ora_unk.p_utg.fasta
+hometools seqsize saved.contigs.v3.fasta > saved.contigs.v3.fasta.chrsize
+
+cat saved.contigs.v3.fasta >> candidate_save.contigs.v3.fasta
+hometools seqsize candidate_save.contigs.v3.fasta > candidate_save.contigs.v3.fasta.chrsize
+cat saved.contigs.v3.txt >> candidate_save.contigs.v3.txt
+
+
+samtools view -u -@ 60 -f 4  -F 264 filtered.contigs.v3.orasr.sorted.bam  > v3.tmp1.bam
+samtools view -u -@ 60 -f 8  -F 260 filtered.contigs.v3.orasr.sorted.bam  > v3.tmp2.bam
+samtools view -u -@ 60 -f 12 -F 256 filtered.contigs.v3.orasr.sorted.bam  > v3.tmp3.bam
+samtools merge -u - v3.tmp[123].bam | samtools sort -n -@ 60 -O bam -o unmapped3.bam -
+samtools fastq -@ 60 -1 unmapped3_R1.fastq -2 unmapped3_R2.fastq unmapped3.bam
+# map unmapped reads to the candidate save contigs
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' candidate_save.contigs.v3.fasta unmapped3_R1.fastq unmapped3_R2.fastq \
+  | samtools sort -O BAM -@ 70 - \
+  > candidate.contigs.v3.unmapped_orasr.sorted.bam
+samtools depth -a candidate.contigs.v3.unmapped_orasr.sorted.bam > candidate.contigs.v3.unmapped_orasr.sorted.depth
+df = read_depth_summary(indir + 'candidate.contigs.v3.unmapped_orasr.sorted.depth',
+                        indir + 'candidate_save.contigs.v3.fasta.chrsize',
+                        indir + 'candidate_save.contigs.v3.unmapped3.pdf', min=100)
+df.to_csv(indir + 'candidate_save.contigs.v3.unmapped3.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+# Check overlap of candidate contigs
+cd minimap2_check3
+while read r; do
+  bsub -q short -n 1 -R "rusage[mem=8000] span[hosts=1]" -M 10000 -oo ${r}.log -eo ${r}.err "
+    hometools getchr -o ${r}.fasta ../ora.v2.fasta --chrs ${r}
+    minimap2 -x asm10 -c --eqx -t 10 ../filtered.contigs.v3.fasta ${r}.fasta > ${r}.fasta.paf &
+  "
+  echo $r
+done < ../candidate_save.contigs.v3.txt
+
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/minimap2_check3/'
+minimap2_filt(indir, indir + '../candidate_save.contigs.v3.fasta.chrsize', indir + 'contigs.overlap.pdf', indir + 'contigs.low_overlap.txt')
+indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/ora/'
+read_coverage(indir + 'candidate.contigs.v3.unmapped_orasr.sorted.depth', indir + 'candidate.contigs.v3.unmapped_orasr.sorted.depth.pdf', indir + 'minimap2_check3/contigs.low_overlap.txt', y_cut=20)
+
+## Remove candidates contigs which are overlapping with larger candidate contigs
+minimap2 -x asm5 -c -t 60 -p 0 candidate_save.contigs.v3.fasta candidate_save.contigs.v3.fasta > candidate_self.paf
+selected = select_save_contigs(indir + 'candidate_self.paf')
+# removed low coverage (<5) contigs [utg000438l, utg000143l, utg000095l] from selected and saved in saved.contigs.v4a.txt
+
+hometools getchr -F saved.contigs.v4a.txt -o saved.contigs.v4a.fasta candidate_save.contigs.v3.fasta
+hometools seqsize saved.contigs.v4a.fasta > saved.contigs.v4a.fasta.chrsize
+minimap2 -ax sr -t 70 -R '@RG\tID:orasr\tSM:orasr' saved.contigs.v4a.fasta unmapped3_R1.fastq unmapped3_R2.fastq \
+  | samtools sort -O BAM -@ 70 - \
+  > saved.contigs.v4a.bam
+samtools depth -a saved.contigs.v4a.bam > saved.contigs.v4a.depth
+
+df = read_depth_summary(indir + 'saved.contigs.v4a.depth',
+                        indir + 'saved.contigs.v4a.fasta.chrsize',
+                        indir + 'saved.contigs.v4a.sorted.pdf', min=100)
+df.to_csv(indir + 'saved.contigs.v4a.sorted.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+awk 'NR>1 {if($3>18){print $1}}' saved.contigs.v4a.sorted.stats > saved.contigs.v4b.txt
+hometools getchr -F saved.contigs.v4b.txt -o saved.contigs.v4.fasta candidate_save.contigs.v3.fasta
+
+cat filtered.contigs.v3.fasta saved.contigs.v4.fasta > ora.v3.fasta
+hometools seqsize ora.v3.fasta > ora.v3.fasta.chrsize
+
 
 
 ################################################################################
 # OLD CODE: Was trying to use BLAST to find contigs that are overlapping with good contigs, but later switched to minimap for this.
-
-cd blast
-xargs -a ../bad_contigs.txt -n 1 -P 6 -I {} bash -c '
-  hometools getchr -o ${1}.fasta ../cur_unk.p_utg.fasta --chrs ${1}
-  blastn -query ${1}.fasta \
-   -task megablast \
-   -db ../good_contigs.fasta \
-   -out ${1}.oblast \
-   -outfmt 7 \
-   -max_target_seqs 10 \
-   -max_hsps 500 \
-   -perc_identity 95 \
-   -evalue 0.001 \
-   -num_threads 20 \
-   >> blastall_blastn.log
-' -- {}
-
-from get_bad_contig_coverage_in_good_contigs.py import get_stats, get_stats_plot
-D = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/blast'
-B = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta.chrsize'
-P = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta' + ".blast.sum"
-
-get_stats('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/blast', '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta.chrsize',
-'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta.blast.sum')
-get_stats_plot('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta.blast.sum',
-'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/bad_contigs.fasta.blast.sum.pdf')
-
-
-
-makeblastdb -dbtype nucl -in filtered.contigs.v3.fasta -input_type fasta
-cd blast2
-nohup xargs -a ../contigs_cursr_DP_lower25_long.txt -n 1 -P 6 -I {} bash -c '
-#  hometools getchr -o ${1}.fasta ../cur_unk.p_utg.fasta --chrs ${1}
-  blastn -query ${1}.fasta \
-   -task megablast \
-   -db ../filtered.contigs.v3.fasta \
-   -out ${1}.oblast \
-   -outfmt 7 \
-   -max_target_seqs 10 \
-   -max_hsps 500 \
-   -perc_identity 90 \
-   -evalue 0.0001 \
-   -num_threads 40 \
-   >> blastall_blastn.log
-' -- {} &
-
-indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/hifiasm_assembly/cur/run3_using_p_utg/'
-get_stats(indir + 'blast2',
-  indir + 'candidate_save.contigs.v3.fasta.chrsize',
-  indir + 'blast2/bad_contigs.fasta.blast.sum')
-get_stats_plot(indir + 'blast2/bad_contigs.fasta.blast.sum',
-  indir + 'blast2/bad_contigs.fasta.blast.sum.length.pdf',
-  indir + 'blast2/bad_contigs.fasta.blast.sum.overlap.pdf')
-
 
 cd blast3
 while read r; do
@@ -842,65 +1044,5 @@ get_stats(indir + 'blast3',
 get_stats_plot(indir + 'blast3/bad_contigs.fasta.blast.sum',
   indir + 'blast3/bad_contigs.fasta.blast.sum.length.pdf',
   indir + 'blast3/bad_contigs.fasta.blast.sum.overlap.pdf')
-
-
-
-
-
-cd trash
-minimap2 -ax sr -t 60 -R '@RG\tID:cursr\tSM:cursr' variantCorrected_AND_kmer_masked_d100-kmer80bp-8_4_Currot_on_Original_v1.0.fasta ${curR1} ${curR2} \
-  | samtools sort -O BAM -@ 60 - \
-  > cur.v1.1.sorted.bam
-  samtools index cur.v1.1.sorted.bam
-
-indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/'
-minimap2 -ax map-pb -t 50 -R '@RG\tID:trio_cur\tSM:trio_cur' variantCorrected_AND_kmer_masked_d100-kmer80bp-8_4_Currot_on_Original_v1.0.fasta ${indir}/haplotype-cur.fasta.gz \
-    | samtools sort -O BAM -@ 50 \
-    > cur.v1.1.cur.sorted.bam
-  samtools index cur.v1.1.cur.sorted.bam
-
-
-# Canu test
-curR1='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/currot/currot_ql-trimmed-pair1.fastq.gz'
-curR2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/currot/currot_ql-trimmed-pair2.fastq.gz'
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/canu_assembly/
-indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/'
-for s in ora; do
-  t=20
-  bsub -q multicore40 -n 20 -R "rusage[mem=40000] span[hosts=1]" -M 40000 -oo ${s}.log -eo ${s}.err "
-    # Align PACBIO reads and get read-depth
-#    minimap2 -ax map-pb -t 10 canu_trio-haplotype${s}.contigs.fasta ${indir}/haplotype-${s}.fasta.gz ${indir}/haplotype-unknown.fasta.gz \
-#    | samtools sort -O BAM -@ 10 \
-#    > ${s}_contigs.sorted.bam
-#    samtools index ${s}_contigs.sorted.bam
-#    samtools view -F 256 -F 2048 -h -@ 10 ${s}_contigs.sorted.bam \
-#    | grep -v 'SA:' \
-#    | samtools view -O BAM -@ 10 - \
-#    > ${s}_contigs_F256_F2048_noSA.sorted.bam
-#    samtools index ${s}_unk_F256_F2048_noSA.sorted.bam
-#    samtools depth -a ${s}_contigs_F256_F2048_noSA.sorted.bam > ${s}_contigs.depth
-
-
-    # Align Illumina reads from WT_B and get read-depth
-    minimap2 -ax sr -t $t canu_trio-haplotype${s}.contigs.fasta ${curR1} ${curR2} \
-    | samtools sort -O BAM -@ $t - \
-    > ${s}_contigs_cursr.sorted.bam
-
-    samtools sort -O BAM -@ $t -n ${s}_contigs_cursr.sorted.bam  \
-    | samtools fixmate -@ $t -c -m -O SAM - - \
-    | samtools sort -O BAM -@ $t - \
-    | samtools markdup -@ $t -S -s -O SAM - - \
-    | samtools view -F 1024 -F 256 -F 2048 -h -O SAM -@ $t - \
-    | samtools sort -O SAM -@ $t - \
-    | grep -v 'SA:' \
-    | samtools view -O BAM -h -@ $t - \
-    > ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam
-
-    samtools index ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam
-    samtools view -q 10 -O BAM -@ $t ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam > ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam
-    samtools index ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam
-    samtools depth -a ${s}_contigs_cursr_F256_F1024_F2048.deduped.sorted.bam > ${s}_contigs_cursr.depth
-  "
-done
 
 
