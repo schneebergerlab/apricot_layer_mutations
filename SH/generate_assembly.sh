@@ -734,6 +734,35 @@ cat filtered.contigs.v3.fasta saved.contigs.v4.fasta > cur.v3.fasta
 hometools seqsize cur.v3.fasta > cur.v3.fasta.chrsize
 
 
+bsub -q multicore40 -n 20 -R "rusage[mem=25000] span[hosts=1]" -M 30000 -oo aln_v3.log -eo aln_v3.err "
+  # Align parent illumina reads
+  minimap2 -ax sr -t 20 -R '@RG\tID:cursr\tSM:cursr' cur.v3.fasta ${curR1} ${curR2} \
+    | samtools sort -O BAM -@ 20 - \
+    > cur.v3.cursr.sorted.bam
+  samtools index -@20 cur.v3.cursr.sorted.bam
+  samtools flagstats -@20 cur.v3.cursr.sorted.bam > cur.v3.cursr.sorted.bam.stats
+
+  # Align binned hifi reads
+  minimap2 -ax map-pb -t 20 -R '@RG\tID:trio_cur\tSM:trio_cur' cur.v3.fasta ${indir}/haplotype-cur.fasta.gz ${indir}/haplotype-unknown.fasta.gz \
+    | samtools sort -O BAM -@ 20 - \
+    > cur.v3.curpb.sorted.bam
+  samtools index -@20 cur.v3.curpb.sorted.bam
+  samtools flagstats -@20 cur.v3.curpb.sorted.bam > cur.v3.curpb.sorted.bam.stats
+"
+# Get depth plots for illumina and  pacbio reads
+samtools depth -a cur.v3.cursr.sorted.bam > cur.v3.cursr.sorted.depth &
+df = read_depth_summary(indir + 'cur.v3.cursr.sorted.depth',
+                        indir + 'cur.v3.fasta.chrsize',
+                        indir + 'cur.v3.cursr.sorted.pdf', min=100)
+df.to_csv(indir + 'cur.v3.cursr.sorted.read_depth.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+samtools depth -a cur.v3.curpb.sorted.bam > cur.v3.curpb.sorted.depth &
+df = read_depth_summary(indir + 'cur.v3.curpb.sorted.depth',
+                        indir + 'cur.v3.fasta.chrsize',
+                        indir + 'cur.v3.curpb.sorted.pdf')
+df.to_csv(indir + 'cur.v3.curpb.sorted.read_depth.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+
 ################################################################################
 ################################################################################
 ################################################################################
@@ -1014,6 +1043,34 @@ cat filtered.contigs.v3.fasta saved.contigs.v4.fasta > ora.v3.fasta
 hometools seqsize ora.v3.fasta > ora.v3.fasta.chrsize
 
 
+bsub -q multicore40 -n 20 -R "rusage[mem=25000] span[hosts=1]" -M 30000 -oo aln_v3.log -eo aln_v3.err "
+  # Align parent illumina reads
+  minimap2 -ax sr -t 20 -R '@RG\tID:orasr\tSM:orasr' ora.v3.fasta ${oraR1} ${oraR2} \
+    | samtools sort -O BAM -@ 20 - \
+    > ora.v3.orasr.sorted.bam
+  samtools index -@20 ora.v3.orasr.sorted.bam
+  samtools flagstats -@20 ora.v3.orasr.sorted.bam > ora.v3.orasr.sorted.bam.stats
+
+
+  # Align binned hifi reads
+  minimap2 -ax map-pb -t 20 -R '@RG\tID:trio_ora\tSM:trio_ora' ora.v3.fasta ${indir}/haplotype-ora.fasta.gz ${indir}/haplotype-unknown.fasta.gz \
+    | samtools sort -O BAM -@ 20 - \
+    > ora.v3.orapb.sorted.bam
+  samtools index -@20 ora.v3.orapb.sorted.bam
+  samtools flagstats -@20 ora.v3.orapb.sorted.bam > ora.v3.orapb.sorted.bam.stats
+"
+# Get depth plots for illumina and  pacbio reads
+samtools depth -a ora.v3.orasr.sorted.bam > ora.v3.orasr.sorted.depth &
+df = read_depth_summary(indir + 'ora.v3.orasr.sorted.depth',
+                        indir + 'ora.v3.fasta.chrsize',
+                        indir + 'ora.v3.orasr.sorted.pdf', min=100)
+df.to_csv(indir + 'ora.v3.orasr.sorted.read_depth.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
+
+samtools depth -a ora.v3.orapb.sorted.bam > ora.v3.orapb.sorted.depth &
+df = read_depth_summary(indir + 'ora.v3.orapb.sorted.depth',
+                        indir + 'ora.v3.fasta.chrsize',
+                        indir + 'ora.v3.orapb.sorted.pdf')
+df.to_csv(indir + 'ora.v3.orapb.sorted.read_depth.stats', sep='\t', index=False, header = ['contig', 'size', 'mean_read_depth', 'cummulative_assembly_size'])
 
 ################################################################################
 # OLD CODE: Was trying to use BLAST to find contigs that are overlapping with good contigs, but later switched to minimap for this.
