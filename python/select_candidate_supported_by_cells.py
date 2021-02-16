@@ -72,6 +72,7 @@ if __name__ == '__main__':
                 f1_alt.append(BASE_DICT[i])
                 break
 
+
     for row in f2.itertuples(index=False):
         for i in range(6, 10):
             if BASE_DICT[i] == row.ref: continue
