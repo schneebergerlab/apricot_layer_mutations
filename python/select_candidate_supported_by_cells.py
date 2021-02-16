@@ -1,5 +1,4 @@
 import argparse
-from email.utils import quote
 
 if __name__ == '__main__':
     """
@@ -44,17 +43,19 @@ if __name__ == '__main__':
 
 
     # f1 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_19/WT_19_only_SNPs_candidate.txt',
-    #                    header=None, sep=' ')
+    #                   header=None, sep=' ')
     f1.sort_values([2, 3], inplace=True)
     f1.columns = ['vac', 'var', 'chr', 'pos', 'ref', 'rc', 'A', 'C', 'G', 'T', 'N', 'vac_rank', 'var_rank', 'rank']
 
     # f2 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_19/WT_19_bt2_only_SNPs_candidate.txt',
-    #                    header=None, sep=' ')
+    #                   header=None, sep=' ')
     f2.sort_values([2, 3], inplace=True)
     f2.columns = ['vac', 'var', 'chr', 'pos', 'ref', 'rc', 'A', 'C', 'G', 'T', 'N', 'vac_rank', 'var_rank', 'rank']
 
     # f3 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_19/WT_19_only_SNPs_candidate.sorted.common.regions', header=None)
     f3.columns = ['chr', 'pos0', 'pos', 'vac', 'var']
+    f3 = f3.loc[f3['vac'] >= N]
+    f3.index = range(f3.shape[0])
 
     f1 = f1.merge(f3, on=['chr', 'pos'], how='inner')
     f2 = f2.merge(f3, on=['chr', 'pos'], how='inner')

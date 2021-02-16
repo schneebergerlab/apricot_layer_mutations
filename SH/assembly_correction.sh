@@ -744,6 +744,36 @@ done
 
 /netscratch/dep_mercier/grp_schneeberger/bin/SALSA/convert.sh ./scaffolds &>convert.log&
 
+
+################################################################################
+############################ Get plastid contigs  ##############################
+################################################################################
+# From the above SALSA corrected contig-set remove plastid contigs before grouping contigs
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/organelle_sequence/
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/plastid_dna/
+asdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/SALSA_contig_check/
+for s in cur ora; do
+  cd $cwd/$s
+  refs=( $(ls -d ${indir}*/ | xargs -n 1 basename) )
+  rm plastid_contigs.txt
+  for ref in ${refs[@]}; do
+    minimap2 -x asm5 -c --eqx -t4 ${indir}/${ref}/plastid.fasta ${asdir}/${s}/${s}.v3.racon_polished.contig_break.fasta > ${s}_${ref}.paf
+    python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_plastid_contigs.py \
+    ${s}_${ref}.paf \
+    >> plastid_contigs.txt
+  done
+  cat plastid_contigs.txt | cut -f1 | sort -u > plastid_contigs_unique.txt
+done
+
+# Get plastid contigs
+for s in cur ora; do
+  cd ${cwd}/$s
+  hometools getchr -F plastid_contigs_unique.txt \
+    -o plastid_contigs.fasta \
+    ${asdir}/${s}/${s}.v3.racon_polished.contig_break.fasta
+done
+
+
 ################################################################################
 ##################### Group contigs into linkage groups ########################
 ################################################################################
@@ -754,25 +784,27 @@ done
 
 # Check ragtag
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/contig_grouping/
-
 # Generate genome by joining the linkage groups
 cd $cwd
 cat scaffolded_final_manual_upd_map_group*.fa > genetic_map_genome.fasta
 
+plstdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/plastid_dna/
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/SALSA_contig_check/
 for s in cur ora; do
   cd $cwd/$s
+  # Get genomic (non-plastid) contigs
+  hometools getchr -F ${plstdir}/${s}/plastid_contigs_unique.txt -v -o ${s}.genomic_contigs.fasta $indir/${s}/${s}.v3.racon_polished.contig_break.fasta
   ragtag.py scaffold \
     -q 10 \
     -i 0.5 \
     -o genmap_grouping \
     -t 60 \
     ../genetic_map_genome.fasta \
-    $indir/${s}/${s}.v3.racon_polished.contig_break.fasta
+    ${s}.genomic_contigs.fasta &
   lgs=( $(grep '>' ../genetic_map_genome.fasta | tr -d '>') )
   for lg in ${lgs[@]}; do
     lg_chrs=$(grep $lg genmap_grouping/ragtag.scaffolds.agp | grep $s | cut -f6 | tr '\n' ' ')
-    hometools getchr --chrs $lg_chrs -o ${lg}_contigs.fasta $indir/${s}/${s}.v3.racon_polished.contig_break.fasta
+    hometools getchr --chrs $lg_chrs -o ${lg}_contigs.fasta $indir/${s}/${s}.v3.racon_polished.contig_break.fasta &
   done
 done
 
@@ -837,7 +869,7 @@ bsub -q ioheavy -n 40 -R "rusage[mem=100000]" -R "span[hosts=1]" -M 110000 -oo b
 # Separate HiC reads into different read sets
 bsub -q normal -n 1 -R "rusage[mem=10000]" -R "span[hosts=1]" -M 15000 -oo read_sep.log -eo read_sep.err "
   syripy /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/separate_reads_to_lg.py
-  gzip */*/*fq
+#  gzip */*/*fq
 "
 
 #           shq note: according to Nan Wang, they made it with DpnII, similar to Mboi, so "GATC" should be the one!
@@ -857,8 +889,10 @@ for s in cur ora; do
     cd $s
     mkdir lg${i}
     cd lg${i}
-    bsub -q short -n 1 -R "rusage[mem=10000]" -R "span[hosts=1]" -M 12500 -oo bwa_${s}_${i}.log -eo bwa_${s}_${i}.err "
+    bsub -q multicore20 -n 5 -R "rusage[mem=10000]" -R "span[hosts=1]" -M 12500 -oo bwa_${s}_${i}.log -eo bwa_${s}_${i}.err "
       ln -sf ${lgdir}/${s}/final_manual_upd_map_group${i}_contigs.fasta .
+      gzip ${readsdir}/${s}lgs/lg${i}/R1.fq
+      gzip ${readsdir}/${s}lgs/lg${i}/R2.fq
       ln -sf ${readsdir}/${s}lgs/lg${i}/R1.fq.gz .
       ln -sf ${readsdir}/${s}lgs/lg${i}/R2.fq.gz .
       bwa index -a bwtsw final_manual_upd_map_group${i}_contigs.fasta
@@ -878,6 +912,7 @@ for s in cur ora; do
       ALLHiC_partition -b lg${i}_clean.bam -r final_manual_upd_map_group${i}_contigs.fasta -e GATC -k 1 -m 25;
       allhic extract lg${i}_clean.bam final_manual_upd_map_group${i}_contigs.fasta --RE GATC;
       allhic optimize lg${i}_clean.counts_GATC.1g1.txt lg${i}_clean.clm
+#      The .tour files are being manipulated manully. To recreate them, rerun the above allhic commands
       ALLHiC_build final_manual_upd_map_group${i}_contigs.fasta
       hometools seqsize groups.asm.fasta > chrn.list
       ALLHiC_plot lg${i}_clean.bam groups.agp chrn.list 200k pdf
@@ -903,9 +938,9 @@ for s in cur ora; do
   cd ${cwd}/$s
   gbref=$(ls ${gbdir}/${s}*.filtered.fasta)
   echo $gbref
-#  minimap2 -ax asm5 --eqx -t10 $gbref ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta > ref_ragtag.sam &
-#  minimap2 -ax asm5 --eqx -t10 $gbref ${hicdir}/${s}/${s}.scaffold.v1.fasta > ref_hic.sam &
-#  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${hicdir}/${s}/${s}.scaffold.v1.fasta > ragtag_hic.sam &
+  minimap2 -ax asm5 --eqx -t10 $gbref ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta > ref_ragtag.sam &
+  minimap2 -ax asm5 --eqx -t10 $gbref ${hicdir}/${s}/${s}.scaffold.v1.fasta > ref_hic.sam &
+  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${hicdir}/${s}/${s}.scaffold.v1.fasta > ragtag_hic.sam &
   for outfmt in pdf png; do
     syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
       --qagp ragtag.scaffolds.agp \
@@ -925,9 +960,9 @@ done
 
 
 ################################################################################
-########################### Get organelle genome  ##############################
+########################### Get ungrouped contigs ##############################
 ################################################################################
-# Get ungrouped contigs
+
 asdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/contig_grouping/
 for s in cur ora; do
   cd $asdir/$s
@@ -935,73 +970,87 @@ for s in cur ora; do
   hometools getchr --chrs $chrs -o ungrouped.fasta genmap_grouping/ragtag.scaffolds.fasta
 done
 
-indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/organelle_sequence/
-cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/plastid_dna/
-for s in cur ora; do
-  cd $cwd/$s
-  refs=( $(ls -d ${indir}*/ | xargs -n 1 basename) )
-  rm plastid_contigs.txt
-  for ref in ${refs[@]}; do
-#    minimap2 -x asm5 -c --eqx -t4 ${indir}/${ref}/plastid.fasta ${asdir}/${s}/ungrouped.fasta > ${s}_${ref}.paf &
-    python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_plastid_contigs.py \
-    ${s}_${ref}.paf \
-    >> plastid_contigs.txt
-  done
-  cat plastid_contigs.txt | cut -f1 | sort -u > plastid_contigs_unique.txt
-done
-
-
 ################################################################################
 ######################## Manual assembly correction  ###########################
 ################################################################################
-# CUR
-cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/
-for s in cur ora; do
-  cd ${cwd}/$s
-  cat lg*/groups.agp > all_groups.agp
-done
-# agp files were then manually edited
 
-contigdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/SALSA_contig_check/
-agpdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/
+# This was not used as I corrected contigs using the tour file,
+# which resulted in corrected ordered assembly
+
+#cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/
+#for s in cur ora; do
+#  cd ${cwd}/$s
+#  cat lg*/groups.agp > all_groups.agp
+#done
+#
+#contigdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/SALSA_contig_check/
+#agpdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/
+#cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/manual_curated_assembly/
+#for s in cur ora; do
+#  cd ${cwd}/$s
+#  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_fasta_from_agp.py \
+#    ${agpdir}${s}/all_groups_manual_edited.agp.txt \
+#    ${contigdir}/${s}/${s}.v3.racon_polished.contig_break.fasta \
+#    -o ${s}_manually_curated.v1.fasta
+#done
+
+# Concatenate contigs to get manually curated assembly
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/cur
+cat lg*/groups.asm.fasta > cur.manual_curated.fasta
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/ora
+cat lg*/groups.asm.fasta > ora.manual_curated.fasta
+
+asmdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/hic_scaffolding/lg_hic_scaffold/
+gbdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/
+ragtagdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/contig_grouping/
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/manual_curated_assembly/
 for s in cur ora; do
   cd ${cwd}/$s
-  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_fasta_from_agp.py \
-    ${agpdir}${s}/all_groups_manual_edited.agp.txt \
-    ${contigdir}/${s}/${s}.v3.racon_polished.contig_break.fasta \
-    -o ${s}_manually_curated.v1.fasta
+#  ln -s ${asmdir}/${s}/${s}.manual_curated.fasta .
+  gbref=$(ls ${gbdir}/${s}*.filtered.fasta)
+#  minimap2 -ax asm5 --eqx -t10 $gbref ${s}.manual_curated.fasta > ref_${s}.manual_curated.sam &
+#  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${s}.manual_curated.fasta > ragtag_${s}.manual_curated.sam &
+  for outfmt in pdf png; do
+    syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
+      -o ref_${s}.manual_curated.${outfmt} \
+      ref_${s}.manual_curated.sam &
+    syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
+      -o ragtag_${s}.manual_curated.${outfmt} \
+      ragtag_${s}.manual_curated.sam &
+  done
 done
 
-gbdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/
-ragtagdir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/contig_grouping/
+# Reverse complement and rename the chromosomes to match GenomeBiology assembly
+# Cur:
+#   reverse: lg1, lg3, lg5
+#   name:    lg1..8 -> CUR 6, 4, 3, 8, 2, 7, 5, 1
+
+# Ora:
+#   reverse: lg1, lg4, lg5, lg6, lg7, lg8
+#   name:    lg1..8 -> ORA 6, 4, 3, 8, 2, 7, 5, 1
+
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/curate_chr_name_direction.py
+
 for s in cur ora; do
   cd ${cwd}/$s
   gbref=$(ls ${gbdir}/${s}*.filtered.fasta)
   echo $gbref
-  minimap2 -ax asm5 --eqx -t10 $gbref ${s}_manually_curated.v1.fasta > ref_man_cur_v1.sam
-  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${s}_manually_curated.v1.fasta > ragtag_man_cur_v1.sam
+#  minimap2 -ax asm5 --eqx -t10 $gbref ${s}_manually_curated.renamed.v1.fasta > ref_man_${s}_v1.sam &
+#  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${s}_manually_curated.renamed.v1.fasta > ragtag_man_${s}_v1.sam &
   for outfmt in pdf png; do
     syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
-      -o ref_man_cur_v1.${outfmt} \
-      ref_man_cur_v1.sam &
+      -o ref_man_${s}_v1.${outfmt} \
+      ref_man_${s}_v1.sam &
     syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
-      -o ragtag_man_cur_v1.${outfmt} \
-      ragtag_man_cur_v1.sam &
+      -o ragtag_man_${s}_v1.${outfmt} \
+      ragtag_man_${s}_v1.sam &
   done
 done
 
-# Get unplaced and plastid contigs
-plastiddir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/plastid_dna/
+# GENERATE FINAL GENOME ASSEMBLY TO BE USED FOR DOWNSTREAM ANALYSIS
 for s in cur ora; do
   cd ${cwd}/$s
-  hometools getchr -F ${plastiddir}/${s}/plastid_contigs_unique.txt \
-    -o plastid_contigs.fasta \
-    ${ragtagdir}/${s}/ungrouped.fasta
-  hometools getchr -F ${plastiddir}/${s}/plastid_contigs_unique.txt \
-    -v \
-    -o unplaced_contigs.fasta \
-    ${ragtagdir}/${s}/ungrouped.fasta
+  cat ${s}_manually_curated.renamed.v1.fasta unplaced_contigs.fasta > ${s}.genome.v1.fasta
 done
 
 

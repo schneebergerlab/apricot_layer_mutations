@@ -1,54 +1,74 @@
-## Step 1: Index current Currot and OrangeRed assemblies to be used as reference genomes for barcode correction
-<<Useful
-# Find Repeatitive sequences
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/repeat_region/
-BuildDatabase -name currot.v1.1 ../currot.v1.1.fasta
-RepeatModeler -database currot.v1.1 -pa 60 -LTRStruct
+NOTE: FOR ALL ANALYSIS CURROT assembly would be used as the primary assembly
 
-# Find repeatitive regions using RepeatMasker
-cd ..
-RepeatMasker \
-  -pa 60 \
-  -s \
-  -norna \
-  -lib ./repeat_region/currot.v1.1-families.fa \
-  -frag 100000 \
-  -dir ./repeat_region/ \
-  -poly \
-  -u currot.v1.1.fasta
+################################################################################
+############# Pre-run: Get repeat regions in the currot assembly ###############
+################################################################################
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
+bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo repeat.log -eo repeat.err "
+  mkdir repeat_region
+  cd repeat_region
+  BuildDatabase -name currot ../cur.genome.v1.fasta
+  RepeatModeler -database currot -pa 10 -LTRStruct
 
-tail +4  currot.v1.1.fasta.out |  awk '{print $5"\t"$6-1"\t"$7}'  > currot.v1.1.fasta.out.bed
-
+  # Find repeatitive regions using RepeatMasker
+  cd ..
+  RepeatMasker \
+    -pa 40 \
+    -s \
+    -norna \
+    -lib ./repeat_region/currot-families.fa \
+    -frag 100000 \
+    -dir ./repeat_region/ \
+    -poly \
+    -u \
+    cur.genome.v1.fasta
+"
+cd repeat_region
+tail +4 cur.genome.v1.fasta.out |  awk '{print $5"\t"$6-1"\t"$7}'  > cur.genome.v1.fasta.out.bed
 ## Add buffer of 20 BP around indel positions
-cat currot.v1.1.fasta.out.bed \
+cat cur.genome.v1.fasta.out.bed \
 | awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
-> currot.v1.1.fasta.out.padded_20.bed
-Useful
+> cur.genome.v1.fasta.out.padded_20.bed
+cd ..
+ln -s repeat_region/cur.genome.v1.fasta.out.padded_20.bed cur.genome.v1.repeats.bed
 
 
-<<Useful
-indir=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/
+# Divide the genome in regions of length 1million
+hometools genome_ranges cur.genome.v1.fasta
 
+
+# Use genmap to get regions which have low mappability (high uniqueness) in the genomes
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
+genmap index -F cur.genome.v1.fasta -I cur.genome.v1.fasta.genmap.idx
+genmap map -I cur.genome.v1.fasta.genmap.idx/ -O cur.genome.v1.fasta.genmap.E0_K51.map -E 0 -K 51 -w -bg -T 60
+cat cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph | awk '{if($4==1) print $0}' > cur.genome.v1.fasta.genmap.E0_K51.map.unique.bedgraph
+
+
+# List of contigs in the currot genome
+grep '>' cur.genome.v1.fasta | sed 's/>//g' > cur.genome.v1.fasta.contig_list
+
+################################################################################
+###################### RUN CELLRANGER TO CORRECT BARCODE #######################
+################################################################################
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
 cd $indir
-cellranger-dna mkref currot.v1.1.fasta currot_contig_defs.json
-Useful
+cellranger-dna mkref cur.genome.v1.fasta currot_contig_defs.json
 
 ## Step 2: Use the indexed genomes and run the cellranger-dna CNV identification pipeline. One of the internediate steps for this pipeline is to barcode correction. We can use the final bam file to get the corrected barcodes.
 ## Currot genome would be used as the reference genome for all analysis (preliminary testing showed that there are not major differences between currot vs orangered)
 
 run_barcode_correction () {
-    bsub -q ioheavy  -n 40 -R "span[hosts=1] rusage[mem=100000]" -M 100000 -oo $1.log -eo $1.err "
+    bsub -q ioheavy  -n 20 -R "span[hosts=1] rusage[mem=100000]" -M 100000 -oo $1.log -eo $1.err "
     export _JAVA_OPTIONS=-Xgcthreads4
         cellranger-dna cnv --id=$1 --reference=$2 --fastq=$3 --sample=$4 --localcores=40 --localmem=98
         "
 }
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/refdata-currot.v1.1/'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/refdata-cur.genome.v1/'
 indir="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scdna/bigdata/"
 python="/netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.7/bin/python"
 filter="/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_short_reads.py"
 
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
-
 <<Useful
 ##  All reads smaller than 50bps were filtered out as cellranger-dna cannot work with smaller reads and there were naked barcode sequenced as reads. (Question: why did naked barcode ended up getting sequenced?)
 for sample in ${samples[@]}; do
@@ -67,7 +87,6 @@ Useful
 ## Cellranger pipeline on all samples
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scdna/bigdata/'
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/cellranger_out'
-<<Useful
 for sample in ${samples[@]}; do
   cd $cwd
   R2s=($(ls ${indir}/${sample}/renamed_L50_${sample}*R2* | xargs -n 1 basename))
@@ -78,26 +97,26 @@ for sample in ${samples[@]}; do
   pres=$(echo ${pres} | sed 's/,$//g')
   run_barcode_correction $sample $refcur ${indir}$sample/ $pres
 done
-Useful
+
+
 
 ## Step 3: Separate reads from the corrected barcode bam file to separate folders corresponding to each barcode, get read count, and align them to the reference
 T10xbam2fq=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/binaries/T10xbam2fq
 asCellseparator=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/binaries/asCellseparator
-curidx=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.mm2_Xsr.idx
+curidx=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.mm2_Xsr.idx
 
 MIN_RC=10000
 
 get_cell_reads () {
-    bsub -q multicore20 -n 20 -J ${2}_getbc -R "span[hosts=1] rusage[mem=20000]" -M 20000 -m "hpc001.cluster.loc hpc002.cluster.loc" -oo get_cell_reads.log -eo get_cell_reads.err "
+    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo get_cell_reads.log -eo get_cell_reads.err "
             samtools sort -@ 19 -n $1 -o ${2}_RNsorted_bam.bam
-            samtools view ${2}_RNsorted_bam.bam | $T10xbam2fq - ${2}
+            samtools view -@ 19 ${2}_RNsorted_bam.bam | $T10xbam2fq - ${2}
             mkdir barcodes
             $asCellseparator 16 ${2}_fqfrom10xBam_bxCorrected_R1.fq.gz ${2}_fqfrom10xBam_bxCorrected_R2.fq.gz $MIN_RC 10000000 barcodes/
             "
 }
 
 merge_fastqs () {
-#    bsub -q normal -w "done(${1}_getbc)" -J ${1}_merge -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo merge_fastqs.log -eo merge_fastqs.err "
     bsub -q normal -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo merge_fastqs.log -eo merge_fastqs.err "
         readlink -f barcodes/* > barcodes_list
         while read r; do
@@ -118,23 +137,22 @@ merge_fastqs () {
 }
 
 align_cells () {
-#    bsub -q multicore40 -n 20 -w "done(${1}_merge)" -J ${1}_align -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo align_cells.log -eo align_cells.err "
     bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
     xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c '
         cd {}
         bc=\$(basename {})
-#        minimap2 -ax sr -t 1 \$2 \${bc}_R1.fastq.gz \${bc}_R2.fastq.gz \
-#        | samtools view -O BAM - \
-#        | samtools sort - > \${bc}.sorted.bam
-#        samtools index \${bc}.sorted.bam
+        minimap2 -ax sr -t 1 \$2 \${bc}_R1.fastq.gz \${bc}_R2.fastq.gz \
+        | samtools view -O BAM - \
+        | samtools sort - > \${bc}.sorted.bam
+        samtools index \${bc}.sorted.bam
 
         ## Mark duplicated reads
-#        samtools sort -n -O BAM \${bc}.sorted.bam \
-#        | samtools fixmate -c -m -O BAM - - \
-#        | samtools sort -O BAM - \
-#        | samtools markdup -S -s -O BAM - - \
-#        | samtools sort -O BAM - > \${bc}.DUPmarked.bam
-#        samtools index \${bc}.DUPmarked.bam
+        samtools sort -n -O BAM \${bc}.sorted.bam \
+        | samtools fixmate -c -m -O BAM - - \
+        | samtools sort -O BAM - \
+        | samtools markdup -S -s -O BAM - - \
+        | samtools sort -O BAM - > \${bc}.DUPmarked.bam
+        samtools index \${bc}.DUPmarked.bam
 
         # Get non-dup reads in fastq.gz from the markdup bam files
         python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/remove_duplicates_from_marked_bam_file.py \${bc}.DUPmarked.bam -p \${bc}_dedup
@@ -143,11 +161,11 @@ align_cells () {
         gzip -f \${bc}_dedup_R2.fastq
 
         # Get non-dup bam file from the markdup bam file
-#        samtools view -G 1024 -O BAM \${bc}.DUPmarked.bam > \${bc}.DUPmarked.deduped.bam
-#        samtools index \${bc}.DUPmarked.deduped.bam
-#
-#        # Get BAM coverage
-#        bamCoverage --numberOfProcessors 1 -b \${bc}.DUPmarked.deduped.bam -of bedgraph -o \${bc}.bedgraph
+        samtools view -G 1024 -O BAM \${bc}.DUPmarked.bam > \${bc}.DUPmarked.deduped.bam
+        samtools index \${bc}.DUPmarked.deduped.bam
+
+        # Get BAM coverage
+        bamCoverage --numberOfProcessors 1 -b \${bc}.DUPmarked.deduped.bam -of bedgraph -o \${bc}.bedgraph
 ' -- {} $2
     "
 }
@@ -156,7 +174,6 @@ samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/cellranger_out/'
 
-<<Useful
 
 for sample in ${samples[@]}; do
     cd $cwd/
@@ -167,16 +184,15 @@ for sample in ${samples[@]}; do
     align_cells $sample $curidx
 done
 
-Useful
 
 ####################################################################
 ############ Step  3: Aligned pooled data reads and get read-counts at variant positions
 ####################################################################
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
-curidx='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.mm2_Xsr.idx'
-curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1'
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
+curidx='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.mm2_Xsr.idx'
+curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 
 cd $cwd
@@ -187,6 +203,7 @@ for sample in ${samples[@]}; do
   mkdir $sample
   cd $sample
   rm ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz
+  {
   while read r; do
     bc=$(basename $r)
 #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq | gzip -c >> ${sample}_R1.fastq.gz
@@ -194,6 +211,7 @@ for sample in ${samples[@]}; do
     cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq.gz  >> ${sample}_R1.fastq.gz
     cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq.gz  >> ${sample}_R2.fastq.gz
   done < ${indir}${sample}/barcodes_list
+  } &
 done
 
 ## Step 3b: Align merged reads against the currot reference genome and get potential variant positions using minimap2
@@ -201,10 +219,9 @@ for sample in ${samples[@]}; do
   cd $cwd
   mkdir $sample
   cd $sample
-  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_to_cur.log -eo align_reads_to_cur.err "
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_mm2.log -eo align_reads_mm2.err "
     minimap2 -ax sr -t 30 $curidx ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz \
-    | samtools view -O BAM - \
-    | samtools sort - > ${sample}.sorted.bam
+    | samtools sort -@30 -O BAM - > ${sample}.sorted.bam
     samtools index ${sample}.sorted.bam
 
 #     Duplicates were removed from the individual cells.
@@ -223,7 +240,7 @@ for sample in ${samples[@]}; do
   cd $cwd
   mkdir $sample
   cd $sample
-  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_to_cur.log -eo align_reads_to_cur.err "
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_bt2.log -eo align_reads_bt2.err "
     bowtie2 --end-to-end \
             --very-sensitive \
             --threads 40 \
@@ -232,8 +249,7 @@ for sample in ${samples[@]}; do
             -2 ${sample}_R2.fastq.gz \
             -S ${sample}.bt2.sam
 
-    samtools view -O BAM ${sample}.bt2.sam \
-    | samtools sort - > ${sample}.sorted.bt2.bam
+    samtools sort -@ 40 -O BAM ${sample}.bt2.sam > ${sample}.sorted.bt2.bam
     samtools index ${sample}.sorted.bt2.bam
 
     bam-readcount -b 30 -q 20 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{if(\$4>3) {n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); n6=split(\$11,f, \":\"); n7=split(\$12,g, \":\"); n8=split(\$13,h, \":\");  print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' > bam_read_counts_b30_q20.bt2.txt
@@ -246,8 +262,7 @@ done
 ####################################################################
 ############ Step 4: Get mutated positions
 ####################################################################
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
-test='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/head.bam'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 
@@ -259,14 +274,16 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
  WT_19/filtered_low_ref_al_bam_read_counts_b30_q20.txt \
  MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q20.txt \
  MUT_15/filtered_low_ref_al_bam_read_counts_b30_q20.txt \
- -s WT_1 WT_19 MUT_11_1 MUT_15 &
+ -s WT_1 WT_19 MUT_11_1 MUT_15 \
+ -n 5 &
 
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
  WT_1/filtered_low_ref_al_bam_read_counts_b30_q20.bt2.txt \
  WT_19/filtered_low_ref_al_bam_read_counts_b30_q20.bt2.txt \
  MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q20.bt2.txt \
  MUT_15/filtered_low_ref_al_bam_read_counts_b30_q20.bt2.txt \
- -s WT_1_bt2 WT_19_bt2 MUT_11_1_bt2 MUT_15_bt2 &
+ -s WT_1_bt2 WT_19_bt2 MUT_11_1_bt2 MUT_15_bt2 \
+ -n 5 &
 
 for sample in ${samples[@]}; do
   cd $cwd
@@ -277,7 +294,7 @@ done
 
 ## Step 4b: Select candidates supported by multiple cells
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 for sample in ${samples[@]}; do
   cd $cwd
@@ -308,84 +325,52 @@ for sample in ${samples[@]}; do
   ${sample}_only_SNPs_candidate.txt \
   ${sample}_bt2_only_SNPs_candidate.txt \
   ${sample}_only_SNPs_candidate.sorted.common.regions \
-  cells_readcount/
+  cells_readcount/ \
+  -n 5
 done
 
 
-## Step 4c: Select candidates that are in highly unqiue (low mappability) regions
-# Use genmap to get regions which have low mappability (high uniqueness) in the genomes
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose
-genmap index -F currot.v1.1.fasta -I currot.v1.1.fasta.genmap.idx
-genmap map -I currot.v1.1.fasta.genmap.idx/ -O currot.v1.1.fasta.genmap.E0_K31.map -E 0 -K 31 -w -bg -T 60
-cat currot.v1.1.fasta.genmap.E0_K31.map.bedgraph | awk '{if($4==1) print $0}' > currot.v1.1.fasta.genmap.E0_K31.map.unique.bedgraph
 
-genmap map -I currot.v1.1.fasta.genmap.idx/ -O currot.v1.1.fasta.genmap.E0_K51.map -E 0 -K 51 -w -bg -T 60
-cat currot.v1.1.fasta.genmap.E0_K51.map.bedgraph | awk '{if($4==1) print $0}' > currot.v1.1.fasta.genmap.E0_K51.map.unique.bedgraph
+####################################################################
+############ Step 5: Indel positions to be filtered out
+####################################################################
 
-
+# Add RG tag in the bam files for the four scDNAseq samples
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-inbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.genmap.E0_K51.map.unique.bedgraph'
+picard='/srv/netscratch/dep_mercier/grp_schneeberger/software/picard-tools-1.131/picard.jar'
+
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 cd $cwd
-## Use python3.7 environment
 for sample in ${samples[@]}; do
   cd $cwd
+  mkdir $sample
   cd $sample
-  echo $sample
+    bsub -q ioheavy -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_mm2.log -eo RG_mm2.err "
+#      java -XX:ParallelGCThreads=1
+      java \
+        -jar $picard \
+        AddOrReplaceReadGroups \
+        I=${sample}.sorted.bam \
+        O=${sample}.sorted.RG.bam \
+        LB=${sample} PL=illumina PU=unit1 SM=${sample}
+      samtools index ${sample}.sorted.RG.bam
+    "
 
-  # Select candidates that are in uniquely mapping regions
-  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions \
-  | awk '{if($2>=26 && $3>=26){print $1"\t"$2-26"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed
-  bedtools intersect \
-  -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed \
-  -b $inbed \
-  | awk '{print $1"\t"$2+26"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.regions
-#  rm multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed
-
-  # Remove candidates near repeatitive regions
-  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.regions \
-  | awk '{print $1"\t"$2-1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed
-  bedtools intersect \
-    -v \
-    -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed \
-    -b /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/repeat_region/currot.v1.1.fasta.out.padded_20.bed \
-  | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.regions
-
-
-  # Remove candidates near indels
-  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.regions \
-  | awk '{print $1"\t"$2-1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.bed
-  bedtools intersect \
-    -v \
-    -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.bed \
-    -b indels/deletions.sorted.merged.padded_20.bed \
-    > no_del.bed
-  bedtools intersect \
-  -v \
-  -a no_del.bed \
-  -b indels/insertions.sorted.merged.padded_20.bed \
-  | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.non_indel.regions
-#  rm multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed
-
+    bsub -q ioheavy -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_bt2.log -eo RG_bt2.err "
+#      java -XX:ParallelGCThreads=1
+      java \
+        -jar $picard AddOrReplaceReadGroups \
+        I=${sample}.sorted.bt2.bam \
+        O=${sample}.sorted.RG.bt2.bam \
+        LB=${sample} PL=illumina PU=unit1 SM=${sample}
+      samtools index ${sample}.sorted.RG.bt2.bam
+    "
 done
 
-# Step 4d: Perform read-level filtering
-
-
-####################################################################
-############ Step 5: Tool based sSNV variant calling
-####################################################################
-
-## STEP 5-Pre-requisite : Call indels using Manta, samtools, and GATK HaplotypeCaller
+## Calling indels using Manta, samtools, and GATK HaplotypeCaller
 
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 
 # Manta
@@ -405,7 +390,7 @@ for sample in ${samples[@]}; do
       continue
     else
       ## Submit MM2 based jobs
-      bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${sample}_${sample2}_mm2.log -eo ${sample}_${sample2}_mm2.err "
+      bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${sample}_${sample2}_mm2.log -eo ${sample}_${sample2}_mm2.err "
          $python \
           $manta_config \
             --tumourBam ${cwd}/${sample}/${sample}.sorted.RG.bam \
@@ -422,11 +407,10 @@ for sample in ${samples[@]}; do
         gunzip -c results/variants/candidateSmallIndels.vcf.gz > candidateSmallIndels.vcf
         vcf2bed --do-not-sort --insertions <candidateSmallIndels.vcf> candidateSmallIndels.insertions.bed
         vcf2bed --do-not-sort --deletions <candidateSmallIndels.vcf> candidateSmallIndels.deletions.bed
-
      "
 
       ## Submit BT2 based jobs
-      bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${sample}_${sample2}_bt2.log -eo ${sample}_${sample2}_bt2.err "
+      bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${sample}_${sample2}_bt2.log -eo ${sample}_${sample2}_bt2.err "
         $python \
           $manta_config \
             --tumourBam ${cwd}/${sample}/${sample}.sorted.RG.bt2.bam \
@@ -622,6 +606,75 @@ for sample in ${samples[@]}; do
   rm *.all.bed *.sorted.bed insertions.bed deletions.bed
 done
 
+
+
+
+
+## Step 4c: Select candidates that are in highly unqiue (low mappability) regions
+
+
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+inbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.genmap.E0_K51.map.unique.bedgraph'
+samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+cd $cwd
+## Use python3.7 environment
+for sample in ${samples[@]}; do
+  cd $cwd
+  cd $sample
+  echo $sample
+
+  # Select candidates that are in uniquely mapping regions
+  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions \
+  | awk '{if($2>=26 && $3>=26){print $1"\t"$2-26"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed
+  bedtools intersect \
+  -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed \
+  -b $inbed \
+  | awk '{print $1"\t"$2+26"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.regions
+#  rm multi_cell_${sample}_only_SNPs_candidate.sorted.common.regions.adjusted.bed
+
+  # Remove candidates near repeatitive regions
+  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.regions \
+  | awk '{print $1"\t"$2-1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed
+  bedtools intersect \
+    -v \
+    -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed \
+    -b /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/repeat_region/currot.v1.1.fasta.out.padded_20.bed \
+  | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.regions
+
+
+  # Remove candidates near indels
+  cat multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.regions \
+  | awk '{print $1"\t"$2-1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.bed
+  bedtools intersect \
+    -v \
+    -a multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.bed \
+    -b indels/deletions.sorted.merged.padded_20.bed \
+    > no_del.bed
+  bedtools intersect \
+  -v \
+  -a no_del.bed \
+  -b indels/insertions.sorted.merged.padded_20.bed \
+  | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.non_indel.regions
+#  rm multi_cell_${sample}_only_SNPs_candidate.sorted.common.unique_genome.bed
+
+done
+
+# Step 4d: Perform read-level filtering
+
+
+
+
+
+
+
+
+
 ## STEP 5a : STRELKA BASED sSNVs
 # Calling variants using Strelka: For each sample, call
 # variant in that sample (considering it as tumor) compared
@@ -692,30 +745,6 @@ done
 # focal sample) identified above. Finally, call variants in the
 # comparative mode using sample data (from cell reads) and the
 # corresponding Panel_of_Normals.
-#---------------- ADD RG TAGS TO BAM FILES ---------------------------------
-# Add RG tag in the bam files for the four scDNAseq samples
-indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/tool_based_analysis/mutect2/'
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
-picard='/srv/netscratch/dep_mercier/grp_schneeberger/software/picard-tools-1.131/picard.jar'
-regions='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.ranges.formatted.txt'
-
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
-cd $cwd
-for sample in ${samples[@]}; do
-  cd $cwd
-  mkdir $sample
-  cd $sample
-    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo ${sample}_add_RG_mm2.log -eo ${sample}_${add_RG}_mm2.err "
-      java -XX:ParallelGCThreads=1 -jar $picard AddOrReplaceReadGroups I=${indir}/${sample}/${sample}.sorted.bam O=${indir}/${sample}/${sample}.sorted.RG.bam LB=${sample} PL=illumina PU=unit1 SM=${sample}
-      samtools index ${indir}/${sample}/${sample}.sorted.RG.bam
-    "
-
-    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo ${sample}_add_RG_bt2.log -eo ${sample}_${add_RG}_bt2.err "
-      java -XX:ParallelGCThreads=1 -jar $picard AddOrReplaceReadGroups I=${indir}/${sample}/${sample}.sorted.bt2.bam O=${indir}/${sample}/${sample}.sorted.RG.bt2.bam LB=${sample} PL=illumina PU=unit1 SM=${sample}
-      samtools index ${indir}/${sample}/${sample}.sorted.RG.bt2.bam
-    "
-done
 
 
 # Add RG tag in the bam files for the Currot and OrangeRed samples
