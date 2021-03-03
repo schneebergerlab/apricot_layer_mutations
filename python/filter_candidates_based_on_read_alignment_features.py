@@ -4,22 +4,21 @@ QS= "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghij
 
 
 if __name__ == '__main__':
-    #
-    # For each candidate sSNV position, check the mpileup data to see whether is there:
-    #     1) Read strand bias, i.e. reads on the position are biased towards one strand (Using binomial test)
-    #     2) Allele strand bias, i.e. reference and alternate alleles have different distribution on the strands (Using binomial test)
-
-        # TODO
+    """
+        # For each candidate sSNV position, check the mpileup data to see whether is there:
+        # 1) Read strand bias, i.e. reads on the position are biased towards one strand (Using binomial test)
+        # 2) Allele strand bias, i.e. reference and alternate alleles have different distribution on the strands (Using fischer's exact test)
         # 3) Base quality of the alternate alleles different from base quality of the reference alleles (Using Mann–Whitney U test)
-        # TODO
         # 4) Mapping quality of the alternate alleles different from mapping quality of the reference alleles (Using Mann–Whitney U test)
-        # TODO
         # 5) Alignment Score of the reads with alternate alleles too different from the reads with reference alleles (Using Mann–Whitney U test)
+        # 
         # TODO
         # 6) Read position bias, i.e. the variant bases are on one position on a read
 
     # Check the SAM file to see:
     #     1) If the positions is represented by both Read1 and Read2
+    """
+
 
 
     parser = argparse.ArgumentParser("Select positions which are supported by read-level features",
@@ -39,30 +38,35 @@ if __name__ == '__main__':
     OUT = args.
     q
 
-    REG = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/multi_cell_WT_1_only_SNPs_candidate.sorted.common.unique_genome.non_repeat.non_indel.regions'
+    REG = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/multi_cell_WT_1_only_SNPs_candidate.sorted.common.regions'
+    REG = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1_only_SNPs_candidate.sorted.common.regions'
     BAM = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1.sorted.RG.bam'
-    REF = '/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
+    REF = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
     OUT = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/test.pileup'
 
     from subprocess import Popen, PIPE
 
     # Get MPILEUP DATA
-    cmd = '/srv/netscratch/dep_mercier/grp_schneeberger/bin/bin_manish/samtools mpileup -A -q 30 -Q 10 -E --reference {PATH_TO_REF} -r {REGION} --ff UNMAP,SECONDARY,QCFAIL,DUP -s --output-QNAME --output-extra AS {PATH_TO_BAM}'
+    cmd = '/srv/netscratch/dep_mercier/grp_schneeberger/bin/bin_manish/samtools mpileup -A -q 10 -Q 10 -E --reference {PATH_TO_REF} -r {REGION} --ff UNMAP,SECONDARY,QCFAIL,DUP -O -s --output-QNAME --output-extra AS --output-extra FLAG {PATH_TO_BAM}'
     print(cmd)
     count = 0
+    with open(OUT, 'w') as fout:
+        with open(REG, 'r') as fin:
+            for line in fin:
+                count += 1
+                if count == 100 : break
+                line = line.strip().split()
+                variants.append(line)
+                    region = '{}:{}-{}'.format(line[0], line[1], line[2])
+                    run = cmd.format(PATH_TO_REF=REF, REGION=region, PATH_TO_BAM=BAM)
+                    p = Popen( run.split(), stdout=PIPE, stderr=PIPE)
+                    fout.write(p.communicate()[0].decode())
+
     variants = deque()
     with open(REG, 'r') as fin:
-        # with open(OUT, 'w') as fout:
         for line in fin:
-            # count += 1
-            # if count == 10 : break
             line = line.strip().split()
             variants.append(line)
-                region = '{}:{}-{}'.format(line[0], line[1], line[2])
-                run = cmd.format(PATH_TO_REF=REF, REGION=region, PATH_TO_BAM=BAM)
-                p = Popen( run.split(), stdout=PIPE, stderr=PIPE)
-                fout.write(p.communicate()[0].decode())
-
     variants = tuple(variants)
 
     class snvdata:
@@ -73,7 +77,7 @@ if __name__ == '__main__':
             self.rc  = int(ls[3])
             self.indelcount, self.bases = self._getbases(ls[4])
             if len(self.bases) != self.rc:
-                raise Exception('Number of identified bases if not equals to read count for {}:{}'.format(self.chr, self.pos))
+                raise Exception('Number of identified bases if not equals to read count for {}:{}. ReadCount: {}, BaseCount: {}'.format(self.chr, self.pos, self.rc, len(self.bases)))
             self.BAQ = [ord(c) - 33 for c in ls[5]]
             self.MQ = [ord(c) - 33 for c in ls[6]]
             self.AS = list(map(int, ls[8].split(',')))
@@ -94,6 +98,7 @@ if __name__ == '__main__':
                 if indel == True:
                     if c in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
                         skip = (skip*10) + int(c)
+                        continue
                     # skip = int(c)
                     else:
                         indel = False
@@ -114,6 +119,7 @@ if __name__ == '__main__':
                     continue
                 bases.append(c)
             return [indelcount, list(bases)]
+
 
         def forwardcnt(self):
             try:
@@ -201,12 +207,16 @@ if __name__ == '__main__':
 
     # pvbin = np.array([True if j < 0.05 else False for j in p_adjust([i[0] for i in stats], 'BH')])
     pvbin = np.array([True if j < 0.05 else False for j in [i[0] for i in stats]])
-    notup = np.array([True if j == 0   else False for j in [i[1] for i in stats]])
-    notlo = np.array([True if j == 0   else False for j in [i[2] for i in stats]])
+    notup = np.array([True if j < 3   else False for j in [i[1] for i in stats]])
+    notlo = np.array([True if j < 3   else False for j in [i[2] for i in stats]])
     # pvfis = np.array([True if j < 0.05 else False for j in p_adjust([i[3] for i in stats], 'BH')])
     pvfis = np.array([True if j < 0.05 else False for j in [i[3] for i in stats]])
+    pvbak = np.array([True if j < 0.05 else False for j in [i[4] for i in stats]])
+    pvmq = np.array([True if j < 0.05 else False for j in [i[5] for i in stats]])
+    pvas = np.array([True if j < 0.05 else False for j in [i[6] for i in stats]])
 
-    bad_pos = pvbin | notup | notlo | pvfis
+    # bad_pos = pvbin | (notup & notlo) | pvfis | pvbak | pvmq | pvas
+    bad_pos = pvbin | (notup & notlo) | pvfis | pvbak | pvmq
     #
     # only_pvbin = pvbin & ~notup & ~notlo
 
@@ -227,12 +237,16 @@ r = (0.7341622, 0.2853933, 0.2425526, 0.1627632, 0.1764481, 0.1970707, 0.8895130
 p_adjust(r, 'BH')
  [1] 0.8157358 0.4077048 0.4042544 0.3941414 0.3941414 0.3941414 0.8895130 0.3941414 0.5703839 0.3941414
 
-def bh_adjust(p):
-    " perform benjamini-hochberg correction on a list of p-values"
-
 samtools mpileup -q 20 -Q 30 -O -r CUR1G:1046502-1046502 -s --output-QNAME --output-extra AS --reference /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/variantCorrected_AND_kmer_masked_d100-kmer80bp-8_4_Currot_on_Original_v1.0.fasta WT_1.sorted.RG.bt2.bam
 
-l = '...,..,,..,.,,,.,..$.$.$.,..,,,.,..,,...,...,,...,.,...,...,..,,,.,,,,+1a...,,,....,,........,.,..,,,,,,,,....,,...,     13 ....,,,,......,,,..,...,..,.,,...,.,CCCC.^].^].'
+l = '.$.$.$,$.,..,,..,,.+1A..,,,,.,.,,.,,,..,..,,,,,,,,,...,.,,,..-1A..,,,,.....,.,..+1A.,,..,,...,,.,......,..,..,..,,..,.,,...,..,,,,,,,..,...,,.t.........t.,,..,.,...,..,.,,..,,.,................,^],'
+
+
+l = len('...,.,..,,..,,...,,,,.,.,,.,,,..,..,,,,,,,,,...,.,,,....,,,,.....,.,...,,..,,...,,.,......,..,..,..,,..,.,,...,..,,,,,,,..,...,,.t.........t.,,..,.,...,..,.,,..,,.,................,],')
+O = '...,.,..,,..,,.1..,,,,.,.,,.,,,..,..,,,,,,,,,...,.,,,..1..,,,,.....,.,..1.,,..,,...,,.,......,..,..,..,,..,.,,...,..,,,,,,,..,...,,.t.........t.,,..,.,...,..,.,,..,,.,................,,'
+
+len(']]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]X]]]]]]]]]]]]Y]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]Y]]]]]]]]]]]S]]]]]]]')
+
 
 def getbases(l):
     bases = deque()
@@ -249,6 +263,7 @@ def getbases(l):
         if indel == True:
             if c in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
                 skip = (skip*10) + int(c)
+                continue
             # skip = int(c)
             else:
                 indel = False

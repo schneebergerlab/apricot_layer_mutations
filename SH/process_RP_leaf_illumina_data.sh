@@ -9,7 +9,7 @@ cd $cwd
 for sample in ${samples[@]}; do
   cd $cwd
   cd $sample
-  bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=15000]" -M 20000 -oo $sample.log -eo $sample.err "
+  bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo $sample.log -eo $sample.err "
 #    skewer -r 0.1 -d 0.05 -k 8 -q 20 -l 75 -m pe -t 20 -x \
 #      srv/netscratch/dep_mercier/grp_schneeberger/projects/hyper_co/data/reads/shqMergedAdapters_Primers_representative_rc.fa \
 #      ${indir}/${sample}_R1.fastq.gz \
@@ -19,7 +19,6 @@ for sample in ${samples[@]}; do
     minimap2 -ax sr --eqx -t 20 $curidx \
       ${sample}_ql-trimmed-pair1.fastq.gz \
       ${sample}_ql-trimmed-pair2.fastq.gz \
-    | samtools view -b - \
     | samtools sort -O BAM -o ${sample}.sorted.bam -
     samtools index ${sample}.sorted.bam
 
@@ -36,8 +35,3 @@ for sample in ${samples[@]}; do
   "
 done
 
-# Merge samples to get representative tree sequence
-cd $cwd
-samtools merge -O BAM -@ 60 merged_samples/merged.bam */*.DUPmarked.deduped.bam
-cd merged_samples
-samtools index merged.bam
