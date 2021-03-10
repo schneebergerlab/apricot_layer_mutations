@@ -11,7 +11,10 @@ def get_pos(fin):
     return out
 
 
-def write_pos(fin, fout, pos, AC, RC_MAX):
+def write_pos_only_snps(fin, fout, pos, AC):
+    '''
+    Select all positions that one alternate substitution allele (SNPs).
+    '''
     base_dict = {
         "A": 4,
         "C": 5,
@@ -21,54 +24,9 @@ def write_pos(fin, fout, pos, AC, RC_MAX):
     with open(fin, 'r') as f:
         with open(fout, 'w') as fo:
             outstr = deque()
+            # count = 0
             for line in f:
                 line = line.strip().split()
-                if int(line[3]) > RC_MAX:
-                    continue
-                hf = 0
-                for i in [4, 5, 6, 7, 10, 12, 14]:
-                    try:
-                        if int(line[i]) >= AC:
-                            hf += 1
-                    except IndexError as e:
-                        break
-                if hf != 2:
-                    continue
-                try:
-                    if line[1] in pos[line[0]]:
-                        ## Get alternate allele readcount and alternate allele ratio
-                        rc = 0
-                        ar = 0
-                        for i in [4, 5, 6, 7, 10, 12, 14]:
-                            try:
-                                if int(line[i]) >= AC:
-                                    if i != base_dict[line[2]]:
-                                        rc = int(line[i])
-                                        ar = int(line[i])/int(line[3])
-                            except IndexError as e:
-                                pass
-                        if rc == 0 or ar == 0:
-                            print('ERROR: alternate allele not found', line)
-                        outstr.append(str(rc) + ' ' + str(ar) + ' ' + ' '.join(line))
-                except KeyError as e:
-                    pass
-            fo.write('\n'.join(outstr))
-
-
-def write_pos_only_snps(fin, fout, pos, AC, RC_MAX):
-    base_dict = {
-        "A": 4,
-        "C": 5,
-        "G": 6,
-        "T": 7
-    }
-    with open(fin, 'r') as f:
-        with open(fout, 'w') as fo:
-            outstr = deque()
-            for line in f:
-                line = line.strip().split()
-                if int(line[3]) > RC_MAX:
-                    continue
                 hf = 0
                 for i in [4, 5, 6, 7, 10, 12, 14]:
                     try:
@@ -99,31 +57,51 @@ def write_pos_only_snps(fin, fout, pos, AC, RC_MAX):
             fo.write('\n'.join(outstr))
 
 
-def select_candidate_pos(finpath, foutname, CAN_CNT, CAN_N, RC_MIN):
+def select_candidate_pos(finpath, foutname, CAN_CNT, CAN_N, RC_MIN, RC_MAX):
+    BASE_DICT = {
+        6: "A",
+        7: "C",
+        8: "G",
+        9: "T"
+    }
     with open(finpath, 'r') as fin:
         df = deque()
         for line in fin:
             line = line.strip().split()
-            if int(line[0]) >= CAN_N and int(line[5]) >= RC_MIN:
-                df.append(line[:11])
+            if int(line[0]) < CAN_N: continue
+            if int(line[5]) < RC_MIN: continue
+            if int(line[5]) > RC_MAX: continue
+            alt = ''
+            for i in range(6, 10):
+                if BASE_DICT[i] == line[4]: continue
+                if int(line[i]) >= N:
+                    alt = BASE_DICT[i]
+            if alt == '':
+                raise ValueError('Did not find any alternate allele for line: {}'.format(' '.join(line)))
+                sys.exit()
+            df.append([line[2], line[3], line[3], line[4], alt, line[0], line[1]])
+
 
     import pandas as pd
     df = pd.DataFrame(df)
-    df[0] = df[0].astype(int)
-    df[1] = df[1].astype(float)
-    df[3] = df[3].astype(int)
-    df['rc_rank'] = df[0].rank(method='dense', ascending=False)
-    df['af_rank'] = df[1].rank(method='dense', ascending=False)
-    df['rank_sum'] = (df['rc_rank'] + df['af_rank']).rank(method='dense')
-    df.sort_values(['rank_sum'], inplace=True)
+    df[1] = df[1].astype(int)
+    df[2] = df[2].astype(int)
+    df[5] = df[5].astype(int)
+    df[6] = df[6].astype(float)
+    # df['rc_rank'] = df[0].rank(method='dense', ascending=False)
+    # df['af_rank'] = df[1].rank(method='dense', ascending=False)
+    # df['rank_sum'] = (df['rc_rank'] + df['af_rank']).rank(method='dense')
+    # df.sort_values(['rank_sum'], inplace=True)
     df_cand = df.iloc[0:CAN_CNT] if CAN_CNT != -1 else df.copy()
-    df_cand.to_csv(foutname+'.txt', sep=' ', index=False, header=False)
-    df_bed = pd.DataFrame({'chr'  : df_cand[2],
-                           'start': df_cand[3]-1,
-                           'end'  : df_cand[3],
-                           'vaf'  : df_cand[0],
-                           'var'  : df_cand[1]})
-    df_bed.to_csv(foutname+'.bed', sep='\t', index=False, header=False)
+    df_cand.to_csv(foutname+'.regions', sep=' ', index=False, header=False)
+    df_bed = pd.DataFrame({'chr'  : df_cand[0],
+                           'start': df_cand[1]-1,
+                           'end'  : df_cand[2],
+                           'ref'  : df_cand[3],
+                           'alt'  : df_cand[4],
+                           'vaf'  : df_cand[5],
+                           'var'  : df_cand[6]})
+    # df_bed.to_csv(foutname+'.bed', sep='\t', index=False, header=False)
     df_bed.sort_values(['chr', 'start', 'end'], inplace=True)
     df_bed.to_csv(foutname+'.sorted.bed', sep='\t', index=False, header=False)
 
@@ -136,8 +114,8 @@ if __name__=='__main__':
         # The alternate allele should have at least three reads supporting it
         # Only one alternate should have more than 2 reads
         # Same position is not variant in other branches
-        
-        
+
+
         # Secondary task
         ## Perform on both (MM2 and BT2) alignments: and then select positions which are selected by both methods
     """
@@ -173,45 +151,96 @@ if __name__=='__main__':
     N = len(FINS)
 
     from collections import deque, defaultdict
+    import pandas as pd
+    from matplotlib import pyplot as plt
+    from upsetplot import UpSet
 
-    pos_list = deque()
-    for f in FINS:
-        pos_list.append(get_pos(f))
 
+    # pos_list = deque()
+    # for f in FINS:
+        # pos_list.append(get_pos(f))
 
-    ## For each sample get positions that are not present in any other sample
-    pos_list_uni = deque()
+    # for i in range(N):
+        # for k in pos_list[i].keys():
+            # pos_list[i][k] = set(pos_list[i][k])
+
+    # for i in range(N):
+        # # For each sample select and write only SNP positions
+        # if '/'.join(FINS[i].split("/")[:-1]) == '':
+            # fout = './' + "/{}".format(PRES[i]) + 'only_SNPs.txt'
+        # else:
+            # fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs.txt'
+        # # write_pos_only_snps(FINS[i], fout, pos_list_uni[i], AC, RC_MAX)
+        # write_pos_only_snps(FINS[i], fout, pos_list[i], AC)
+
+        # # For each sample select candidate SNP positions and output them
+        # if '/'.join(FINS[i].split("/")[:-1]) == '':
+            # fout2 = './' + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
+        # else:
+            # fout2 = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
+        # select_candidate_pos(fout, fout2,  CAN_CNT, CAN_N, RC_MIN, RC_MAX)
+
+    import pybedtools
+    beds = deque()
     for i in range(N):
-        pos_uni = {}
-        out_set = set(range(N)) - set([i])
-        for k in pos_list[i].keys():
-            pos_uni[k] = set(pos_list[i][k])
-            for j in out_set:
-                try:
-                    pos_uni[k] = pos_uni[k] - set(pos_list[j][k])
-                except KeyError as e:
-                    pass
-        pos_list_uni.append(pos_uni)
-
-    # Write unique positions
-    for i in range(N):
-        if '/'.join(FINS[i].split("/")[:-1]) == '':
-            fout = './' + "/{}".format(PRES[i]) + 'all_pos.txt'
-        else:
-            fout = '/'.join(FINS[i].split("/")[:-1]) +  "/{}".format(PRES[i]) + 'all_pos.txt'
-        write_pos(FINS[i], fout, pos_list_uni[i], AC, RC_MAX)
-
-    for i in range(N):
-        # For each sample select and write only SNP positions
-        if '/'.join(FINS[i].split("/")[:-1]) == '':
-            fout = './' + "/{}".format(PRES[i]) + 'only_SNPs.txt'
-        else:
-            fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs.txt'
-        write_pos_only_snps(FINS[i], fout, pos_list_uni[i], AC, RC_MAX)
-
-        # For each sample select candidate SNP positions and output them
         if '/'.join(FINS[i].split("/")[:-1]) == '':
             fout2 = './' + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
         else:
             fout2 = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
-        select_candidate_pos(fout, fout2,  CAN_CNT, CAN_N, RC_MIN)
+        beds.append(pybedtools.BedTool(fout2 + '.sorted.bed'))
+
+    beds_df = deque()
+    for i in range(N):
+        pos = deque()
+        for b in beds[i]:
+            # if int(list(b)[5]) < 10: continue
+            pos.append('_'.join(list(b)[:2]))
+        pos = pd.DataFrame(list(pos))
+
+        # pos[1] = pos[1].astype('int')
+        beds_df.append(pos)
+
+    for i in range(N):
+        beds_df[i].sort_values([0], inplace=True)
+
+    merge_df = beds_df[0]
+    for i in range(1, N):
+        merge_df = merge_df.merge(beds_df[i], 'outer', on = [0])
+
+    merge_df.sort_values([0], inplace=True)
+    merge_df.index = range(merge_df.shape[0])
+
+    for i in range(N):
+        merge_df[args.s[i]] = merge_df[0].isin(beds_df[i][0])
+    merge_df = merge_df.set_index(args.s)
+    upset = UpSet(merge_df, subset_size='count', intersection_plot_elements=3, element_size=40)
+    fig = plt.figure(figsize = [8, 8])
+    upset.plot(fig = fig)
+    plt.yscale('log')
+     # plt.show()
+    plt.savefig('_'.join(args.s) + ".pdf")
+
+
+
+    """
+    Earlier, I was first selecting positions unique in all samples and then was
+    finding for candidate positions. That was too stringent filtering as noisy
+    in other samples could also filter out signal from the focal sample.
+
+    Now, I first select candidate SNPs in each sample, and then select sample
+    specific SNPs by removing candidate SNPs in other samples.
+    """
+    inallbeds = beds[0] + beds[1] + beds[2] + beds[3]
+    beds_uni = beds.copy()
+    for i in range(N):
+        rem_bed = set(range(N)) - set([i])
+        for j in rem_bed:
+            beds_uni[i] = beds_uni[i] - beds[j]
+        # beds_uni[i] = beds_uni[i] - inallbeds
+
+    for i in range(N):
+        if '/'.join(FINS[i].split("/")[:-1]) == '':
+            fout = './' + "/{}".format(PRES[i]) + 'filtered_SNPs_candidate.sorted.bed'
+        else:
+            fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'filtered_SNPs_candidate.sorted.bed'
+        beds_uni[i].saveas(fout)

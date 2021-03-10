@@ -8,7 +8,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Get number of cells supporting mutations",
                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('pos', help='List of SNP candidate positions', type=argparse.FileType('r'))
-    parser.add_argument('pos_info', help='Read count information for the positions', type=argparse.FileType('r'))
+    # parser.add_argument('pos_info', help='Read count information for the positions', type=argparse.FileType('r'))
     parser.add_argument('rc_file_list', help='File containing paths to read count output files', type=argparse.FileType('r'))
     parser.add_argument('-n', dest='n', help='minimum read count used to select candidates', type=int, default=4)
     parser.add_argument('-m', dest='m', help='minimum number of cells required to support a good candidate', type=int, default=3)
@@ -22,7 +22,7 @@ if __name__ == '__main__':
         9: "T"
     }
     F1 = args.pos.name
-    F2 = args.pos_info.name
+    # F2 = args.pos_info.name
     F3 = args.rc_file_list.name
     N  = args.n
     M  = args.m
@@ -38,52 +38,52 @@ if __name__ == '__main__':
         # sys.exit('Incorrect path to cell read count folder')
 
     f1 = pd.read_table(F1, header=None)
-    f2 = pd.read_table(F2, header=None, sep=' ')
+    # f2 = pd.read_table(F2, header=None, sep=' ')
     f3 = pd.read_table(F3, header=None)
 
 
-    # f1 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1_only_SNPs_candidate.sorted.common.regions', header=None)
-    f1.columns = ['chr', 'pos0', 'pos', 'vac', 'var']
+    # f1 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/MUT_11_1/MUT_11_1_filtered_SNPs_candidate.sorted.bed', header=None)
+    f1.columns = ['chr', 'pos0', 'pos', 'ref', 'alt', 'vac', 'var']
     
    
-    # f2 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1_only_SNPs_candidate.txt',
-    #                    header=None, sep=' ')
-    f2.sort_values([2, 3], inplace=True)
-    f2.columns = ['vac', 'var', 'chr', 'pos', 'ref', 'rc', 'A', 'C', 'G', 'T', 'N', 'vac_rank', 'var_rank', 'rank']
+    # # f2 = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1_only_SNPs_candidate.txt',
+    # #                    header=None, sep=' ')
+    # f2.sort_values([2, 3], inplace=True)
+    # f2.columns = ['vac', 'var', 'chr', 'pos', 'ref', 'rc', 'A', 'C', 'G', 'T', 'N', 'vac_rank', 'var_rank', 'rank']
     
     
-    # f3 = f3.loc[f3['vac'] >= N]
-    # f3.index = range(f3.shape[0])
+    # # f3 = f3.loc[f3['vac'] >= N]
+    # # f3.index = range(f3.shape[0])
     f3.columns = ['fin']
 
-    # f1 = f1.merge(f3, on=['chr', 'pos'], how='inner')
-    # f2 = f2.merge(f3, on=['chr', 'pos'], how='inner')
+    # # f1 = f1.merge(f3, on=['chr', 'pos'], how='inner')
+    # # f2 = f2.merge(f3, on=['chr', 'pos'], how='inner')
 
-    alt = defaultdict(dict)
-    # f2_alt = defaultdict(dict)
-    for row in f2.itertuples(index=False):
-        for i in range(6, 10):
-            if BASE_DICT[i] == row.ref: continue
-            if row[i] >= N:
-                alt[row.chr][row.pos] = (row.ref, BASE_DICT[i])
-                break
-
+    # alt = defaultdict(dict)
+    # # f2_alt = defaultdict(dict)
     # for row in f2.itertuples(index=False):
         # for i in range(6, 10):
             # if BASE_DICT[i] == row.ref: continue
             # if row[i] >= N:
-                # f2_alt[row.chr][row.pos] = (row.ref, BASE_DICT[i])
+                # alt[row.chr][row.pos] = (row.ref, BASE_DICT[i])
                 # break
+
+    # # for row in f2.itertuples(index=False):
+        # # for i in range(6, 10):
+            # # if BASE_DICT[i] == row.ref: continue
+            # # if row[i] >= N:
+                # # f2_alt[row.chr][row.pos] = (row.ref, BASE_DICT[i])
+                # # break
                 
 
-    f1_alts = deque()
-    f1_refs = deque()
-    for row in f1.itertuples(index=False):
-      f1_refs.append(alt[row.chr][row.pos][0])
-      f1_alts.append(alt[row.chr][row.pos][1])
+    # f1_alts = deque()
+    # f1_refs = deque()
+    # for row in f1.itertuples(index=False):
+      # f1_refs.append(alt[row.chr][row.pos][0])
+      # f1_alts.append(alt[row.chr][row.pos][1])
      
-    f1['ref'] = f1_refs
-    f1['alt'] = f1_alts
+    # f1['ref'] = f1_refs
+    # f1['alt'] = f1_alts
     # bad_candidates = [i for i in range(len(f1_alt)) if f1_alt[i] != f2_alt[i]]
     # bad_locs = set(f3.iloc[bad_candidates]['chr'] + '_' + f3.iloc[bad_candidates]['pos'].astype(str))
     # f3 = f3.drop(bad_candidates, axis=0)
@@ -99,18 +99,15 @@ if __name__ == '__main__':
         "T": 7
     }
     # bcs = sorted(os.listdir(D1))
+    loci = set(f1_alt.keys())
     for bc in f3.fin:
         # with open(D1 + os.sep + bc + os.sep + bc + '_candidate_readcount.txt') as fin:
         with open(bc) as fin:
             for line in fin:
                 line = line.strip().split()
-                # if line[0] + '_' + line[1] in bad_locs: continue
+                if line[0] + '_' + line[1] not in loci: continue
                 if int(line[BASE_DICT2[f1_alt[line[0] + '_' + line[1]][0]]]) >= 1:
                     f1_alt[line[0] + '_' + line[1]][1] += 1
-
-
-
-
 
 
     f1_loci = list(f1['chr'].astype(str) + '_' + f1['pos'].astype(str))
@@ -140,7 +137,7 @@ if __name__ == '__main__':
     fig.tight_layout()
 
     if '/'.join(F1.split("/")[:-1]) == '':
-        pltname = './{}_cells_supporting_candidate.png'.format(PRES)
+        pltname = './{}_cells_supporting_candidate.pdf'.format(PRES)
     else:
-        pltname = '/'.join(F1.split("/")[:-1]) + "/{}_cells_supporting_candidate.png".format(PRES)
+        pltname = '/'.join(F1.split("/")[:-1]) + "/{}_cells_supporting_candidate.pdf".format(PRES)
     plt.savefig(pltname)

@@ -308,12 +308,12 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
  -n 5 &
 
 
-for sample in ${samples[@]}; do
-  cd $cwd
-  cd $sample
-  cat ${sample}_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_only_SNPs_candidate.sorted.regions
-  cat ${sample}_bt2_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_bt2_only_SNPs_candidate.sorted.regions
-done
+# for sample in ${samples[@]}; do
+  # cd $cwd
+  # cd $sample
+  # cat ${sample}_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_only_SNPs_candidate.sorted.regions
+  # cat ${sample}_bt2_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_bt2_only_SNPs_candidate.sorted.regions
+# done
 
 ## Intersecting of variant lists resulted in too few candidate variants,
 ## So will do union now and then during clustering could do extra pruning
@@ -346,8 +346,8 @@ for sample in ${samples[@]}; do
   cd $sample
   barcodes_list=${indir}${sample}/barcodes_list
 #  bedfile=$(rf ${sample}_only_SNPs_candidate.sorted.common.regions)
-  bedmm2=$(rf ${sample}_only_SNPs_candidate.sorted.regions)
-  bedbt2=$(rf ${sample}_bt2_only_SNPs_candidate.sorted.regions)
+  bedmm2=$(rf ${sample}_only_SNPs_candidate.regions)
+  bedbt2=$(rf ${sample}_bt2_only_SNPs_candidate.regions)
   inpath=${indir}${sample}/barcodes/
   mkdir cells_readcount
   cd cells_readcount
@@ -355,11 +355,11 @@ for sample in ${samples[@]}; do
     bc=$(basename $r)
     mkdir $bc
     cd $bc
-    bsub -q short -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc.log -eo rc.err "
+    bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc.log -eo rc.err "
       bam-readcount -b 30 -q 10 -w 0 -l $bedmm2 -f $refcur ${inpath}/${bc}/${bc}.DUPmarked.deduped.bam \
       | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.txt
     "
-    bsub -q short -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc_at_candidate.log -eo rc_at_candidate.err "
+    bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc_at_candidate.log -eo rc_at_candidate.err "
       bam-readcount -b 30 -q 10 -w 0 -l $bedbt2 -f $refcur ${inpath}/${bc}/${bc}_dedup.bt2.sorted.bam \
       | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.bt2.txt
     "
@@ -375,17 +375,17 @@ for sample in ${samples[@]}; do
   rf cells_readcount/*/*_readcount.txt > mm2_rcfiles.txt
   rf cells_readcount/*/*_readcount.bt2.txt > bt2_rcfiles.txt
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-  ${sample}_only_SNPs_candidate.sorted.regions \
-  ${sample}_only_SNPs_candidate.txt \
+  ${sample}_filtered_SNPs_candidate.sorted.bed \
   mm2_rcfiles.txt \
   -n 5 &
+  # ${sample}_only_SNPs_candidate.txt \
   
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-  ${sample}_bt2_only_SNPs_candidate.sorted.regions \
-  ${sample}_bt2_only_SNPs_candidate.txt \
+  ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
   bt2_rcfiles.txt \
   -o multi_cell_bt2 \
   -n 5 &
+  # ${sample}_bt2_only_SNPs_candidate.txt \
   
 done
 
@@ -676,91 +676,90 @@ repeatbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/a
 # inbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.genmap.E0_K51.map.unique.bedgraph'
 samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
 cd $cwd
-
 ## Use python3.7 environment
 for sample in ${samples[@]}; do
   cd $cwd
   cd $sample
   echo $sample
   
-  # # FOR MM2 SNPs  
-  # # Select candidates that are in uniquely mapping regions
-  # cat multi_cell_${sample}_only_SNPs_candidate.sorted.regions \
-  # | awk '{if($2>=26 && $3>=26){print $1"\t"$2-26"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
-  # > multi_cell_${sample}_only_SNPs_candidate.sorted.pos_adjusted.bed
+  # FOR MM2 SNPs  
+  # Select candidates that are in uniquely mapping regions
+  # cat multi_cell_${sample}_filtered_SNPs_candidate.sorted.bed \
+  # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
+  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed
   
   # bedtools intersect \
-  # -a multi_cell_${sample}_only_SNPs_candidate.sorted.pos_adjusted.bed \
+  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
   # -b $unimapbed \
   # | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  # > multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.bed
+  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed
 
   # # Remove candidates near repeatitive regions
   # bedtools intersect \
     # -v \
-    # -a multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.bed \
+    # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed \
     # -b $repeatbed \
-  # > multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
   # # Remove candidates near indels
   # bedtools intersect \
     # -v \
-    # -a multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+    # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
     # -b indels/deletions.sorted.merged.padded_20.bed \
     # > no_del.bed
   # bedtools intersect \
   # -v \
   # -a no_del.bed \
   # -b indels/insertions.sorted.merged.padded_20.bed \
-  # > multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
   
   
   # # FOR BT2 SNPs  
   # # Select candidates that are in uniquely mapping regions
-  # cat multi_cell_bt2_${sample}_bt2_only_SNPs_candidate.sorted.regions \
-  # | awk '{if($2>=26 && $3>=26){print $1"\t"$2-26"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
-  # > multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.pos_adjusted.bed
+  # cat multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
+  # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
+  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed
   
   # bedtools intersect \
-  # -a multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.pos_adjusted.bed \
+  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
   # -b $unimapbed \
   # | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  # > multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.bed
+  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed
 
   # # Remove candidates near repeatitive regions
   # bedtools intersect \
     # -v \
-    # -a multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.bed \
+    # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed \
     # -b $repeatbed \
-  # > multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
   # # Remove candidates near indels
   # bedtools intersect \
     # -v \
-    # -a multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+    # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
     # -b indels/deletions.sorted.merged.padded_20.bed \
     # > no_del_bt2.bed
   # bedtools intersect \
   # -v \
   # -a no_del_bt2.bed \
   # -b indels/insertions.sorted.merged.padded_20.bed \
-  # > multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
 
-  # cut -f4 multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-  # | sort -n \
-  # | uniq -c \
-  # | hometools plthist -o ${sample}_candidates_allele_counts.png -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_mm2 &
+  cut -f6 multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+  | sort -n \
+  | uniq -c \
+  | hometools plthist -o ${sample}_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_mm2 &
   
-  # cut -f4 multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-  # | sort -n \
-  # | uniq -c \
-  # | hometools plthist -o ${sample}_bt2_candidates_allele_counts.png -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_bt2 &
+  cut -f6 multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+  | sort -n \
+  | uniq -c \
+  | hometools plthist -o ${sample}_bt2_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_bt2 &
   
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_mutation_changes_histogram.py \
-    -f multi_cell_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-    multi_cell_bt2_${sample}_only_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-    -rc 6 \
-    -qc 7 \
+    -f multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+    multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+    -rc 4 \
+    -qc 5 \
     -samples ${sample}_MM2 ${sample}_BT2 \
     -t Mutation changes in $sample \
     -W 8 \
@@ -768,13 +767,48 @@ for sample in ${samples[@]}; do
     -o mutation_changes_${sample}.png &
 done
 
+# Number of candidate SNPS if only filter out candidates present in all samples
+# 34388 MUT_11_1/multi_cell_bt2_MUT_11_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 61842 MUT_11_1/multi_cell_MUT_11_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 23518 MUT_15/multi_cell_bt2_MUT_15_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 48533 MUT_15/multi_cell_MUT_15_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 35141 WT_19/multi_cell_bt2_WT_19_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 63176 WT_19/multi_cell_WT_19_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 30438 WT_1/multi_cell_bt2_WT_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+# 57612 WT_1/multi_cell_WT_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+
+
+# Number of candidate SNPS when candidates in other samples are filtered out
+# 10179 MUT_11_1/multi_cell_bt2_MUT_11_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 16217 MUT_11_1/multi_cell_MUT_11_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 6016 MUT_15/multi_cell_bt2_MUT_15_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 11511 MUT_15/multi_cell_MUT_15_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 11252 WT_19/multi_cell_bt2_WT_19_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 18388 WT_19/multi_cell_WT_19_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 7332 WT_1/multi_cell_bt2_WT_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+# 12644 WT_1/multi_cell_WT_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
 
 # Step 4d: Perform read-level filtering
 
+# run using python 3.7
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+for sample in ${samples[@]}; do
+  cd ${cwd}/${sample}
+  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_candidates_based_on_read_alignment_features.py \
+    multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+    ${sample}.sorted.RG.bam \
+    $refcur \
+    -o ${sample} &
 
-
-
+  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_candidates_based_on_read_alignment_features.py \
+    multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
+    ${sample}.sorted.RG.bt2.bam \
+    $refcur \
+    -o ${sample}_bt2 &
+done
 
 
 

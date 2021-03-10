@@ -1103,3 +1103,6 @@ get_stats_plot(indir + 'blast3/bad_contigs.fasta.blast.sum',
   indir + 'blast3/bad_contigs.fasta.blast.sum.overlap.pdf')
 
 
+
+
+blastn -query athal_rrna_chr2_3706_5513.fa -task blastn -db /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta -out test.oblast -outfmt 7 -evalue 1 -num_threads 60 > blast.log
