@@ -24,34 +24,28 @@ bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo repe
     cur.genome.v1.fasta
 "
 cd repeat_region
-tail +4 cur.genome.v1.fasta.out |  awk '{print $5"\t"$6-1"\t"$7}'  > cur.genome.v1.fasta.out.bed
+tail +4 cur.genome.v1.fasta.out | awk '{print $5"\t"$6-1"\t"$7}' >cur.genome.v1.fasta.out.bed
 ## Add buffer of 20 BP around indel positions
-cat cur.genome.v1.fasta.out.bed \
-| awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
-> cur.genome.v1.fasta.out.padded_20.bed
+cat cur.genome.v1.fasta.out.bed |
+  awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
+    >cur.genome.v1.fasta.out.padded_20.bed
 cd ..
 ln -s repeat_region/cur.genome.v1.fasta.out.padded_20.bed cur.genome.v1.repeats.bed
 
-
 # Divide the genome in regions of length 1million
 hometools genome_ranges cur.genome.v1.fasta
-
 
 # Use genmap to get regions which have low mappability (high uniqueness) in the genomes
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
 genmap index -F cur.genome.v1.fasta -I cur.genome.v1.fasta.genmap.idx
 genmap map -I cur.genome.v1.fasta.genmap.idx/ -O cur.genome.v1.fasta.genmap.E0_K51.map -E 0 -K 51 -w -bg -T 60
-cat cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph | awk '{if($4==1) print $0}' > cur.genome.v1.fasta.genmap.E0_K51.map.unique.bedgraph
-
+cat cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph | awk '{if($4==1) print $0}' >cur.genome.v1.fasta.genmap.E0_K51.map.unique.bedgraph
 
 # List of contigs in the currot genome
-grep '>' cur.genome.v1.fasta | sed 's/>//g' > cur.genome.v1.fasta.contig_list
-
+grep '>' cur.genome.v1.fasta | sed 's/>//g' >cur.genome.v1.fasta.contig_list
 
 # Create genome dict for GATK
 java -jar /srv/netscratch/dep_mercier/grp_schneeberger/software/picard_2.25.0/picard.jar CreateSequenceDictionary R=cur.genome.v1.fasta O=cur.genome.v1.dict
-
-
 
 ################################################################################
 ###################### RUN CELLRANGER TO CORRECT BARCODE #######################
@@ -63,8 +57,8 @@ cellranger-dna mkref cur.genome.v1.fasta currot_contig_defs.json
 ## Step 2: Use the indexed genomes and run the cellranger-dna CNV identification pipeline. One of the internediate steps for this pipeline is to barcode correction. We can use the final bam file to get the corrected barcodes.
 ## Currot genome would be used as the reference genome for all analysis (preliminary testing showed that there are not major differences between currot vs orangered)
 
-run_barcode_correction () {
-    bsub -q ioheavy  -n 20 -R "span[hosts=1] rusage[mem=100000]" -M 100000 -oo $1.log -eo $1.err "
+run_barcode_correction() {
+  bsub -q ioheavy -n 20 -R "span[hosts=1] rusage[mem=100000]" -M 100000 -oo $1.log -eo $1.err "
     export _JAVA_OPTIONS=-Xgcthreads4
         cellranger-dna cnv --id=$1 --reference=$2 --fastq=$3 --sample=$4 --localcores=40 --localmem=98
         "
@@ -74,7 +68,7 @@ indir="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads
 python="/netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.7/bin/python"
 filter="/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_short_reads.py"
 
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 <<Useful
 ##  All reads smaller than 50bps were filtered out as cellranger-dna cannot work with smaller reads and there were naked barcode sequenced as reads. (Question: why did naked barcode ended up getting sequenced?)
 for sample in ${samples[@]}; do
@@ -104,8 +98,6 @@ for sample in ${samples[@]}; do
   run_barcode_correction $sample $refcur ${indir}$sample/ $pres
 done
 
-
-
 ## Step 3: Separate reads from the corrected barcode bam file to separate folders corresponding to each barcode, get read count, and align them to the reference
 T10xbam2fq=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/binaries/T10xbam2fq
 asCellseparator=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/binaries/asCellseparator
@@ -114,8 +106,8 @@ curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/a
 
 MIN_RC=10000
 
-get_cell_reads () {
-    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo get_cell_reads.log -eo get_cell_reads.err "
+get_cell_reads() {
+  bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo get_cell_reads.log -eo get_cell_reads.err "
             samtools sort -@ 19 -n $1 -o ${2}_RNsorted_bam.bam
             samtools view -@ 19 ${2}_RNsorted_bam.bam | $T10xbam2fq - ${2}
             mkdir barcodes
@@ -123,8 +115,8 @@ get_cell_reads () {
             "
 }
 
-merge_fastqs () {
-    bsub -q normal -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo merge_fastqs.log -eo merge_fastqs.err "
+merge_fastqs() {
+  bsub -q normal -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo merge_fastqs.log -eo merge_fastqs.err "
         readlink -f barcodes/* > barcodes_list
         while read r; do
             cd \$r
@@ -143,8 +135,8 @@ merge_fastqs () {
         "
 }
 
-align_cells () {
-    bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
+align_cells() {
+  bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
     xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c '
         cd {}
         bc=\$(basename {})
@@ -188,21 +180,18 @@ align_cells () {
     "
 }
 
-
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/cellranger_out/'
 
-
 for sample in ${samples[@]}; do
-    cd $cwd/
-    mkdir $sample
-    cd $sample
-#    get_cell_reads ${indir}/${sample}/outs/possorted_bam.bam $sample
-#    merge_fastqs $sample $cwd
-    align_cells $sample $curidx $curidxbt2
+  cd $cwd/
+  mkdir $sample
+  cd $sample
+  #    get_cell_reads ${indir}/${sample}/outs/possorted_bam.bam $sample
+  #    merge_fastqs $sample $cwd
+  align_cells $sample $curidx $curidxbt2
 done
-
 
 ####################################################################
 ############ Step  3: Aligned pooled data reads and get read-counts at variant positions
@@ -212,7 +201,7 @@ indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/sc
 curidx='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.mm2_Xsr.idx'
 curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 cd $cwd
 
@@ -223,13 +212,13 @@ for sample in ${samples[@]}; do
   cd $sample
   rm ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz
   {
-  while read r; do
-    bc=$(basename $r)
-#    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq | gzip -c >> ${sample}_R1.fastq.gz
-#    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq | gzip -c >> ${sample}_R2.fastq.gz
-    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq.gz  >> ${sample}_R1.fastq.gz
-    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq.gz  >> ${sample}_R2.fastq.gz
-  done < ${indir}${sample}/barcodes_list
+    while read r; do
+      bc=$(basename $r)
+      #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq | gzip -c >> ${sample}_R1.fastq.gz
+      #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq | gzip -c >> ${sample}_R2.fastq.gz
+      cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq.gz >>${sample}_R1.fastq.gz
+      cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq.gz >>${sample}_R2.fastq.gz
+    done <${indir}${sample}/barcodes_list
   } &
 done
 
@@ -281,38 +270,44 @@ for sample in ${samples[@]}; do
   "
 done
 
+## Step 3d: Get read mapping depth histogram
+for sample in ${samples[@]}; do
+  cd $cwd
+  cd $sample
+cut -d' ' -f 4 bam_read_counts_b30_q10.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${sample}_mm2 -xlim 0 400 &
+cut -d' ' -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${sample}_bt2 -xlim 0 400 &
+done
 ####################################################################
 ############ Step 4: Get mutated positions
 ####################################################################
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 ## Step 4a: Get candidate variant positions using heuristic cut-offs
 cd $cwd
 ## Use python3.7 environment
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
- WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
- WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
- MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
- MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
- -s WT_1 WT_19 MUT_11_1 MUT_15 \
- -n 5 &
+  WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
+  WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
+  MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
+  MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
+  -s WT_1 WT_19 MUT_11_1 MUT_15 \
+  -n 5 -m 50 -M 250 &
 
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
- WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
- WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
- MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
- MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
- -s WT_1_bt2 WT_19_bt2 MUT_11_1_bt2 MUT_15_bt2 \
- -n 5 &
-
+  WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
+  WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
+  MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
+  MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
+  -s WT_1_bt2 WT_19_bt2 MUT_11_1_bt2 MUT_15_bt2 \
+  -n 5 -m 50 -M 250 &
 
 # for sample in ${samples[@]}; do
-  # cd $cwd
-  # cd $sample
-  # cat ${sample}_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_only_SNPs_candidate.sorted.regions
-  # cat ${sample}_bt2_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_bt2_only_SNPs_candidate.sorted.regions
+# cd $cwd
+# cd $sample
+# cat ${sample}_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_only_SNPs_candidate.sorted.regions
+# cat ${sample}_bt2_only_SNPs_candidate.sorted.bed | awk '{print $1"\t"$2+1"\t"$3"\t"$4"\t"$5}' > ${sample}_bt2_only_SNPs_candidate.sorted.regions
 # done
 
 ## Intersecting of variant lists resulted in too few candidate variants,
@@ -339,15 +334,15 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 for sample in ${samples[@]}; do
   cd $cwd
   cd $sample
   barcodes_list=${indir}${sample}/barcodes_list
-#  bedfile=$(rf ${sample}_only_SNPs_candidate.sorted.common.regions)
-  bedmm2=$(rf ${sample}_only_SNPs_candidate.regions)
-  bedbt2=$(rf ${sample}_bt2_only_SNPs_candidate.regions)
+  #  bedfile=$(rf ${sample}_only_SNPs_candidate.sorted.common.regions)
+  bedmm2=$(rf ${sample}_SNPs_candidate.regions)
+  bedbt2=$(rf ${sample}_bt2_SNPs_candidate.regions)
   inpath=${indir}${sample}/barcodes/
   mkdir cells_readcount
   cd cells_readcount
@@ -364,7 +359,7 @@ for sample in ${samples[@]}; do
       | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.bt2.txt
     "
     cd ..
-  done < $barcodes_list
+  done <$barcodes_list
 done
 
 ## Use python3.7 environment
@@ -372,24 +367,22 @@ for sample in ${samples[@]}; do
   cd $cwd
   cd $sample
   echo $sample
-  rf cells_readcount/*/*_readcount.txt > mm2_rcfiles.txt
-  rf cells_readcount/*/*_readcount.bt2.txt > bt2_rcfiles.txt
+  rf cells_readcount/*/*_readcount.txt >mm2_rcfiles.txt
+  rf cells_readcount/*/*_readcount.bt2.txt >bt2_rcfiles.txt
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-  ${sample}_filtered_SNPs_candidate.sorted.bed \
-  mm2_rcfiles.txt \
-  -n 5 &
+    ${sample}_filtered_SNPs_candidate.sorted.bed \
+    mm2_rcfiles.txt \
+    -n 5 &
   # ${sample}_only_SNPs_candidate.txt \
-  
+
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-  ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
-  bt2_rcfiles.txt \
-  -o multi_cell_bt2 \
-  -n 5 &
+    ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
+    bt2_rcfiles.txt \
+    -o multi_cell_bt2 \
+    -n 5 &
   # ${sample}_bt2_only_SNPs_candidate.txt \
-  
+
 done
-
-
 
 ####################################################################
 ############ Step 5: Indel positions to be filtered out
@@ -398,12 +391,12 @@ done
 # Add RG tag in the bam files for the four scDNAseq samples
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 picard='/srv/netscratch/dep_mercier/grp_schneeberger/software/picard_2.25.0/picard.jar'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 cd $cwd
 for sample in ${samples[@]}; do
   cd ${cwd}/$sample
-    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_mm2.log -eo RG_mm2.err "
+  bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_mm2.log -eo RG_mm2.err "
       java -XX:ParallelGCThreads=1 -XX:ActiveProcessorCount=1 \
         -jar $picard AddOrReplaceReadGroups \
         I=${sample}.sorted.bam \
@@ -412,7 +405,7 @@ for sample in ${samples[@]}; do
       samtools index ${sample}.sorted.RG.bam
     "
 
-    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_bt2.log -eo RG_bt2.err "
+  bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG_bt2.log -eo RG_bt2.err "
       java -XX:ParallelGCThreads=1 -XX:ActiveProcessorCount=1 \
         -jar $picard AddOrReplaceReadGroups \
         I=${sample}.sorted.bt2.bam \
@@ -426,7 +419,7 @@ done
 
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 # Manta
 manta_config='/srv/netscratch/dep_mercier/grp_schneeberger/software/manta-1.6.0.centos6_x86_64/bin/configManta.py'
@@ -500,7 +493,7 @@ for sample in ${samples[@]}; do
   # Run job for MM2 alignments
   mkdir mm2
   cd mm2
-  bsub -q multicore40 -n 40  -R "span[hosts=1] rusage[mem=30000]" -M 36000 -o samtools_mm2.log -e samtools_mm2.err "
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=30000]" -M 36000 -o samtools_mm2.log -e samtools_mm2.err "
     cat $cur_contig_list \
     | sed 's/\\n/ /g' \
     | xargs -d '\n' -n 1 -P 40 -I {} /bin/bash -c ' \
@@ -522,7 +515,7 @@ for sample in ${samples[@]}; do
   cd ..
   mkdir bt2
   cd bt2
-  bsub -q multicore40 -n 40  -R "span[hosts=1] rusage[mem=30000]" -M 36000 -o samtools_bt2.log -e samtools_bt2.err "
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=30000]" -M 36000 -o samtools_bt2.log -e samtools_bt2.err "
     cat $cur_contig_list \
     | sed 's/\\n/ /g' \
     | xargs -d '\n' -n 1 -P 40 -I {} /bin/bash -c ' \
@@ -552,41 +545,41 @@ for sample in ${samples[@]}; do
   mkdir bt2
 
   # Step 1
-   # while read r; do
-     # r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
-     # cd mm2
-     # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
-      # gatk $jv \
-        # HaplotypeCaller \
-        # -R $refcur \
-        # -I ${cwd}/${sample}/${sample}.sorted.RG.bam \
-        # -O ${r2}.vcf.gz \
-        # --native-pair-hmm-threads 1 \
-        # -L $r
-     # "
-     # cd ..
-     # cd bt2
-     # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
-      # gatk $jv \
-        # HaplotypeCaller \
-        # -R $refcur \
-        # -I ${cwd}/${sample}/${sample}.sorted.RG.bt2.bam \
-        # -O ${r2}.vcf.gz \
-        # --native-pair-hmm-threads 1 \
-        # -L $r
-     # "
-     # cd ..
-   # done < $regions
+  # while read r; do
+  # r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
+  # cd mm2
+  # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
+  # gatk $jv \
+  # HaplotypeCaller \
+  # -R $refcur \
+  # -I ${cwd}/${sample}/${sample}.sorted.RG.bam \
+  # -O ${r2}.vcf.gz \
+  # --native-pair-hmm-threads 1 \
+  # -L $r
+  # "
+  # cd ..
+  # cd bt2
+  # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
+  # gatk $jv \
+  # HaplotypeCaller \
+  # -R $refcur \
+  # -I ${cwd}/${sample}/${sample}.sorted.RG.bt2.bam \
+  # -O ${r2}.vcf.gz \
+  # --native-pair-hmm-threads 1 \
+  # -L $r
+  # "
+  # cd ..
+  # done < $regions
 
   # Step 2
   for dir in mm2 bt2; do
-   cd $dir
-   if [[ $dir == mm2 ]]; then
-     mq_value='50.00'
-   else
-     mq_value='35.00'
-   fi
-   bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo indel.log -eo indel.err "
+    cd $dir
+    if [[ $dir == mm2 ]]; then
+      mq_value='50.00'
+    else
+      mq_value='35.00'
+    fi
+    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo indel.log -eo indel.err "
      ls CUR*.vcf.gz > variants.list
      # gatk $jv CombineGVCFs \
        # -R $refcur \
@@ -618,55 +611,49 @@ for sample in ${samples[@]}; do
      vcf2bed --do-not-sort --deletions <indels.vcf> deletions.bed
      rm TMP.*
    "
-   cd ..
+    cd ..
   done
 done
-
-
 
 # Merge all the called indel calls. This will give us all regions where identified
 # sSNVs would be of low confidence because of alignment errors.
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 for sample in ${samples[@]}; do
   echo $sample
   cd $cwd/$sample/indels
   rm insertions.list deletions.list
 
-  ls manta/*/*insertions.bed >> insertions.list
-  ls samtools/*/*insertions.bed >> insertions.list
-  ls gatk_hc/*/*insertions.bed >> insertions.list
+  ls manta/*/*insertions.bed >>insertions.list
+  ls samtools/*/*insertions.bed >>insertions.list
+  ls gatk_hc/*/*insertions.bed >>insertions.list
   while read r; do
-    cat $r >> insertions.all.bed
-  done < insertions.list
-  cut -f1,2,3 insertions.all.bed > insertions.bed
-  sortBed -faidx /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai -i insertions.bed > insertions.sorted.bed
-  mergeBed -i insertions.sorted.bed > insertions.sorted.merged.bed
+    cat $r >>insertions.all.bed
+  done <insertions.list
+  cut -f1,2,3 insertions.all.bed >insertions.bed
+  sortBed -faidx /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai -i insertions.bed >insertions.sorted.bed
+  mergeBed -i insertions.sorted.bed >insertions.sorted.merged.bed
 
-  ls manta/*/*deletions.bed >> deletions.list
-  ls samtools/*/*deletions.bed >> deletions.list
-  ls gatk_hc/*/*deletions.bed >> deletions.list
+  ls manta/*/*deletions.bed >>deletions.list
+  ls samtools/*/*deletions.bed >>deletions.list
+  ls gatk_hc/*/*deletions.bed >>deletions.list
   while read r; do
-    cat $r >> deletions.all.bed
-  done < deletions.list
-  cut -f1,2,3 deletions.all.bed > deletions.bed
-  sortBed -faidx /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai -i deletions.bed > deletions.sorted.bed
-  mergeBed -i deletions.sorted.bed > deletions.sorted.merged.bed
+    cat $r >>deletions.all.bed
+  done <deletions.list
+  cut -f1,2,3 deletions.all.bed >deletions.bed
+  sortBed -faidx /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai -i deletions.bed >deletions.sorted.bed
+  mergeBed -i deletions.sorted.bed >deletions.sorted.merged.bed
 
   ## Add buffer of 20 BP around indel positions
-  cat insertions.sorted.merged.bed \
-  | awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
-  > insertions.sorted.merged.padded_20.bed
-  cat deletions.sorted.merged.bed \
-  | awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
-  > deletions.sorted.merged.padded_20.bed
+  cat insertions.sorted.merged.bed |
+    awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
+      >insertions.sorted.merged.padded_20.bed
+  cat deletions.sorted.merged.bed |
+    awk '{printf $1"\t"} {if($2<20) {printf 0"\t"} else {printf $2-20"\t"}} {print $3+20}' \
+      >deletions.sorted.merged.padded_20.bed
 
   rm *.all.bed *.sorted.bed insertions.bed deletions.bed
 done
-
-
-
-
 
 ## Step 4c: Select candidates that are in highly unqiue (low mappability) regions
 
@@ -674,20 +661,20 @@ cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdn
 unimapbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.genmap.E0_K51.map.unique.bedgraph'
 repeatbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/repeat_region/cur.genome.v1.fasta.out.padded_20.bed'
 # inbed='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta.genmap.E0_K51.map.unique.bedgraph'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 cd $cwd
 ## Use python3.7 environment
 for sample in ${samples[@]}; do
   cd $cwd
   cd $sample
   echo $sample
-  
-  # FOR MM2 SNPs  
+
+  # FOR MM2 SNPs
   # Select candidates that are in uniquely mapping regions
   # cat multi_cell_${sample}_filtered_SNPs_candidate.sorted.bed \
   # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
   # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed
-  
+
   # bedtools intersect \
   # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
   # -b $unimapbed \
@@ -696,30 +683,29 @@ for sample in ${samples[@]}; do
 
   # # Remove candidates near repeatitive regions
   # bedtools intersect \
-    # -v \
-    # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed \
-    # -b $repeatbed \
+  # -v \
+  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed \
+  # -b $repeatbed \
   # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
   # # Remove candidates near indels
   # bedtools intersect \
-    # -v \
-    # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
-    # -b indels/deletions.sorted.merged.padded_20.bed \
-    # > no_del.bed
+  # -v \
+  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+  # -b indels/deletions.sorted.merged.padded_20.bed \
+  # > no_del.bed
   # bedtools intersect \
   # -v \
   # -a no_del.bed \
   # -b indels/insertions.sorted.merged.padded_20.bed \
   # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
-  
-  
-  # # FOR BT2 SNPs  
+
+  # # FOR BT2 SNPs
   # # Select candidates that are in uniquely mapping regions
   # cat multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
   # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
   # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed
-  
+
   # bedtools intersect \
   # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
   # -b $unimapbed \
@@ -728,33 +714,33 @@ for sample in ${samples[@]}; do
 
   # # Remove candidates near repeatitive regions
   # bedtools intersect \
-    # -v \
-    # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed \
-    # -b $repeatbed \
+  # -v \
+  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed \
+  # -b $repeatbed \
   # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
   # # Remove candidates near indels
   # bedtools intersect \
-    # -v \
-    # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
-    # -b indels/deletions.sorted.merged.padded_20.bed \
-    # > no_del_bt2.bed
+  # -v \
+  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+  # -b indels/deletions.sorted.merged.padded_20.bed \
+  # > no_del_bt2.bed
   # bedtools intersect \
   # -v \
   # -a no_del_bt2.bed \
   # -b indels/insertions.sorted.merged.padded_20.bed \
   # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
 
-  cut -f6 multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-  | sort -n \
-  | uniq -c \
-  | hometools plthist -o ${sample}_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_mm2 &
-  
-  cut -f6 multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
-  | sort -n \
-  | uniq -c \
-  | hometools plthist -o ${sample}_bt2_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_bt2 &
-  
+  cut -f6 multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed |
+    sort -n |
+    uniq -c |
+    hometools plthist -o ${sample}_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_mm2 &
+
+  cut -f6 multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed |
+    sort -n |
+    uniq -c |
+    hometools plthist -o ${sample}_bt2_candidates_allele_counts.pdf -W 6 -H 3 -x alternate allele count -y number of candidates -ylog -t ${sample}_bt2 &
+
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_mutation_changes_histogram.py \
     -f multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
     multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed \
@@ -777,7 +763,6 @@ done
 # 30438 WT_1/multi_cell_bt2_WT_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
 # 57612 WT_1/multi_cell_WT_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
 
-
 # Number of candidate SNPS when candidates in other samples are filtered out
 # 10179 MUT_11_1/multi_cell_bt2_MUT_11_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 # 16217 MUT_11_1/multi_cell_MUT_11_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
@@ -788,12 +773,11 @@ done
 # 7332 WT_1/multi_cell_bt2_WT_1_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 # 12644 WT_1/multi_cell_WT_1_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
-
 # Step 4d: Perform read-level filtering
 
 # run using python 3.7
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 for sample in ${samples[@]}; do
   cd ${cwd}/${sample}
@@ -810,10 +794,6 @@ for sample in ${samples[@]}; do
     -o ${sample}_bt2 &
 done
 
-
-
-
-
 ## STEP 5a : STRELKA BASED sSNVs
 # Calling variants using Strelka: For each sample, call
 # variant in that sample (considering it as tumor) compared
@@ -826,7 +806,7 @@ indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/sc
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/tool_based_analysis/strelka/'
 stlka_config='/srv/netscratch/dep_mercier/grp_schneeberger/software/strelka-2.9.2.centos6_x86_64/bin/configureStrelkaSomaticWorkflow.py'
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 ## Run strelka on all combinations of samples
 for sample in ${samples[@]}; do
@@ -875,8 +855,6 @@ for sample in ${samples[@]}; do
   done
 done
 
-
-
 ## STEP 5b : Mutect2 BASED sSNVs
 # First call mutations in all individual samples, RojoPassion,
 # and the parents data in tumor-only mode. Then for each sample
@@ -885,10 +863,9 @@ done
 # comparative mode using sample data (from cell reads) and the
 # corresponding Panel_of_Normals.
 
-
 # Add RG tag in the bam files for the Currot and OrangeRed samples
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/'
-samples=( 'currot' 'orangered' )
+samples=('currot' 'orangered')
 for sample in ${samples[@]}; do
   cd ${cwd}/$sample
   bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 8000 -oo RG.log -eo RG.err "
@@ -953,7 +930,7 @@ for sample in ${samples[@]}; do
 
   # Step 1
   while read r; do
-    r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
+    r2=$(echo $r | sed 's/:/_/g' | sed 's/-/_/g')
     bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}_mm2.log -eo ${r2}_mm2.err "
       gatk --java-options '-Xms5G -Xmx5G -XX:ParallelGCThreads=1' \
         Mutect2 \
@@ -965,7 +942,7 @@ for sample in ${samples[@]}; do
         -L $r
     "
 
-     bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}_bt2.log -eo ${r2}_bt2.err "
+    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}_bt2.log -eo ${r2}_bt2.err "
       gatk --java-options '-Xms5G -Xmx5G -XX:ParallelGCThreads=1' \
         Mutect2 \
         -R $refcur \
@@ -975,7 +952,7 @@ for sample in ${samples[@]}; do
         --native-pair-hmm-threads 1 \
         -L $r
     "
-  done < $regions
+  done <$regions
 
   # Step 2
   bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo sort.log -eo sort.err "
@@ -987,11 +964,10 @@ for sample in ${samples[@]}; do
   "
 done
 
-
 # Get variations in tumor-only mode for the Currot and OrangeRed samples
 refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/'
-samples=( 'currot' 'orangered' )
+samples=('currot' 'orangered')
 for sample in ${samples[@]}; do
   cd ${cwd}/$sample
   mkdir mutect2_var_call
@@ -999,7 +975,7 @@ for sample in ${samples[@]}; do
 
   # Step 1
   while read r; do
-    r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
+    r2=$(echo $r | sed 's/:/_/g' | sed 's/-/_/g')
     bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}_mm2.log -eo ${r2}_mm2.err "
       gatk --java-options '-Xms5G -Xmx5G -XX:ParallelGCThreads=1' \
         Mutect2 \
@@ -1010,7 +986,7 @@ for sample in ${samples[@]}; do
           --native-pair-hmm-threads 1 \
           -L $r
     "
-  done < $regions
+  done <$regions
 
   # Step 2
   bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo sort.log -eo sort.err "
@@ -1023,11 +999,11 @@ done
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/tool_based_analysis/mutect2/'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 regions='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.ranges.formatted.txt'
-samples=( "MUT_11_1" "MUT_15" "WT_1" "WT_19" )
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 cd $cwd
 
-rf  */tumor_only_mode/all_variants.mm2.sorted.vcf.gz > variants_mm2.args
-rf  */tumor_only_mode/all_variants.bt2.sorted.vcf.gz > variants_bt2.args
+rf */tumor_only_mode/all_variants.mm2.sorted.vcf.gz >variants_mm2.args
+rf */tumor_only_mode/all_variants.bt2.sorted.vcf.gz >variants_bt2.args
 echo /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/rp_leaf_illumina/merged_samples/all_variants.sorted.vcf.gz | tee -a variants_mm2.args variants_bt2.args
 echo /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/currot/mutect2_var_call/all_variants.sorted.vcf.gz | tee -a variants_mm2.args variants_bt2.args
 echo /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/orangered/mutect2_var_call/all_variants.sorted.vcf.gz | tee -a variants_mm2.args variants_bt2.args
@@ -1071,7 +1047,7 @@ for sample in ${samples[@]}; do
           if [[ $r != "CUR"* ]]; then
             continue
           else
-            r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
+            r2=$(echo $r | sed 's/:/_/g' | sed 's/-/_/g')
             bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
               gatk --java-options '-Xms5G -Xmx5G -XX:ParallelGCThreads=1 -XX:ActiveProcessorCount=1' \
                 Mutect2 \
@@ -1086,7 +1062,7 @@ for sample in ${samples[@]}; do
                   -L $r
             "
           fi
-        done < $regions
+        done <$regions
         cd ..
       fi
     done
@@ -1094,13 +1070,12 @@ for sample in ${samples[@]}; do
   done
 done
 
-
 #######################################################################################
 ######################## END OF NECESSARY COMMANDS ####################################
 #######################################################################################
 ## Testing commands
 cd $cwd
-samtools depth -a -q 30 -Q 10 -d 0 WT_1/WT_1.sorted.bam WT_19/WT_19.sorted.bam MUT_11_1/MUT_11_1.sorted.bam MUT_15/MUT_15.sorted.bam > read_depth_q30_Q10.txt
+samtools depth -a -q 30 -Q 10 -d 0 WT_1/WT_1.sorted.bam WT_19/WT_19.sorted.bam MUT_11_1/MUT_11_1.sorted.bam MUT_15/MUT_15.sorted.bam >read_depth_q30_Q10.txt
 
 #-----------------------------------------------------------------------
 ## Test different sSNP identification methods using simulated BAM files
@@ -1111,16 +1086,16 @@ cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdn
 cd $cwd
 
 bowtie2 --end-to-end \
-        --very-sensitive \
-        --threads 40 \
-        -x $curidxbt2 \
-        -1 WT_1_R1.fastq.gz \
-        -2 WT_1_R2.fastq.gz \
-        -S CUR1G.bt2.sam
+  --very-sensitive \
+  --threads 40 \
+  -x $curidxbt2 \
+  -1 WT_1_R1.fastq.gz \
+  -2 WT_1_R2.fastq.gz \
+  -S CUR1G.bt2.sam
 
-samtools sort -O BAM CUR1G.bt2.sam > CUR1G.bt2.sorted.bam
+samtools sort -O BAM CUR1G.bt2.sam >CUR1G.bt2.sorted.bam
 samtools index CUR1G.bt2.sorted.bam
-samtools view -b -f 2 CUR1G.bt2.sorted.bam > CUR1G.bt2.sorted.onlymapped.bam
+samtools view -b -f 2 CUR1G.bt2.sorted.bam >CUR1G.bt2.sorted.onlymapped.bam
 
 # Add RG information
 java -jar $picard AddOrReplaceReadGroups I=CUR1G.bt2.sorted.onlymapped.bam O=CUR1G.bt2.sorted.onlymapped.RG.bam LB=WT_1 PL=illumina PU=unit1 SM=1
@@ -1131,9 +1106,9 @@ java -jar $picard ValidateSamFile I=CUR1G.bt2.sorted.onlymapped.RG.bam O=validat
 samtools index CUR1G.bt2.sorted.onlymapped.RG.bam
 
 # Get all positions with no alternate base and read-coverage between 100-200 bps, SNPs would be added within these positions only
-bam-readcount -w 0 -f $refcur CUR1G.bt2.sorted.onlymapped.RG.bam \
-| awk '{if($4>=100 && $4<=200) {n1=split($6,a,":"); n2=split($7,b,":"); n3=split($8,c, ":"); n4=split($9,d,":"); n5=split($10,e,":");  print $1, $2, $3, $4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' \
- > bam_read_counts_b30_q20.bt2.txt
+bam-readcount -w 0 -f $refcur CUR1G.bt2.sorted.onlymapped.RG.bam |
+  awk '{if($4>=100 && $4<=200) {n1=split($6,a,":"); n2=split($7,b,":"); n3=split($8,c, ":"); n4=split($9,d,":"); n5=split($10,e,":");  print $1, $2, $3, $4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' \
+    >bam_read_counts_b30_q20.bt2.txt
 
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/tool_based_analysis/test_on_simulated_data/get_conserved_positions.py bam_read_counts_b30_q20.bt2.txt
 
@@ -1151,7 +1126,7 @@ addsnv.py -v mutate_loci_bam_read_counts_b30_q20.bt2.txt \
   --seed 1
 
 cd WT_1
-samtools sort -O BAM -@ 50 CUR1G.bt2.sorted.onlymapped.RG.spiked.bam > CUR1G.spiked.sorted.bam
+samtools sort -O BAM -@ 50 CUR1G.bt2.sorted.onlymapped.RG.spiked.bam >CUR1G.spiked.sorted.bam
 samtools index CUR1G.spiked.sorted.bam
 
 ## ABOVE STEPS ARE REPEATED FOR WT_19 SAMPLE AS WELL
@@ -1160,11 +1135,11 @@ samtools index CUR1G.spiked.sorted.bam
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/tool_based_analysis/test_on_simulated_data/'
 cd $cwd
 python /srv/netscratch/dep_mercier/grp_schneeberger/software/strelka-2.9.2.centos6_x86_64/bin/configureStrelkaSomaticWorkflow.py \
- --normalBam WT_19/CUR1G.bt2.sorted.onlymapped.RG.bam \
- --tumourBam WT_1/CUR1G.spiked.sorted.bam \
- --referenceFasta CUR1G.fasta \
- --runDir ./mut_in_wt_1 \
- --scanSizeMb 2
+  --normalBam WT_19/CUR1G.bt2.sorted.onlymapped.RG.bam \
+  --tumourBam WT_1/CUR1G.spiked.sorted.bam \
+  --referenceFasta CUR1G.fasta \
+  --runDir ./mut_in_wt_1 \
+  --scanSizeMb 2
 cd mut_in_wt_1
 python ./runWorkflow.py \
   -m local \
@@ -1209,39 +1184,36 @@ refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/
 # Get pileup data
 
-
 gatk VariantsToTable \
   -R $refcur \
   -V TMP.indel.vcf \
   -F CHROM -F POS -F QUAL -F QD -F DP -F MQ -F MQRankSum -F FS -F ReadPosRankSum -F SOR \
   -O TMP.indel.table
 
-
 gatk CombineGVCFs \
-          -R $refcur \
-          -V variants.list  \
-          -O TMP.g.vcf.gz
-        gatk GenotypeGVCFs \
-          -R $refcur \
-          -V TMP.g.vcf.gz \
-          -O TMP.vcf
-        gatk SelectVariants \
-          -R $refcur \
-          -V TMP.vcf \
-          --select-type-to-include INDEL \
-          -O TMP.indel.vcf
-        gatk VariantFiltration \
-         -R $refcur \
-         -V TMP.indel.vcf \
-         -O TMP.indel.filter.vcf \
-         --filter-expression \"QUAL < 0 || QD < 2.00 || FS > 60.000 || SOR > 3.000  || MQ < $mq_value || MQRankSum < -10.00 || ReadPosRankSum < -6.000 || ReadPosRankSum > 4.000\" \
-         --filter-name \"indel_filter\" \
-         --filter-expression \"DP < 50 || DP > 300\" \
-         --filter-name \"DP_filter\"
-        grep -E '^#|PASS' TMP.indel.filter.vcf > indels.vcf
-        vcf2bed --do-not-sort --insertions <indels.vcf> insertions.bed
-        vcf2bed --do-not-sort --deletions <indels.vcf> deletions.bed
-
+  -R $refcur \
+  -V variants.list \
+  -O TMP.g.vcf.gz
+gatk GenotypeGVCFs \
+  -R $refcur \
+  -V TMP.g.vcf.gz \
+  -O TMP.vcf
+gatk SelectVariants \
+  -R $refcur \
+  -V TMP.vcf \
+  --select-type-to-include INDEL \
+  -O TMP.indel.vcf
+gatk VariantFiltration \
+  -R $refcur \
+  -V TMP.indel.vcf \
+  -O TMP.indel.filter.vcf \
+  --filter-expression \"QUAL <0 || QD <2.00 || FS >60.000 || SOR >3.000 || MQ <$mq_value || MQRankSum <-10.00 || ReadPosRankSum <-6.000 || ReadPosRankSum >4.000\" \
+  --filter-name \"indel_filter\" \
+  --filter-expression \"DP <50 || DP >300\" \
+  --filter-name \"DP_filter\"
+grep -E '^#|PASS' TMP.indel.filter.vcf >indels.vcf
+vcf2bed --do-not-sort --insertions <indels.vcf >insertions.bed
+vcf2bed --do-not-sort --deletions <indels.vcf >deletions.bed
 
 gatk VariantFiltration \
   -R $refcur \
@@ -1251,6 +1223,6 @@ gatk VariantFiltration \
   --filter-name "indel_filter" \
   --filter-expression "DP < 50 || DP > 300" \
   --filter-name "DP_filter"
-        grep -E '^#|PASS' TMP.indel.filter.vcf > indels.vcf
-        vcf2bed --do-not-sort --insertions <indels.vcf> insertions.bed
-        vcf2bed --do-not-sort --deletions <indels.vcf> deletions.bed
+grep -E '^#|PASS' TMP.indel.filter.vcf >indels.vcf
+vcf2bed --do-not-sort --insertions <indels.vcf >insertions.bed
+vcf2bed --do-not-sort --deletions <indels.vcf >deletions.bed
