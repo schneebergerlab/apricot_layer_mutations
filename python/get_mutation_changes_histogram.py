@@ -43,8 +43,7 @@ def get_mut_plt(args):
         mutdata[SAMPLES[i]] = count_mut_type(fin, args.rc, args.qc)
         fin.close()
 
-    from matplotlib import pyplot as plt
-    import numpy as np
+
 
     fig = plt.figure(figsize=[args.W, args.H])
     ax = fig.add_subplot()
@@ -82,6 +81,50 @@ def get_mut_plt(args):
     plt.savefig(args.o.name)
     plt.close()
 
+def get_mut_rc(args):
+    import numpy as np
+
+    nuc = ('A', 'C', 'G', 'T')
+    mut = {'AC': [], 'AG': [], 'AT': [],
+           'CA': [], 'CG': [], 'CT': [],
+           'GA': [], 'GC': [], 'GT': [],
+           'TA': [], 'TC': [], 'TG': []}
+    rc = args.rc
+    qc = args.qc
+    for line in open(args.f[0].name, 'r'):
+        line = line.strip().split()
+        try:
+            if line[rc-1].upper() not in nuc or line[qc-1].upper() not in nuc:
+                raise ValueError('Row {} have incorrect base. Only A, C, G, T are accepted'.format(' '.join(line)))
+                sys.exit()
+            mut[line[rc-1].upper() + line[qc-1].upper()].append(int(line[5]))
+        except IndexError:
+            raise IndexError('Row {} do not have columns corresponding to reference/query allele'.format(' '.join(line)))
+            sys.exit()
+    labels = ['A:T-->G:C',
+              'G:C-->A:T',
+              'A:T-->T:A',
+              'G:C-->T:A',
+              'A:T-->C:G',
+              'G:C-->C:G']
+    y = np.array([mut['AG'] + mut['TC'],
+                  mut['GA'] + mut['CT'],
+                  mut['AT'] + mut['TA'],
+                  mut['GT'] + mut['CA'],
+                  mut['AC'] + mut['TG'],
+                  mut['GC'] + mut['CG']])
+    x = [i for i in range(len(y)) for k in y[i]]
+    x += np.random.normal(scale=0.1, size=len(x))
+    y = [j for i in y for j in i]
+    plt.scatter(x, y)
+    plt.xticks(ticks=range(6), labels=labels)
+    plt.title('Alt Allele readcount')
+    plt.ylabel('readcount')
+    plt.xlabel('Mutations')
+    plt.tight_layout()
+    plt.savefig('mutant_change_readcount.pdf')
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Generate histograms for different mutation changes using table input", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -98,11 +141,10 @@ if __name__ == '__main__':
     parser.add_argument("-x", help="X-axis label", type=str, default='value', nargs='+')
     parser.add_argument("-y", help="Y-axis label", type=str, default='counts', nargs='+')
     parser.add_argument("-ymax", help="Upper limit for y-axis", type=float, default=None)
-    # parser.add_argument("-xlog", help="X-axis on log scale", default=False, action='store_true')
-    # parser.add_argument("-ylog", help="Y-axis on log scale", default=False, action='store_true')
-
 
     args = parser.parse_args()
-    # args = parser.parse_args('-f /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/MUT_11_1/TMP1.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/MUT_11_1/TMP2.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/MUT_11_1/TMP2.txt -rc 6 -qc 7 -samples TMP1 TMP2 TMP2 -ymax 40'.split())
 
+    from matplotlib import pyplot as plt
+    import numpy as np
     get_mut_plt(args)
+    get_mut_rc(args)

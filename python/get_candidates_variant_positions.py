@@ -30,8 +30,8 @@ def write_pos_only_snps(fin, fout, pos, CAN_N, RC_MIN, RC_MAX, CAN_CNT):
             # count = 0
         for line in f:
             line = line.strip().split()
-            if int(line[5]) < RC_MIN: continue
-            if int(line[5]) > RC_MAX: continue
+            if int(line[3]) < RC_MIN: continue
+            if int(line[3]) > RC_MAX: continue
             hf = 0
             # for i in [4, 5, 6, 7, 10, 12, 14]:
             for i in [4, 5, 6, 7]:
@@ -152,8 +152,8 @@ if __name__=='__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('f', help='path to bam_readcount output files', type=argparse.FileType('r'), nargs='+')
     parser.add_argument('-n', dest='n', help='minimum number of non-reference reads for selecting good candidates', type=int, default=4)
-    parser.add_argument('-m', dest='m', help='minimum number of coverage at position', type=int, default=50)
-    parser.add_argument('-M', dest='M', help='maximum number of coverage at position', type=int, default=350)
+    parser.add_argument('-m', dest='m', help='minimum coverage at position', type=int, default=50)
+    parser.add_argument('-M', dest='M', help='maximum coverage at position', type=int, default=350)
     parser.add_argument('-s', dest='s', help='prefix for output files', type=str, default='pos', nargs='+')
     parser.add_argument('-N', dest='N', help='Number of candidates to output (-1 for all candidates)', type=int, default=-1)
 
@@ -182,28 +182,28 @@ if __name__=='__main__':
     from upsetplot import UpSet
 
 
-    pos_list = deque()
-    for f in FINS:
-        pos_list.append(get_pos(f))
+    # pos_list = deque()
+    # for f in FINS:
+        # pos_list.append(get_pos(f))
 
-    for i in range(N):
-        for k in pos_list[i].keys():
-            pos_list[i][k] = set(pos_list[i][k])
+    # for i in range(N):
+        # for k in pos_list[i].keys():
+            # pos_list[i][k] = set(pos_list[i][k])
 
-    for i in range(N):
-        # For each sample select and write only SNP positions
-        if '/'.join(FINS[i].split("/")[:-1]) == '':
-            fout = './' + "/{}".format(PRES[i]) + 'SNPs_candidate'
-        else:
-            fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'SNPs_candidate'
-        write_pos_only_snps(FINS[i], fout, pos_list[i], CAN_N, RC_MIN, RC_MAX, CAN_CNT)
-
-        # # For each sample select candidate SNP positions and output them
+    # for i in range(N):
+        # # For each sample select and write only SNP positions
         # if '/'.join(FINS[i].split("/")[:-1]) == '':
-        #     fout2 = './' + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
+            # fout = './' + "/{}".format(PRES[i]) + 'SNPs_candidate'
         # else:
-        #     fout2 = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
-        # select_candidate_pos(fout, fout2,  CAN_CNT, CAN_N, RC_MIN, RC_MAX)
+            # fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'SNPs_candidate'
+        # write_pos_only_snps(FINS[i], fout, pos_list[i], CAN_N, RC_MIN, RC_MAX, CAN_CNT)
+
+        # # # For each sample select candidate SNP positions and output them
+        # # if '/'.join(FINS[i].split("/")[:-1]) == '':
+        # #     fout2 = './' + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
+        # # else:
+        # #     fout2 = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'only_SNPs_candidate'
+        # # select_candidate_pos(fout, fout2,  CAN_CNT, CAN_N, RC_MIN, RC_MAX)
 
     import pybedtools
     beds = deque()
@@ -214,36 +214,36 @@ if __name__=='__main__':
             fout2 = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'SNPs_candidate'
         beds.append(pybedtools.BedTool(fout2 + '.sorted.bed'))
 
-    beds_df = deque()
-    for i in range(N):
-        pos = deque()
-        for b in beds[i]:
-            # if int(list(b)[5]) < 10: continue
-            pos.append('_'.join(list(b)[:2]))
-        pos = pd.DataFrame(list(pos))
+    # beds_df = deque()
+    # for i in range(N):
+        # pos = deque()
+        # for b in beds[i]:
+            # # if int(list(b)[5]) < 10: continue
+            # pos.append('_'.join(list(b)[:2]))
+        # pos = pd.DataFrame(list(pos))
 
-        # pos[1] = pos[1].astype('int')
-        beds_df.append(pos)
+        # # pos[1] = pos[1].astype('int')
+        # beds_df.append(pos)
 
-    for i in range(N):
-        beds_df[i].sort_values([0], inplace=True)
+    # for i in range(N):
+        # beds_df[i].sort_values([0], inplace=True)
 
-    merge_df = beds_df[0]
-    for i in range(1, N):
-        merge_df = merge_df.merge(beds_df[i], 'outer', on = [0])
+    # merge_df = beds_df[0]
+    # for i in range(1, N):
+        # merge_df = merge_df.merge(beds_df[i], 'outer', on = [0])
 
-    merge_df.sort_values([0], inplace=True)
-    merge_df.index = range(merge_df.shape[0])
+    # merge_df.sort_values([0], inplace=True)
+    # merge_df.index = range(merge_df.shape[0])
 
-    for i in range(N):
-        merge_df[args.s[i]] = merge_df[0].isin(beds_df[i][0])
-    merge_df = merge_df.set_index(args.s)
-    upset = UpSet(merge_df, subset_size='count', intersection_plot_elements=3, element_size=40)
-    fig = plt.figure(figsize=[8, 8])
-    upset.plot(fig=fig)
-    plt.yscale('log')
-     # plt.show()
-    plt.savefig('_'.join(args.s) + ".pdf")
+    # for i in range(N):
+        # merge_df[args.s[i]] = merge_df[0].isin(beds_df[i][0])
+    # merge_df = merge_df.set_index(args.s)
+    # upset = UpSet(merge_df, subset_size='count', intersection_plot_elements=3, element_size=40)
+    # fig = plt.figure(figsize=[8, 8])
+    # upset.plot(fig=fig)
+    # plt.yscale('log')
+     # # plt.show()
+    # plt.savefig('_'.join(args.s) + ".pdf")
 
 
 
@@ -255,17 +255,36 @@ if __name__=='__main__':
     Now, I first select candidate SNPs in each sample, and then select sample
     specific SNPs by removing candidate SNPs in other samples.
     """
-    inallbeds = beds[0] + beds[1] + beds[2] + beds[3]
-    beds_uni = beds.copy()
+    
+    beds_reg = {}
     for i in range(N):
-        # rem_bed = set(range(N)) - set([i])
-        # for j in rem_bed:
-        #     beds_uni[i] = beds_uni[i] - beds[j]
-        beds_uni[i] = beds_uni[i] - inallbeds
+        # count = 0
+        for b in beds[i]:
+            # count += 1
+            # if count == 101: break
+            try:
+                beds_reg['_'.join(list(b)[:5])] += 1
+            except KeyError  as e:
+                beds_reg['_'.join(list(b)[:5])] = 1
+            # break
+
+    bad_pos = set([k for k,v in beds_reg.items() if v == N])
+
+    # inallbeds = beds[0] + beds[1] + beds[2] + beds[3]
+    # beds_uni = beds.copy()
+    # for i in range(N):
+        # # rem_bed = set(range(N)) - set([i])
+        # # for j in rem_bed:
+        # #     beds_uni[i] = beds_uni[i] - beds[j]
+        # beds_uni[i] = beds_uni[i] - inallbeds
 
     for i in range(N):
         if '/'.join(FINS[i].split("/")[:-1]) == '':
             fout = './' + "/{}".format(PRES[i]) + 'filtered_SNPs_candidate.sorted.bed'
         else:
             fout = '/'.join(FINS[i].split("/")[:-1]) + "/{}".format(PRES[i]) + 'filtered_SNPs_candidate.sorted.bed'
-        beds_uni[i].saveas(fout)
+        with open(fout, 'w') as f:
+            for b in beds[i]:
+                if '_'.join(list(b)[:5]) not in bad_pos:
+                    f.write('\t'.join(list(b)) + '\n')
+        # beds_uni[i].saveas(fout)

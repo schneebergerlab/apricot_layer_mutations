@@ -346,20 +346,35 @@ for sample in ${samples[@]}; do
   inpath=${indir}${sample}/barcodes/
   mkdir cells_readcount
   cd cells_readcount
-  while read r; do
-    bc=$(basename $r)
-    mkdir $bc
-    cd $bc
-    bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc.log -eo rc.err "
-      bam-readcount -b 30 -q 10 -w 0 -l $bedmm2 -f $refcur ${inpath}/${bc}/${bc}.DUPmarked.deduped.bam \
-      | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.txt
-    "
-    bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc_at_candidate.log -eo rc_at_candidate.err "
-      bam-readcount -b 30 -q 10 -w 0 -l $bedbt2 -f $refcur ${inpath}/${bc}/${bc}_dedup.bt2.sorted.bam \
-      | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.bt2.txt
-    "
-    cd ..
-  done <$barcodes_list
+  
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo rc.log -eo rc.err "
+    xargs -a $barcodes_list \
+    -P 40 \
+    -I {} \
+    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_mm2.sh $bedmm2 $refcur $inpath {}
+  "
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo rc2.log -eo rc2.err "
+    xargs -a $barcodes_list \
+    -P 40 \
+    -I {} \
+    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh $bedbt2 $refcur $inpath {}
+  "
+  
+  
+  # while read r; do
+    # bc=$(basename $r)
+    # mkdir $bc
+    # cd $bc
+    # bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc.log -eo rc.err "
+      # bam-readcount -b 30 -q 10 -w 0 -l $bedmm2 -f $refcur ${inpath}/${bc}/${bc}.DUPmarked.deduped.bam \
+      # | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.txt
+    # "
+    # bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc_at_candidate.log -eo rc_at_candidate.err "
+      # bam-readcount -b 30 -q 10 -w 0 -l $bedbt2 -f $refcur ${inpath}/${bc}/${bc}_dedup.bt2.sorted.bam \
+      # | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.bt2.txt
+    # "
+    # cd ..
+  # done <$barcodes_list
 done
 
 ## Use python3.7 environment
@@ -373,14 +388,12 @@ for sample in ${samples[@]}; do
     ${sample}_filtered_SNPs_candidate.sorted.bed \
     mm2_rcfiles.txt \
     -n 5 &
-  # ${sample}_only_SNPs_candidate.txt \
 
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
     ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
     bt2_rcfiles.txt \
     -o multi_cell_bt2 \
     -n 5 &
-  # ${sample}_bt2_only_SNPs_candidate.txt \
 
 done
 
@@ -537,39 +550,39 @@ regions='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/ass
 jv="--java-options '-Xms5G -Xmx5G -XX:ParallelGCThreads=1'"
 cd $cwd
 for sample in ${samples[@]}; do
-  cd $cwd/$sample
-  cd indels
-  mkdir gatk_hc
-  cd gatk_hc
-  mkdir mm2
-  mkdir bt2
+    cd $cwd/$sample
+    cd indels
+    mkdir gatk_hc
+    cd gatk_hc
+    mkdir mm2
+    mkdir bt2
 
-  # Step 1
-  # while read r; do
-  # r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
-  # cd mm2
-  # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
-  # gatk $jv \
-  # HaplotypeCaller \
-  # -R $refcur \
-  # -I ${cwd}/${sample}/${sample}.sorted.RG.bam \
-  # -O ${r2}.vcf.gz \
-  # --native-pair-hmm-threads 1 \
-  # -L $r
-  # "
-  # cd ..
-  # cd bt2
-  # bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
-  # gatk $jv \
-  # HaplotypeCaller \
-  # -R $refcur \
-  # -I ${cwd}/${sample}/${sample}.sorted.RG.bt2.bam \
-  # -O ${r2}.vcf.gz \
-  # --native-pair-hmm-threads 1 \
-  # -L $r
-  # "
-  # cd ..
-  # done < $regions
+    Step 1
+    while read r; do
+    r2=$( echo $r | sed 's/:/_/g' | sed 's/-/_/g'  )
+    cd mm2
+    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
+    gatk $jv \
+    HaplotypeCaller \
+    -R $refcur \
+    -I ${cwd}/${sample}/${sample}.sorted.RG.bam \
+    -O ${r2}.vcf.gz \
+    --native-pair-hmm-threads 1 \
+    -L $r
+    "
+    cd ..
+    cd bt2
+    bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 5000 -oo ${r2}.log -eo ${r2}.err "
+    gatk $jv \
+    HaplotypeCaller \
+    -R $refcur \
+    -I ${cwd}/${sample}/${sample}.sorted.RG.bt2.bam \
+    -O ${r2}.vcf.gz \
+    --native-pair-hmm-threads 1 \
+    -L $r
+    "
+    cd ..
+    done < $regions
 
   # Step 2
   for dir in mm2 bt2; do
@@ -669,67 +682,67 @@ for sample in ${samples[@]}; do
   cd $sample
   echo $sample
 
-  # FOR MM2 SNPs
+  FOR MM2 SNPs
+  Select candidates that are in uniquely mapping regions
+  cat multi_cell_${sample}_filtered_SNPs_candidate.sorted.bed \
+  | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
+  > multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed
+
+  bedtools intersect \
+  -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
+  -b $unimapbed \
+  | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed
+
+  # Remove candidates near repeatitive regions
+  bedtools intersect \
+  -v \
+  -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed \
+  -b $repeatbed \
+  > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+
+  # Remove candidates near indels
+  bedtools intersect \
+  -v \
+  -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+  -b indels/deletions.sorted.merged.padded_20.bed \
+  > no_del.bed
+  bedtools intersect \
+  -v \
+  -a no_del.bed \
+  -b indels/insertions.sorted.merged.padded_20.bed \
+  > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+
+  # FOR BT2 SNPs
   # Select candidates that are in uniquely mapping regions
-  # cat multi_cell_${sample}_filtered_SNPs_candidate.sorted.bed \
-  # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
-  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed
+  cat multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
+  | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
+  > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed
 
-  # bedtools intersect \
-  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
-  # -b $unimapbed \
-  # | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed
+  bedtools intersect \
+  -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
+  -b $unimapbed \
+  | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
+  > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed
 
-  # # Remove candidates near repeatitive regions
-  # bedtools intersect \
-  # -v \
-  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.bed \
-  # -b $repeatbed \
-  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
+  # Remove candidates near repeatitive regions
+  bedtools intersect \
+  -v \
+  -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed \
+  -b $repeatbed \
+  > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
 
-  # # Remove candidates near indels
-  # bedtools intersect \
-  # -v \
-  # -a multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
-  # -b indels/deletions.sorted.merged.padded_20.bed \
-  # > no_del.bed
-  # bedtools intersect \
-  # -v \
-  # -a no_del.bed \
-  # -b indels/insertions.sorted.merged.padded_20.bed \
-  # > multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
-
-  # # FOR BT2 SNPs
-  # # Select candidates that are in uniquely mapping regions
-  # cat multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
-  # | awk '{if($2>=25 && $3>=26){print $1"\t"$2-25"\t"$3-25"\t"$4"\t"$5"\t"$6"\t"$7}}' \
-  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed
-
-  # bedtools intersect \
-  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.pos_adjusted.bed \
-  # -b $unimapbed \
-  # | awk '{print $1"\t"$2+25"\t"$3+25"\t"$4"\t"$5"\t"$6"\t"$7}' \
-  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed
-
-  # # Remove candidates near repeatitive regions
-  # bedtools intersect \
-  # -v \
-  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.bed \
-  # -b $repeatbed \
-  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed
-
-  # # Remove candidates near indels
-  # bedtools intersect \
-  # -v \
-  # -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
-  # -b indels/deletions.sorted.merged.padded_20.bed \
-  # > no_del_bt2.bed
-  # bedtools intersect \
-  # -v \
-  # -a no_del_bt2.bed \
-  # -b indels/insertions.sorted.merged.padded_20.bed \
-  # > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
+  # Remove candidates near indels
+  bedtools intersect \
+  -v \
+  -a multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.bed \
+  -b indels/deletions.sorted.merged.padded_20.bed \
+  > no_del_bt2.bed
+  bedtools intersect \
+  -v \
+  -a no_del_bt2.bed \
+  -b indels/insertions.sorted.merged.padded_20.bed \
+  > multi_cell_bt2_${sample}_bt2_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed
 
   cut -f6 multi_cell_${sample}_filtered_SNPs_candidate.sorted.unique_genome.non_repeat.non_indel.bed |
     sort -n |
@@ -793,6 +806,40 @@ for sample in ${samples[@]}; do
     $refcur \
     -o ${sample}_bt2 &
 done
+
+
+################################################################################
+############### STEP 5: LOSS OF HETEROZYGOSITY IDENTIFICATION ##################
+################################################################################
+
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
+for sample in ${samples[@]}; do
+    cd ${cwd}/${sample}
+    {
+    vcftools --vcf indels/samtools/bt2/${sample}_mq1.bt2.vcf --remove-indels --recode --recode-INFO-all --out ${sample}_mq1_onlysnps.bt2
+    hometools vcfdp ${sample}_mq1_onlysnps.bt2.recode.vcf -o ${sample}_mq1_onlysnps.bt2.recode.vcf.dp
+    cut -f5 ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.read_depth.pdf -x read_depth -y frequency -xlim 0 300 &
+    awk '{print $8+$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_depth.pdf -x allele_depth -y frequency -xlim 0 300 &
+    awk '{print ($8+$9)/($6+$7+$8+$9)}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_freq.pdf -x allele_freq -y frequency -xlim 0 1 &
+    } &
+done
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## STEP 5a : STRELKA BASED sSNVs
 # Calling variants using Strelka: For each sample, call
@@ -1180,49 +1227,3 @@ gatk Mutect2 \
 #######################################################################################
 ### TEMPORARY COMMANDS (FOR RUNNING ON DELL-NODES OR RUNNING SPECIFIC SUB-COMMANDS ####
 #######################################################################################
-refcur='/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/currot.v1.1.fasta'
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/
-# Get pileup data
-
-gatk VariantsToTable \
-  -R $refcur \
-  -V TMP.indel.vcf \
-  -F CHROM -F POS -F QUAL -F QD -F DP -F MQ -F MQRankSum -F FS -F ReadPosRankSum -F SOR \
-  -O TMP.indel.table
-
-gatk CombineGVCFs \
-  -R $refcur \
-  -V variants.list \
-  -O TMP.g.vcf.gz
-gatk GenotypeGVCFs \
-  -R $refcur \
-  -V TMP.g.vcf.gz \
-  -O TMP.vcf
-gatk SelectVariants \
-  -R $refcur \
-  -V TMP.vcf \
-  --select-type-to-include INDEL \
-  -O TMP.indel.vcf
-gatk VariantFiltration \
-  -R $refcur \
-  -V TMP.indel.vcf \
-  -O TMP.indel.filter.vcf \
-  --filter-expression \"QUAL <0 || QD <2.00 || FS >60.000 || SOR >3.000 || MQ <$mq_value || MQRankSum <-10.00 || ReadPosRankSum <-6.000 || ReadPosRankSum >4.000\" \
-  --filter-name \"indel_filter\" \
-  --filter-expression \"DP <50 || DP >300\" \
-  --filter-name \"DP_filter\"
-grep -E '^#|PASS' TMP.indel.filter.vcf >indels.vcf
-vcf2bed --do-not-sort --insertions <indels.vcf >insertions.bed
-vcf2bed --do-not-sort --deletions <indels.vcf >deletions.bed
-
-gatk VariantFiltration \
-  -R $refcur \
-  -V TMP.indel.vcf \
-  -O TMP.indel.filter.vcf \
-  --filter-expression "QUAL < 0 || QD < 2.00 || FS > 60.000 || SOR > 3.000  || MQ < $mq_value || MQRankSum < -10.0 || ReadPosRankSum < -6.000 || ReadPosRankSum > 4.000" \
-  --filter-name "indel_filter" \
-  --filter-expression "DP < 50 || DP > 300" \
-  --filter-name "DP_filter"
-grep -E '^#|PASS' TMP.indel.filter.vcf >indels.vcf
-vcf2bed --do-not-sort --insertions <indels.vcf >insertions.bed
-vcf2bed --do-not-sort --deletions <indels.vcf >deletions.bed
