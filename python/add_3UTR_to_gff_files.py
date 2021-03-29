@@ -15,8 +15,8 @@ if __name__ == '__main__':
     strand = ''
     end    = ''
     with open(args.gff.name, 'r') as f:
-    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/Cur.v1.1.protein.coding.genes.gff', 'r') as f:
-        with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/initial_assembly_from_jose/Cur.v1.1.protein.coding.genes.manually_edited.gff', 'w') as fout:
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.gff', 'r') as f:
+        with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.manual_edited.gff', 'w') as fout:
             for line in f:
                 line = line.strip().split()
                 # break

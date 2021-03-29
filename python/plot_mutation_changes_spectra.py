@@ -1,5 +1,7 @@
 import argparse
-
+"""
+Plot the SNPs/mutation change histogram
+"""
 def count_mut_type(fin, rc, qc):
     from collections import deque
     import sys

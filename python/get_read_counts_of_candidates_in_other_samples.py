@@ -37,7 +37,7 @@ def get_readcounts(fin, loc):
 snps_readcount = []
 fins = []
 for sample in SAMPLES:
-    fin='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/bam_read_counts_b30_q10.bt2.txt'.format(sample)
+    fin='{}{}/bam_read_counts_b30_q10.bt2.txt'.format(cwd, sample)
     # fin='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/filtered_low_ref_al_bam_read_counts_b30_q10.txt'.format(sample)
     fins.append(fin)
 
@@ -113,14 +113,14 @@ for sample in SAMPLES:
     all_high = set([i for i in high_conf if i in high_conf_af])
     all_mid  = set(range(len(sample_alfreq[sample]))) - set(list(all_bad) + list(all_high))
 
-    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/{}_uncertain_candidates.txt'.format(sample, sample), 'w') as fout:
+    with open('{}{}/{}_uncertain_candidates.txt'.format(cwd, sample, sample), 'w') as fout:
         keys = list(candidate_readcount[sample].keys())
         for i in sorted(list(all_mid)):
             chr, p = keys[i].rsplit('_', 1)
             d = [str(c) for c in candidate_readcount[sample][keys[i]]]
             fout.write('\t'.join([chr, str(int(p)-1), p] + d) + '\n')
 
-    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/{}_good_candidates.txt'.format(sample, sample), 'w') as fout:
+    with open('{}{}/{}_good_candidates.txt'.format(cwd, sample, sample), 'w') as fout:
         keys = list(candidate_readcount[sample].keys())
         for i in sorted(list(all_high)):
             chr, p = keys[i].rsplit('_', 1)
@@ -170,6 +170,6 @@ for sample in SAMPLES:
         ax.set_ylim([-0.05, lim])
         ax.set_xlim([-0.05, lim])
     plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/{}_alt_alleles.png'.format(sample, sample))
+    plt.savefig('{}{}/{}_alt_alleles.png'.format(cwd, sample, sample))
     plt.close()
 

@@ -359,22 +359,6 @@ for sample in ${samples[@]}; do
     -I {} \
     /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh $bedbt2 $refcur $inpath {}
   "
-  
-  
-  # while read r; do
-    # bc=$(basename $r)
-    # mkdir $bc
-    # cd $bc
-    # bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc.log -eo rc.err "
-      # bam-readcount -b 30 -q 10 -w 0 -l $bedmm2 -f $refcur ${inpath}/${bc}/${bc}.DUPmarked.deduped.bam \
-      # | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.txt
-    # "
-    # bsub -q normal -R "span[hosts=1] rusage[mem=2000]" -M 2500 -oo rc_at_candidate.log -eo rc_at_candidate.err "
-      # bam-readcount -b 30 -q 10 -w 0 -l $bedbt2 -f $refcur ${inpath}/${bc}/${bc}_dedup.bt2.sorted.bam \
-      # | awk '{n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2]}' > ${bc}_readcount.bt2.txt
-    # "
-    # cd ..
-  # done <$barcodes_list
 done
 
 ## Use python3.7 environment
@@ -395,6 +379,24 @@ for sample in ${samples[@]}; do
     -o multi_cell_bt2 \
     -n 5 &
 
+done
+
+## Step 4c: Select good candidates based on ALT allele depth and frequency comparisons in other samples
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_read_counts_of_candidates_in_other_samples.py
+cd $cwd
+cat */*good_candidates.txt | awk '{if($6>=10) print}' > high_cov_mutants.txt
+cat */*good_candidates.txt | awk '{if($6>=20) print}' > high_cov_mutants_AF20.txt
+rnabamdir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/'
+cat */*good_candidates.txt | awk '{print $1"\t"$3"\t"$3}' > good_candidates.regions
+for sample in ${samples[@]}; do
+  {
+  bam-readcount -w 0 \
+    -f $refcur \
+    -l good_candidates.regions \
+    ${rnabamdir}/${sample}/${sample}/outs/possorted_genome_bam.bam \
+  | awk '{n1=split($6,a,":"); n2=split($7,b,":"); n3=split($8,c, ":"); n4=split($9,d,":"); n5=split($10,e,":");  print $1, $2, $3, $4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}' \
+    > ${sample}/${sample}_good_candidates_rna_read_counts.txt
+  } &
 done
 
 ####################################################################
@@ -819,16 +821,82 @@ for sample in ${samples[@]}; do
     {
     vcftools --vcf indels/samtools/bt2/${sample}_mq1.bt2.vcf --remove-indels --recode --recode-INFO-all --out ${sample}_mq1_onlysnps.bt2
     hometools vcfdp ${sample}_mq1_onlysnps.bt2.recode.vcf -o ${sample}_mq1_onlysnps.bt2.recode.vcf.dp
-    cut -f5 ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.read_depth.pdf -x read_depth -y frequency -xlim 0 300 &
+    awk '{print $6+$7+$8+$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.read_depth.pdf -x read_depth -y frequency -xlim 0 300 &
     awk '{print $8+$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_depth.pdf -x allele_depth -y frequency -xlim 0 300 &
     awk '{print ($8+$9)/($6+$7+$8+$9)}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_freq.pdf -x allele_freq -y frequency -xlim 0 1 &
     } &
 done
 
+for sample in ${samples[@]}; do
+    cd ${cwd}/${sample}
+    {
+    awk '{if (($6+$7+$8+$9)>=60 && ($6+$7+$8+$9)<=180) print }' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp > ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.dp
+    awk '{print $8+$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_depth.dp_60_180.pdf -x allele_depth -y frequency -xlim 0 300 &
+    awk '{print ($8+$9)/($6+$7+$8+$9)}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_freq.dp_60_180.pdf -x allele_freq -y frequency -xlim 0 1 &
+    } &
+done
+
+for sample in ${samples[@]}; do
+    cd ${cwd}/${sample}
+    {
+    awk '{if (($8+$9)/($6+$7+$8+$9)>=0.3 && ($8+$9)/($6+$7+$8+$9)<=0.6) print }' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.dp > ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.dp
+    awk '{print $8+$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.dp | sort -n | uniq -c | hometools plthist -o ${sample}_mq1_onlysnps.allele_depth.dp_60_180.af_03_06.pdf -x allele_depth -y frequency -xlim 0 300 &
+    } &
+done
+for sample in ${samples[@]}; do
+    cd ${cwd}/${sample}
+    {
+    awk '{if (($8+$9)>=25 && ($8+$9)<=90) print }' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.dp > ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.ad_25_90.dp
+    awk '{print $1"\t"$2-1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t"$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.ad_25_90.dp > ${sample}_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.ad_25_90.bed
+    } &
+done
+
+cd $cwd
+ls  */*ad_25_90.bed | xargs multiIntersectBed -header -names MUT_11_1 MUT_15 WT_19 WT_1 -i > intersect_mq1_onlysnps.bt2.recode.vcf.dp_60_180.af_03_06.ad_25_90.bed
+
+for sample in ${samples[@]}; do
+    cd ${cwd}/${sample}
+    awk '{print $1"\t"$2-1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t"$9}' ${sample}_mq1_onlysnps.bt2.recode.vcf.dp > ${sample}_mq1_onlysnps.bt2.recode.vcf.bed &
+done
+
+ls  */*recode.vcf.bed | xargs multiIntersectBed -header -names MUT_11_1 MUT_15 WT_19 WT_1 -i > intersect_mq1_onlysnps.bt2.recode.vcf.bed
 
 
+picard='/srv/netscratch/dep_mercier/grp_schneeberger/software/picard_2.25.0/picard.jar'
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+for sample in ${samples[@]}; do
+  {
+  cd ${cwd}/${sample}/indels/gatk_hc/bt2
+  java \
+    -jar ${picard} MergeVcfs \
+    I variants.list \
+    O ${sample}.vcf
+  gatk SelectVariants \
+    -R $refcur \
+    -V ${sample}.vcf \
+    --select-type-to-include SNP \
+    -O ${sample}.snp.vcf
+  cd ${cwd}/${sample}
+  cp indels/gatk_hc/bt2/${sample}.snp.vcf ${sample}.gatk_hc.snps.bt2.vcf
+  vcf2bed --snvs < ${sample}.gatk_hc.snps.bt2.vcf > ${sample}.gatk_hc.snps.bt2.bed
+  } &
+done
 
+ls  */*gatk_hc.snps.bt2.bed | xargs multiIntersectBed -header -names MUT_11_1 MUT_15 WT_19 WT_1 -i > intersect_gatk_hc.snps.bt2.bed
 
+awk '{if($4==3) print}' intersect_mq1_onlysnps.bt2.recode.vcf.bed > intersect_mq1_onlysnps.bt2.recode.vcf.candidates.bed
+awk '{if($4==3) print}' intersect_gatk_hc.snps.bt2.bed > intersect_gatk_hc.snps.bt2.candidates.bed
+bedtools intersect -a intersect_mq1_onlysnps.bt2.recode.vcf.candidates.bed -b intersect_gatk_hc.snps.bt2.candidates.bed > common_candidates.bed
+awk '{print $1"\t"$3"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t"$9}' common_candidates.bed > common_candidates.regions
+for sample in ${samples[@]}; do
+    {
+    cd ${cwd}/${sample}
+    bedtools intersect -a ${sample}.gatk_hc.snps.bt2.bed -b ../common_candidates.bed >${sample}.gatk_hc.snps.bt2.candidates.bed
+    bam-readcount -w 0 -q 1 -f $refcur -l ../common_candidates.regions ${sample}.sorted.RG.bt2.bam |
+    awk '{n1=split($6,a,":"); n2=split($7,b,":"); n3=split($8,c, ":"); n4=split($9,d,":"); n5=split($10,e,":");  print $1, $2, $3, $4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}' \
+    > common_candidates.read_count.txt
+    } &
+done
 
 
 
