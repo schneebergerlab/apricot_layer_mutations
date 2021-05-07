@@ -25,6 +25,7 @@ def count_mut_type(fin, rc, qc):
 
 
 def get_mut_plt(args):
+    import sys
     if args.samples is not None:
         if len(args.samples) != len(args.f): sys.exit('Number of sample names should equal number of input files')
         SAMPLES = [s for s in args.samples]

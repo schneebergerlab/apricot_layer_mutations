@@ -1,11 +1,12 @@
 ## Step 1: Make reference genome index
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
 cd $indir
-gffread cur.pasa_out.gff -T > cur.pasa_out.gtf # Using the PASA out GFF for now, will need to udpate it when the final annotation is ready
+#gffread cur.pasa_out.gff -T > cur.pasa_out.gtf # Using the PASA out GFF for now, will need to udpate it when the final annotation is ready
+gffread cur.pasa_out.sort.protein_coding.3utr.gff3 -T > cur.pasa_out.sort.protein_coding.3utr.gtf
 # can edit the gff file manually to add UTRs
 
 # Cellranger index
-nohup cellranger mkref --genome=cur --fasta cur.genome.v1.fasta --genes=cur.pasa_out.gtf --nthreads=20 &
+nohup cellranger mkref --genome=cur --fasta cur.genome.v1.fasta --genes=cur.pasa_out.sort.protein_coding.3utr.gtf --nthreads=20 &
 
 
 # STAR Index
@@ -36,21 +37,29 @@ for sample in ${samples[@]}; do
   sample_list=$(ls ${indir}/${sample}/*fastq.gz  | sed 's/^.*\///g' |sed 's/_S.*$//g' | sort -u | tr '\n' ',' | sed 's/,$//g')
   echo $sample_list
 
-  cellranger count --id=$sample \
-    --fastqs=${indir}/${sample} \
-    --transcriptome=$refdir \
-    --sample=$sample_list \
-    --expect-cells 3500 \
-    --localcores=15 \
-    --localmem=70 \
-    --include-introns \
-    2>&1  > cellranger.log \
-   &
+  bsub -q multicore20 -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo ${sample}.log -eo ${sample}.err "
+    cellranger count --id=$sample \
+      --fastqs=${indir}/${sample} \
+      --transcriptome=$refdir \
+      --sample=$sample_list \
+      --expect-cells 3500 \
+      --include-introns \
+      --jobmode=lsf --maxjobs=10000 --jobinterval=1 --mempercore=10 \
+      2>&1  > cellranger.log
+  "
+
+#  cellranger count --id=$sample \
+#    --fastqs=${indir}/${sample} \
+#    --transcriptome=$refdir \
+#    --sample=$sample_list \
+#    --expect-cells 3500 \
+#    --localcores=15 \
+#    --localmem=70 \
+#    --include-introns \
+#    2>&1  > cellranger.log \
+#   &
   cd ..
 done
-
-
-
 
 
 

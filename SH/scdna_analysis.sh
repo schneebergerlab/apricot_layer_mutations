@@ -135,50 +135,55 @@ merge_fastqs() {
         "
 }
 
-align_cells() {
-  bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
-    xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c '
-        cd {}
-        bc=\$(basename {})
-#        minimap2 -ax sr -t 1 \$2 \${bc}_R1.fastq.gz \${bc}_R2.fastq.gz \
-#        | samtools view -O BAM - \
-#        | samtools sort - > \${bc}.sorted.bam
-#        samtools index \${bc}.sorted.bam
-#
-#        ## Mark duplicated reads
-#        samtools sort -n -O BAM \${bc}.sorted.bam \
-#        | samtools fixmate -c -m -O BAM - - \
-#        | samtools sort -O BAM - \
-#        | samtools markdup -S -s -O BAM - - \
-#        | samtools sort -O BAM - > \${bc}.DUPmarked.bam
-#        samtools index \${bc}.DUPmarked.bam
-#
-#        # Get non-dup reads in fastq.gz from the markdup bam files
-#        python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/remove_duplicates_from_marked_bam_file.py \${bc}.DUPmarked.bam -p \${bc}_dedup
-#
-#        gzip -f \${bc}_dedup_R1.fastq
-#        gzip -f \${bc}_dedup_R2.fastq
-#
-#        # Get non-dup bam file from the markdup bam file
-#        samtools view -G 1024 -O BAM \${bc}.DUPmarked.bam > \${bc}.DUPmarked.deduped.bam
-#        samtools index \${bc}.DUPmarked.deduped.bam
-#
-#        # Get BAM coverage
-#        bamCoverage --numberOfProcessors 1 -b \${bc}.DUPmarked.deduped.bam -of bedgraph -o \${bc}.bedgraph
 
-        # Align the reads using bowtie
-        bowtie2 --end-to-end \
-          --very-sensitive \
-          --threads 1 \
-          -x \$3 \
-          -1 \${bc}_dedup_R1.fastq.gz \
-          -2 \${bc}_dedup_R1.fastq.gz \
-        | samtools sort -@1 -O BAM - \
-        > \${bc}_dedup.bt2.sorted.bam
-        samtools index -@1 \${bc}_dedup.bt2.sorted.bam
-' -- {} $2 $3
-    "
-}
+# Minimap2 alignments were not consistent, as a result duplicated reads were not properly filtered out. So, switching to bowtie2 alignments.
+#align_cells() {
+##  bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
+#    xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c '
+#        cd {}
+#        bc=\$(basename {})
+##        minimap2 -ax sr -t 1 \$2 \${bc}_R1.fastq.gz \${bc}_R2.fastq.gz \
+##        | samtools view -O BAM - \
+##        | samtools sort - > \${bc}.sorted.bam
+##        samtools index \${bc}.sorted.bam
+##
+##        ## Mark duplicated reads
+##        samtools sort -n -O BAM \${bc}.sorted.bam \
+##        | samtools fixmate -c -m -O BAM - - \
+##        | samtools sort -O BAM - \
+##        | samtools markdup -S -s -O BAM - - \
+##        | samtools sort -O BAM - > \${bc}.DUPmarked.bam
+##        samtools index \${bc}.DUPmarked.bam
+##
+##        # Get non-dup reads in fastq.gz from the markdup bam files
+##        python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/remove_duplicates_from_marked_bam_file.py \${bc}.DUPmarked.bam -p \${bc}_dedup
+##
+##        gzip -f \${bc}_dedup_R1.fastq
+##        gzip -f \${bc}_dedup_R2.fastq
+##
+##        # Get non-dup bam file from the markdup bam file
+##        samtools view -G 1024 -O BAM \${bc}.DUPmarked.bam > \${bc}.DUPmarked.deduped.bam
+##        samtools index \${bc}.DUPmarked.deduped.bam
+##
+##        # Get BAM coverage
+##        bamCoverage --numberOfProcessors 1 -b \${bc}.DUPmarked.deduped.bam -of bedgraph -o \${bc}.bedgraph
+#
+#        # Align the reads using bowtie
+#        bowtie2 --end-to-end \
+#          --very-sensitive \
+#          --threads 1 \
+#          -x \$3 \
+#          -1 \${bc}_dedup_R1.fastq.gz \
+#          -2 \${bc}_dedup_R2.fastq.gz \
+#        | samtools sort -@1 -O BAM - \
+#        > \${bc}_dedup.bt2.sorted.bam
+#        samtools index -@1 \${bc}_dedup.bt2.sorted.bam
+#' -- {} $2 $3
+##    "
+#}
+#
+
+
 
 samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
@@ -190,12 +195,15 @@ for sample in ${samples[@]}; do
   cd $sample
   #    get_cell_reads ${indir}/${sample}/outs/possorted_bam.bam $sample
   #    merge_fastqs $sample $cwd
-  align_cells $sample $curidx $curidxbt2
+  bsub -q bigmem -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
+    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/align_cells.sh $sample $curidxbt2
+  "
 done
 
 ####################################################################
 ############ Step  3: Aligned pooled data reads and get read-counts at variant positions
 ####################################################################
+
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
 curidx='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.mm2_Xsr.idx'
@@ -205,70 +213,68 @@ samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 
 cd $cwd
 
-## Step 3a: Merge individual barcodes fastq to one sample fastq
+## Instead of getting reads and realigning them, I can just merge the read alignments of individual cells
+## Step 3a: Merge cell-wise BAM Files
 for sample in ${samples[@]}; do
   cd $cwd
   mkdir $sample
   cd $sample
-  rm ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz
-  {
-    while read r; do
-      bc=$(basename $r)
-      #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq | gzip -c >> ${sample}_R1.fastq.gz
-      #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq | gzip -c >> ${sample}_R2.fastq.gz
-      cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq.gz >>${sample}_R1.fastq.gz
-      cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq.gz >>${sample}_R2.fastq.gz
-    done <${indir}${sample}/barcodes_list
-  } &
-done
+  rf ${indir}${sample}/barcodes/*/*.DUPmarked.deduped.bam > cell_bam_path.txt
+  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_bt2.log -eo align_reads_bt2.err "     
+      
+      samtools merge -O BAM -@40 -f -b cell_bam_path.txt ${sample}.sorted.bt2.bam
+      samtools index -@40 ${sample}.sorted.bt2.bam
 
-## Step 3b: Align merged reads against the currot reference genome and get potential variant positions using minimap2
-for sample in ${samples[@]}; do
-  cd $cwd
-  mkdir $sample
-  cd $sample
-  bsub -q multicore40 -n 1 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_mm2.log -eo align_reads_mm2.err "
-    # minimap2 -ax sr -t 30 -N 0 $curidx ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz \
-    # | samtools view -@30 -F 2048 -O BAM - \
-    # | samtools sort -@30 -O BAM - \
-    # > ${sample}.sorted.bam
-    # samtools index ${sample}.sorted.bam
-    
+      bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{if(\$4>3) {n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); n6=split(\$11,f, \":\"); n7=split(\$12,g, \":\"); n8=split(\$13,h, \":\");  print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' > bam_read_counts_b30_q10.bt2.txt
 
-#     Duplicates were removed from the individual cells.
-#     Therefore, there is no need to remove duplicates from the merged data.
-#     All 'duplicated' reads in the merged data would corresponds to actual resequencing of the region
-
-    # bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bam | awk '{if(\$4>3) {n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); n6=split(\$11,f, \":\"); n7=split(\$12,g, \":\"); n8=split(\$13,h, \":\");  print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' > bam_read_counts_b30_q10.txt
-
-    # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
-    python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.txt
+      # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
+      python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
   "
 done
+
+
+
+
+## Step 3a: Merge individual barcodes fastq to one sample fastq
+# for sample in ${samples[@]}; do
+  # cd $cwd
+  # mkdir $sample
+  # cd $sample
+  # rm ${sample}_R1.fastq.gz ${sample}_R2.fastq.gz
+  # {
+    # while read r; do
+      # bc=$(basename $r)
+      # #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq | gzip -c >> ${sample}_R1.fastq.gz
+      # #    cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq | gzip -c >> ${sample}_R2.fastq.gz
+      # cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R1.fastq.gz >>${sample}_R1.fastq.gz
+      # cat ${indir}${sample}/barcodes/${bc}/${bc}_dedup_R2.fastq.gz >>${sample}_R2.fastq.gz
+    # done <${indir}${sample}/barcodes_list
+  # } &
+# done
 
 ## Step 3c: Align merged reads against the currot reference genome and get potential variant positions using bowtie2
-for sample in ${samples[@]}; do
-  cd $cwd
-  mkdir $sample
-  cd $sample
-  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_bt2.log -eo align_reads_bt2.err "
-    bowtie2 --end-to-end \
-            --very-sensitive \
-            --threads 40 \
-            -x $curidxbt2 \
-            -1 ${sample}_R1.fastq.gz \
-            -2 ${sample}_R2.fastq.gz \
-            -S ${sample}.bt2.sam
+# for sample in ${samples[@]}; do
+  # cd $cwd
+  # mkdir $sample
+  # cd $sample
+  # bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo align_reads_bt2.log -eo align_reads_bt2.err "
+    # bowtie2 --end-to-end \
+            # --very-sensitive \
+            # --threads 40 \
+            # -x $curidxbt2 \
+            # -1 ${sample}_R1.fastq.gz \
+            # -2 ${sample}_R2.fastq.gz \
+            # -S ${sample}.bt2.sam
 
-    samtools sort -@40 -O BAM ${sample}.bt2.sam > ${sample}.sorted.bt2.bam
-    samtools index -@40 ${sample}.sorted.bt2.bam
+    # samtools sort -@40 -O BAM ${sample}.bt2.sam > ${sample}.sorted.bt2.bam
+    # samtools index -@40 ${sample}.sorted.bt2.bam
 
-    bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{if(\$4>3) {n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); n6=split(\$11,f, \":\"); n7=split(\$12,g, \":\"); n8=split(\$13,h, \":\");  print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' > bam_read_counts_b30_q10.bt2.txt
+    # bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{if(\$4>3) {n1=split(\$6,a,\":\"); n2=split(\$7,b,\":\"); n3=split(\$8,c, \":\"); n4=split(\$9,d,\":\"); n5=split(\$10,e,\":\"); n6=split(\$11,f, \":\"); n7=split(\$12,g, \":\"); n8=split(\$13,h, \":\");  print \$1, \$2, \$3, \$4, a[2], b[2], c[2], d[2], e[2], f[1], f[2], g[1], g[2], h[1], h[2]}}' > bam_read_counts_b30_q10.bt2.txt
 
-  # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
-  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
-  "
-done
+  # # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
+  # python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
+  # "
+# done
 
 ## Step 3d: Get read mapping depth histogram
 for sample in ${samples[@]}; do
@@ -287,13 +293,6 @@ samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 ## Step 4a: Get candidate variant positions using heuristic cut-offs
 cd $cwd
 ## Use python3.7 environment
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
-  WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
-  WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
-  MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
-  MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.txt \
-  -s WT_1 WT_19 MUT_11_1 MUT_15 \
-  -n 5 -m 50 -M 250 &
 
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
   WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
@@ -347,12 +346,6 @@ for sample in ${samples[@]}; do
   mkdir cells_readcount
   cd cells_readcount
   
-  bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo rc.log -eo rc.err "
-    xargs -a $barcodes_list \
-    -P 40 \
-    -I {} \
-    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_mm2.sh $bedmm2 $refcur $inpath {}
-  "
   bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo rc2.log -eo rc2.err "
     xargs -a $barcodes_list \
     -P 40 \
@@ -368,17 +361,16 @@ for sample in ${samples[@]}; do
   echo $sample
   rf cells_readcount/*/*_readcount.txt >mm2_rcfiles.txt
   rf cells_readcount/*/*_readcount.bt2.txt >bt2_rcfiles.txt
-  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-    ${sample}_filtered_SNPs_candidate.sorted.bed \
-    mm2_rcfiles.txt \
-    -n 5 &
+#  python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
+#    ${sample}_filtered_SNPs_candidate.sorted.bed \
+#    mm2_rcfiles.txt \
+#    -n 5 &
 
   python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
     ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
     bt2_rcfiles.txt \
     -o multi_cell_bt2 \
     -n 5 &
-
 done
 
 ## Step 4c: Select good candidates based on ALT allele depth and frequency comparisons in other samples
@@ -386,8 +378,31 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
 cd $cwd
 cat */*good_candidates.txt | awk '{if($6>=10) print}' > high_cov_mutants.txt
 cat */*good_candidates.txt | awk '{if($6>=20) print}' > high_cov_mutants_AF20.txt
+
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
+    -f  high_cov_mutants.txt \
+    -rc 4 \
+    -qc 5 \
+    -samples all_samples_BT2 \
+    -t Mutation changes in $sample \
+    -W 8 \
+    -ymax 40 \
+    -o mutation_changes_${sample}.png &
+
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
+    -f  high_cov_mutants_AF20.txt \
+    -rc 4 \
+    -qc 5 \
+    -samples all_samples_BT2 \
+    -t Mutation changes in $sample \
+    -W 8 \
+    -ymax 40 \
+    -o mutation_changes_all_sample_AF20.png &
+
+
+
 rnabamdir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/'
-cat */*good_candidates.txt | awk '{print $1"\t"$3"\t"$3}' > good_candidates.regions
+cat */*good_candidates.txt | awk '{print $1"\t"$3"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' > good_candidates.regions
 for sample in ${samples[@]}; do
   {
   bam-readcount -w 0 \
@@ -398,6 +413,11 @@ for sample in ${samples[@]}; do
     > ${sample}/${sample}_good_candidates_rna_read_counts.txt
   } &
 done
+
+
+rf */cells_readcount/*/*readcount.bt2.txt > cells_readcount_paths.txt
+awk '{n1=split($1, a, "/"); print $1"\t"a[11]";"a[13]}' cells_readcount_paths.txt > cells_readcount_paths_id.txt
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_variants_in_cells.py -frc cells_readcount_paths_id.txt good_candidates.regions
 
 ####################################################################
 ############ Step 5: Indel positions to be filtered out
@@ -452,25 +472,25 @@ for sample in ${samples[@]}; do
     if [[ $sample == $sample2 ]]; then
       continue
     else
-      ## Submit MM2 based jobs
-      bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${sample}_${sample2}_mm2.log -eo ${sample}_${sample2}_mm2.err "
-         $python \
-          $manta_config \
-            --tumourBam ${cwd}/${sample}/${sample}.sorted.RG.bam \
-            --normalBam ${cwd}/${sample2}/${sample2}.sorted.RG.bam \
-            --referenceFasta $refcur \
-            --runDir ${sample}_vs_${sample2}_mm2 \
-            --scanSizeMb 2
-        cd ${sample}_vs_${sample2}_mm2
-        $python \
-          ./runWorkflow.py \
-            -m local \
-            -j 40 \
-            -g 50
-        gunzip -c results/variants/candidateSmallIndels.vcf.gz > candidateSmallIndels.vcf
-        vcf2bed --do-not-sort --insertions <candidateSmallIndels.vcf> candidateSmallIndels.insertions.bed
-        vcf2bed --do-not-sort --deletions <candidateSmallIndels.vcf> candidateSmallIndels.deletions.bed
-     "
+      # ## Submit MM2 based jobs
+      # bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${sample}_${sample2}_mm2.log -eo ${sample}_${sample2}_mm2.err "
+         # $python \
+          # $manta_config \
+            # --tumourBam ${cwd}/${sample}/${sample}.sorted.RG.bam \
+            # --normalBam ${cwd}/${sample2}/${sample2}.sorted.RG.bam \
+            # --referenceFasta $refcur \
+            # --runDir ${sample}_vs_${sample2}_mm2 \
+            # --scanSizeMb 2
+        # cd ${sample}_vs_${sample2}_mm2
+        # $python \
+          # ./runWorkflow.py \
+            # -m local \
+            # -j 40 \
+            # -g 50
+        # gunzip -c results/variants/candidateSmallIndels.vcf.gz > candidateSmallIndels.vcf
+        # vcf2bed --do-not-sort --insertions <candidateSmallIndels.vcf> candidateSmallIndels.insertions.bed
+        # vcf2bed --do-not-sort --deletions <candidateSmallIndels.vcf> candidateSmallIndels.deletions.bed
+     # "
 
       ## Submit BT2 based jobs
       bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${sample}_${sample2}_bt2.log -eo ${sample}_${sample2}_bt2.err "
