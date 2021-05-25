@@ -51,6 +51,7 @@ def get_mut_plt(args):
     fig = plt.figure(figsize=[args.W, args.H])
     ax = fig.add_subplot()
     ax.set_ylim([0, args.ymax])
+    ax.set_ylim([0, 100])
     TW = 0.7        # Total width of the bars
     width = TW/len(SAMPLES)
     x = np.arange(6)
@@ -150,4 +151,4 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     import numpy as np
     get_mut_plt(args)
-    get_mut_rc(args)
+    # get_mut_rc(args)

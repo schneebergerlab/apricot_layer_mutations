@@ -41,7 +41,7 @@ for sample in SAMPLES:
     # fin='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{}/filtered_low_ref_al_bam_read_counts_b30_q10.txt'.format(sample)
     fins.append(fin)
 
-with Pool(processes = 4) as pool:
+with Pool(processes=4) as pool:
     snps_readcount = pool.map(partial(get_readcounts, loc=loc), fins)
 import matplotlib.pyplot as plt
 snps_readcount = dict(zip(SAMPLES, snps_readcount))
