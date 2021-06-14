@@ -145,7 +145,7 @@ for sample in ${samples[@]}; do
     cd $sample
     #    get_cell_reads ${indir}/${sample}/outs/possorted_bam.bam $sample
     #    merge_fastqs $sample $cwd
-    bsub -q bigmem -n 40 -R "span[hosts=1] rusage[mem=60000]" -M 75000 -oo align_cells.log -eo align_cells.err "
+    bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo align_cells.log -eo align_cells.err "
     /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/align_cells.sh $sample $curidxbt2
   "
 done
@@ -700,34 +700,62 @@ cd $cwd
 awk '{print $1"\t"$2-1"\t"$2"\t"$4"\t"$5}' strict_syn_snp.txt >strict_syn_snp.bed
 
 samtools depth -a -b strict_syn_snp.bed -d 0 -Q 40 -o strict_syn_snp.read_depth.Q40.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1.sorted.bt2.bam &
-cut -f3 strict_syn_snp.read_depth.Q40.txt | sort -n | uniq -c | hometools plthist -o strict_syn_snp.read_depth.Q40.pdf -x readcount -y frequency -xlim 0 400
+cut -f3 strict_syn_snp.read_depth.Q40.txt | sort -n | uniq -c | hometools plthist -o strict_syn_snp.read_depth.Q40.pdf -x readcount -y frequency -xlim 0 250 -n 50
 awk '{if($3>40 && $3<220){print $1"\t"$2-1"\t"$2"\t"$3}}' strict_syn_snp.read_depth.Q40.txt >strict_syn_snp.good_read_depth.Q40.bed
 bedtools intersect -a strict_syn_snp.bed -b strict_syn_snp.good_read_depth.Q40.bed |
     awk '{print $1"\t"$3"\t"$3"\t"$4"\t"$5}' >strict_syn_snp.selected.txt
-
-#grep 'SNP' /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out \
-#| grep 'SYN' \
-#| awk '{print $1,$2,$3,$4,$5}' > syn_snp.txt
 
 for sample in ${samples[@]}; do
     cd $cwd
     mkdir $sample
     cd $sample
-    bed=../../syn_snp.txt
-    #    bed=../../strict_syn_snp.selected.txt  # Not used for the current run, but need to use it for future runs
-    bsub -q multicore40 -n 25 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo rc.log -eo rc.err "
+    #    bed=../../syn_snp.txt
+    bed=../../strict_syn_snp.selected.txt
+    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo rc.log -eo rc.err "
         xargs -a ${indir}/${sample}/barcodes_list \
-            -P 25 \
+            -P 40 \
             -I {} \
             bash -c '
                 bc=\$(basename \${1})
                 mkdir \$bc; cd \$bc
 #                echo \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q10.bt2.txt
-                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.bt2.txt
+#                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q10.bt2.txt 10
+                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q10.bt2.txt ../../strict_syn_snp.selected.txt ${sample}_\${bc}_b30_q10.bt2.txt
+#                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.bt2.txt 40
+                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q40.bt2.txt ../../strict_syn_snp.selected.txt ${sample}_\${bc}_b30_q40.bt2.txt
                 cd ..
             ' -- {} $bed $refcur
     "
 done
+
+# Get aneuploidy change plots and chromosome wise segregated input files for RTIGER
+Rscript /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/get_mitotic_recombination_input_data.R
+
+# Run RTIGER
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
+chrs=('CUR1G' 'CUR2G' 'CUR3G' 'CUR4G' 'CUR5G' 'CUR6G' 'CUR7G' 'CUR8G')
+for chr in ${chrs[@]}; do
+    cd ${cwd}/${chr}
+    mkdir rtiger_co_q40
+    bsub -q normal -R "span[hosts=1] rusage[mem=25000]" -M 25000 -oo chr.log -eo chr.err "
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R input_q40 $chr rtiger_co_q40 -R 2000 &
+    "
+done
+
+
+# Testing reversed CUR6G
+
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/CUR6G'
+cd $cwd
+mkdir reveresed_rtiger_co_q40
+bsub -q normal -R "span[hosts=1] rusage[mem=25000]" -M 25000 -oo chr.log -eo chr.err "
+    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R reversed_input_q40 CUR6G reversed_rtiger_co_q40 -R 2000 &
+    "
+
+################################################################################
+################################################################################
+################################################################################
+################################################################################
 
 ## STEP 5a : STRELKA BASED sSNVs
 # Calling variants using Strelka: For each sample, call

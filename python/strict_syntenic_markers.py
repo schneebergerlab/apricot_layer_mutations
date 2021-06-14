@@ -16,6 +16,7 @@ if __name__ == '__main__':
     # with open('syri.out', 'r') as fin:
         for line in fin:
             line = line.strip().split()
+            if line[3] in ['n', 'N'] or line[4] in ['n', 'N']: continue
             if line[10] == 'SNP' and 'SYN' in line[9]:
                 snps.append([line[0], int(line[1]), line[3], line[4], line[5], int(line[6])])
                 continue
