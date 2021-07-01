@@ -15,6 +15,15 @@ setwd(CWD)
 SAMPLES=c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
 INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
 
+chr_len = c('CUR1G'= 46975282,
+            'CUR2G'= 33806098,
+            'CUR3G'= 26861604,
+            'CUR4G'= 26096899,
+            'CUR5G'= 18585576,
+            'CUR6G'= 27136638,
+            'CUR7G'= 25539660,
+            'CUR8G'= 23045982)
+chrs <- names(chr_len)
 
 fins = list.files(CWD, pattern = '_b30_q10.bt2.txt', recursive = TRUE, full.names = TRUE)
 fins.selected = grep('read_count', fins, invert = TRUE, value=TRUE)
@@ -59,16 +68,6 @@ offsample <- celldf %>% filter(off %in% c('High', 'Low')) %>% pull(sample)
 offcelldf <- celldf %>% filter(sample %in% offsample)
 ggplot(offcelldf) +
   geom_line(aes(x=x, y=cnt, group=sample))
-
-chr_len = c('CUR1G'= 46975282,
-            'CUR2G'= 33806098,
-            'CUR3G'= 26861604,
-            'CUR4G'= 26096899,
-            'CUR5G'= 18585576,
-            'CUR6G'= 27136638,
-            'CUR7G'= 25539660,
-            'CUR8G'= 23045982)
-
 
 
 pdf(paste0(CWD, 'aneuploidy_candidates.pdf'), width=9, height=6)
@@ -128,38 +127,8 @@ dev.off()
 # For each cell-chromosome pair, check if enough SNP markers are sequenced.
 # Remove chromosomes, with few sequenced markers.
 ################################################################################
-
-chr_len = c('CUR1G'= 46975282,
-            'CUR2G'= 33806098,
-            'CUR3G'= 26861604,
-            'CUR4G'= 26096899,
-            'CUR5G'= 18585576,
-            'CUR6G'= 27136638,
-            'CUR7G'= 25539660,
-            'CUR8G'= 23045982)
-chrs <- names(chr_len)
-setwd('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/')
-
-## For Mapping Quality: 10
-fins = unlist(sapply(SAMPLES, function(sample){
-  list.files(paste0(CWD, sample), pattern = '_b30_q10.bt2.txt', recursive = TRUE, full.names = TRUE)
-}, USE.NAMES = FALSE))
-fins = grep('read_count', fins, invert = TRUE, value=TRUE)
-for(chr in chrs) dir.create(paste0(chr, '/input'), recursive = TRUE)
-a <- lapply(fins, function(f){
-  df = fread(f)
-  if(nrow(df)==0) return()
-  df2 = df %>% group_by(V1) %>% summarize(cnt=n())
-  for(chr in chrs){
-    if(chr %in% df$V1){
-      if(df2[df2$V1==chr,]$cnt >= 5000){
-        write.table(df %>% filter(V1==chr), file = paste0(chr, '/input/', chr, '_', basename(f)), quote = FALSE, col.names = FALSE, row.names=FALSE, sep = '\t')
-      }  
-    }
-  }
-})
-
-
+CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
+setwd(CWD)
 ## For Mapping Quality: 40
 library(doParallel)
 library(foreach)
@@ -186,18 +155,6 @@ foreach(f=fins, .packages = c('data.table', 'dplyr')) %dopar% {
 }
 stopCluster(cl)
 
-a <- lapply(fins, function(f){
-  df = fread(f)
-  if(nrow(df)==0) return()
-  df2 = df %>% group_by(V1) %>% summarize(cnt=n())
-  for(chr in chrs){
-    if(chr %in% df$V1){
-      if(df2[df2$V1==chr,]$cnt >= 5000){
-        write.table(df %>% filter(V1==chr), file = paste0(chr, '/input_q40/', chr, '_', basename(f)), quote = FALSE, col.names = FALSE, row.names=FALSE, sep = '\t')
-      }  
-    }
-  }
-})
 
 
 # Create Inverted data set for Chromosome CUR6G to test RTIGER
@@ -210,3 +167,36 @@ lapply(fins, function(f){
   df <- df[order(df$V2),]
   write.table(df, paste0('reversed_input_q40/', f),quote = FALSE,sep = '\t',row.names = FALSE, col.names = FALSE)
 })
+
+
+
+## For filtered SNP markers, mapping quality = 40
+library(doParallel)
+library(foreach)
+cl <- makeCluster(40)
+registerDoParallel(cl)
+
+fins = unlist(sapply(SAMPLES, function(sample){
+  list.files(paste0(CWD, sample), pattern = 'b30_q40.depth350-550.af0.35-0.6.bt2.txt', recursive = TRUE, full.names = TRUE)
+}, USE.NAMES = FALSE))
+fins = grep('read_count', fins, invert = TRUE, value=TRUE)
+setwd(paste0(CWD,'rtiger_out/'))
+for(chr in chrs) dir.create(paste0(chr, '/input_q40_filter'), recursive = TRUE)
+
+foreach(f=fins, .packages = c('data.table', 'dplyr')) %dopar% {
+  df = fread(f)
+  if(nrow(df)==0) return()
+  df2 = df %>% group_by(V1) %>% summarize(cnt=n())
+  for(chr in chrs){
+    if(chr %in% df$V1){
+      if(df2[df2$V1==chr,]$cnt >= 1000){
+        write.table(df %>% filter(V1==chr), file = paste0(chr, '/input_q40_filter/', chr, '_', basename(f)), quote = FALSE, col.names = FALSE, row.names=FALSE, sep = '\t')
+      }  
+    }
+  }
+}
+stopCluster(cl)
+
+
+
+

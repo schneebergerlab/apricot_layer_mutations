@@ -51,8 +51,9 @@ if __name__ == '__main__':
                 keys.remove(line[0]+line[1])
 
     rcdf = pd.DataFrame(rc)
-    rcdf[1] = rcdf[1].astype(int)
-    rcdf.sort_values([0, 1], inplace=True)
+    if rcdf.shape[0] > 0:
+        rcdf[1] = rcdf[1].astype(int)
+        rcdf.sort_values([0, 1], inplace=True)
     rcdf.to_csv(args.o.name, header=False, index=False, sep='\t')
     # rcdf.to_csv('TMP.txt', header=False, index=False, sep='\t')
 

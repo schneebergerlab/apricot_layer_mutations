@@ -1,0 +1,15 @@
+This program takes a Primer (genome sequence) and finds all matches in the CUR and ORA assemblies that have at most N (user-defined value) mismatches. The path to assemblies are hard coded, but can be changed in check_primer_uniqueness.py.
+
+Run Command:
+python3.8 check_primer_uniqueness.py -n 8 -o 1_R_primer.out CAACCTAAAGATAATCAGTGGACATCGG 4
+
+#usage: check_primer_uniqueness.py [-h] [-o O] [-n N] primer maxmm
+
+#positional arguments:
+#  primer      Primer sequence to check
+#  maxmm       Maximum allowed mismatches
+
+#optional arguments:
+#  -h, --help  show this help message and exit
+#  -o O        Output file name (default: None)
+#  -n N        number of cores to use (default: 1)
