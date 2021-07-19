@@ -4,8 +4,8 @@ library(argparse)
 
 parser <- ArgumentParser()
 parser$add_argument("indir", help='path to directory containing read counts at SNP marker positions')
-# parser$add_argument("pattern", help='Pattern to select files')
 parser$add_argument('chr', help="Chromosome being analysed", type='character')
+parser$add_argument('ref', help="Reference genome", type='character', choices=c('cur','ora'))
 parser$add_argument("outdir", help='path to output directory')
 parser$add_argument("-R", help='Rigidity value', default=500, type="integer")
 
@@ -20,14 +20,26 @@ sampleIDs <- basename(file_paths)
 # Create the expDesign object
 expDesign = data.frame(files=file_paths, name=sampleIDs)
 
-chr_len = c('CUR1G'= 46975282,
-            'CUR2G'= 33806098,
-            'CUR3G'= 26861604,
-            'CUR4G'= 26096899,
-            'CUR5G'= 18585576,
-            'CUR6G'= 27136638,
-            'CUR7G'= 25539660,
-            'CUR8G'= 23045982)
+if (args$ref == 'cur'){
+  chr_len = c('CUR1G'= 46975282,
+              'CUR2G'= 33806098,
+              'CUR3G'= 26861604,
+              'CUR4G'= 26096899,
+              'CUR5G'= 18585576,
+              'CUR6G'= 27136638,
+              'CUR7G'= 25539660,
+              'CUR8G'= 23045982)
+} else{
+  chr_len = c('ORA1G'= 47941709,
+              'ORA2G'= 31001264,
+              'ORA3G'= 27362024,
+              'ORA4G'= 28585890,
+              'ORA5G'= 18998592,
+              'ORA6G'= 27963823,
+              'ORA7G'= 24593044,
+              'ORA8G'= 22326149)
+}
+
 
 library(Gviz)
 library(RTIGER)

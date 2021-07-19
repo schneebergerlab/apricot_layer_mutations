@@ -111,14 +111,6 @@ for(s in unique(offsample)){
     coord_flip()
     
   plot(ggarrange(plt, plt1,ncol = 2,widths = c(0.7, 0.3)))
-  
-  # c1 <- df %>% filter(V1=='CUR1G')
-  # 
-  # c1$V4[c1$V4>10] <- 10
-  # x <- as.vector(rbind(df$V2, df$V3))
-  # y <- rep(df$V4, rep(2, nrow(df)))
-  # plot(x, y, type='l',ylim=c(0,10))
-  # plot(c1$V2, c1$V4, type='l', ylim=c(0,10))
 }
 dev.off()
 
@@ -127,6 +119,7 @@ dev.off()
 # For each cell-chromosome pair, check if enough SNP markers are sequenced.
 # Remove chromosomes, with few sequenced markers.
 ################################################################################
+
 CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
 setwd(CWD)
 ## For Mapping Quality: 40
@@ -192,6 +185,51 @@ foreach(f=fins, .packages = c('data.table', 'dplyr')) %dopar% {
       if(df2[df2$V1==chr,]$cnt >= 1000){
         write.table(df %>% filter(V1==chr), file = paste0(chr, '/input_q40_filter/', chr, '_', basename(f)), quote = FALSE, col.names = FALSE, row.names=FALSE, sep = '\t')
       }  
+    }
+  }
+}
+stopCluster(cl)
+
+
+
+## For filtered SNP markers, mapping quality = 40, using ORA reference genome
+CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
+setwd(CWD)
+SAMPLES=c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
+
+chr_len = c('ORA1G'= 47941709,
+            'ORA2G'= 31001264,
+            'ORA3G'= 27362024,
+            'ORA4G'= 28585890,
+            'ORA5G'= 18998592,
+            'ORA6G'= 27963823,
+            'ORA7G'= 24593044,
+            'ORA8G'= 22326149)
+chrs <- names(chr_len)
+
+
+library(doParallel)
+library(foreach)
+cl <- makeCluster(40)
+registerDoParallel(cl)
+
+fins = unlist(sapply(SAMPLES, function(sample){
+  list.files(paste0(CWD, sample), pattern = '_ORA_b30_q40.depth350-550.af0.35-0.6.bt2.txt', recursive = TRUE, full.names = TRUE)
+}, USE.NAMES = FALSE))
+fins = grep('read_count', fins, invert = TRUE, value=TRUE)
+setwd(paste0(CWD,'rtiger_out/'))
+for(chr in chrs) dir.create(paste0(chr, '/input_q40_filter'), recursive = TRUE)
+
+foreach(f=fins, .packages = c('data.table', 'dplyr')) %dopar% {
+  df = fread(f)
+  if(nrow(df)==0) return()
+  df2 = df %>% group_by(V1) %>% summarize(cnt=n())
+  for(chr in chrs){
+    if(chr %in% df$V1){
+      if(df2[df2$V1==chr,]$cnt >= 1000){
+        write.table(df %>% filter(V1==chr), file = paste0(chr, '/input_q40_filter/', chr, '_', basename(f)), quote = FALSE, col.names = FALSE, row.names=FALSE, sep = '\t')
+      }
     }
   }
 }

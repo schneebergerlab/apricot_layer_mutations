@@ -1,5 +1,6 @@
-sample=$1
-curidxbt2=$2
+#sample=$1
+#curidxbt2=$2
+#echo $1 | xargs -n 1 -P 1 -I {} /bin/bash -c "
 xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c "
     cd {}
     bc=\$(basename {})
@@ -35,7 +36,22 @@ xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c "
 #
 #    # Get BAM coverage
 #    bamCoverage --numberOfProcessors 1 -b \${bc}.DUPmarked.deduped.bam -of bedgraph -o \${bc}.bedgraph
-    hometools bamcov \${bc}.DUPmarked.deduped.bam mean_read_cov_q30_Q10.txt -d \"samtools depth -d 0 -Q 10 -q 30 \"
-    hometools bamcov \${bc}.DUPmarked.deduped.bam mean_read_cov_q30_Q40.txt -d \"samtools depth -d 0 -Q 40 -q 30 \"
+#    hometools bamcov \${bc}.DUPmarked.deduped.bam mean_read_cov_q30_Q10.txt -d \"samtools depth -d 0 -Q 10 -q 30 \"
+#    hometools bamcov \${bc}.DUPmarked.deduped.bam mean_read_cov_q30_Q40.txt -d \"samtools depth -d 0 -Q 40 -q 30 \"
 
-" -- {} $2
+    bowtie2 --end-to-end \
+      --very-sensitive \
+      --threads 1 \
+      -x \$3 \
+      -1 \${bc}_dedup_R1.fastq.gz \
+      -2 \${bc}_dedup_R2.fastq.gz \
+      --rg-id \$bc \
+    | samtools sort -@1 -O BAM - \
+    > \${bc}.DUPmarked.deduped.ORA.bam
+    samtools index -@1 \${bc}.DUPmarked.deduped.ORA.bam
+
+    hometools bamcov \${bc}.DUPmarked.deduped.ORA.bam mean_read_cov_q30_Q10.ORA.txt -d \"samtools depth -d 0 -Q 10 -q 30 \"
+    hometools bamcov \${bc}.DUPmarked.deduped.ORA.bam mean_read_cov_q30_Q40.ORA.txt -d \"samtools depth -d 0 -Q 40 -q 30 \"
+
+
+" -- {} $2 $3

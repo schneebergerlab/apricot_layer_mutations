@@ -103,6 +103,7 @@ T10xbam2fq=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/sc
 asCellseparator=/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/binaries/asCellseparator
 curidx=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.mm2_Xsr.idx
 curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+oraidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/ora.genome.v1.fasta'
 
 MIN_RC=10000
 
@@ -140,14 +141,18 @@ cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdn
 indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/cellranger_out/'
 
 for sample in ${samples[@]}; do
+#for sample in WT_1; do
     cd $cwd/
     mkdir $sample
     cd $sample
     #    get_cell_reads ${indir}/${sample}/outs/possorted_bam.bam $sample
     #    merge_fastqs $sample $cwd
-    bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo align_cells.log -eo align_cells.err "
-    /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/align_cells.sh $sample $curidxbt2
+#    rm align_cells.log align_cells.err
+#    nohup /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/align_cells.sh $sample $curidxbt2 $oraidxbt2 &
+    bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=40000]" -M 50000 -oo align_cells.log -eo align_cells.err "
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/align_cells.sh $sample $curidxbt2 $oraidxbt2
   "
+#  break
 done
 
 for sample in ${samples[@]}; do
@@ -378,8 +383,9 @@ done
 cd $cwd
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/somatic_indel_identification.py \
     filterbg \
-    --cores 4
 
+## Step 5d: Manually select indels from high candidates supported by >=10 reads. For indels supported by <10 reads, do additional filetering similar to SNP filtering.
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling
 
 
 ####################################################################
@@ -784,13 +790,13 @@ bam-readcount -b 30 -w 0 -q 40 -l strict_syn_snp.txt -f $refcur merged_samples.b
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/readcount_at_syn_snp_pos.py strict_syn_snp.txt strict_syn_snp_readcount.txt strict_syn_snp_allele_readcount.txt
 
 cut -f 7 strict_syn_snp_allele_readcount.txt | sort -n | uniq -c | hometools plthist -xlim 100 800 -o strict_syn_snp_allele_readcount_total_depth.pdf
-# Select positions with total read depth between 350-550
-awk '{if($7>=350 && $7<=550) print $0}' strict_syn_snp_allele_readcount.txt > strict_syn_snp_allele_readcount.depth350-550.txt
+# Select positions with total read depth between 450-650
+awk '{if($7>=450 && $7<=650) print $0}' strict_syn_snp_allele_readcount.txt > strict_syn_snp_allele_readcount.depth450-650.txt
 
-cut -f 8 strict_syn_snp_allele_readcount.depth350-550.txt | sort -n | uniq -c | hometools plthist -xlim 0 1 -o strict_syn_snp_allele_readcount_maf.pdf
-# Select positions with MAF between 0.35-0.6
-awk '{if($8>=0.35 && $8<=0.6) print $0}' strict_syn_snp_allele_readcount.depth350-550.txt > strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.txt
-awk '{print $1,$2,$2,$3,$5,$4,$6,$7,$8}' strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.txt > strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.bed
+cut -f 8 strict_syn_snp_allele_readcount.depth450-650.txt | sort -n | uniq -c | hometools plthist -xlim 0 1 -o strict_syn_snp_allele_readcount_maf.pdf
+# Select positions with MAF between 0.4-0.6
+awk '{if($8>=0.4 && $8<=0.6) print $0}' strict_syn_snp_allele_readcount.depth450-650.txt > strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt
+awk '{print $1,$2,$2,$3,$5,$4,$6,$7,$8}' strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt > strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.bed
 ## Initial strategy to select SNP markers, resulted in too many markers with allele freuency different from 0.5. So, now we filter markers more stringently (above) results in fewer but properly mapping markers.
 
 #samtools depth -a -b strict_syn_snp.bed -d 0 -Q 40 -o strict_syn_snp.read_depth.Q40.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/WT_1/WT_1.sorted.bt2.bam &
@@ -804,7 +810,7 @@ for sample in ${samples[@]}; do
     mkdir $sample
     cd $sample
 #    bed=../../strict_syn_snp.selected.txt
-    bed=../../strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.bed
+    bed=../../strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.bed
     bsub -q bigmem -n 40 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo rc.log -eo rc.err "
         xargs -a ${indir}/${sample}/barcodes_list \
             -P 40 \
@@ -817,26 +823,108 @@ for sample in ${samples[@]}; do
 #                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.bt2.txt 40
 #                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q40.bt2.txt ../../strict_syn_snp.selected.txt ${sample}_\${bc}_b30_q40.bt2.txt
 
-                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.depth350-550.af0.35-0.6.bt2.txt 40
-                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q40.depth350-550.af0.35-0.6.bt2.txt \$2 ${sample}_\${bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt
+#                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.depth350-550.af0.35-0.6.bt2.txt 40
+#                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q40.depth350-550.af0.35-0.6.bt2.txt \$2 ${sample}_\${bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt
+                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_read_counts_b30_q40.depth450-650.af0.4-0.6.bt2.txt 40
+                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_b30_q40.depth450-650.af0.4-0.6.bt2.txt \$2 ${sample}_\${bc}_b30_q40.depth450-650.af0.4-0.6.bt2.txt
                 cd ..
             ' -- {} $bed $refcur
     "
 done
 
-# Get aneuploidy change plots and chromosome wise segregated input files for RTIGER
+
+
+# Run syri with ORA as reference
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/with_ora_ref
+minimap2 -ax asm5 -t 50 --eqx ../ora.genome.v1.filtered.fasta ../cur.genome.v1.filtered.fasta \
+| samtools sort -O BAM -@ 50 - \
+> out.bam
+samtools index -@ 50 out.bam
+nohup python3 /srv/biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri/syri/bin/syri \
+syri -c out.bam \
+  -r ../ora.genome.v1.filtered.fasta \
+  -q ../cur.genome.v1.filtered.fasta \
+  -k -F B --nc 8 &
+
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/
+refora='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/ora.genome.v1.fasta'
+samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
+
+cd $cwd
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/strict_syntenic_markers.py /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/with_ora_ref/syri.out ora_ref_strict_syn_snp.txt
+awk '{print $1"\t"$2-1"\t"$2"\t"$4"\t"$5}' ora_ref_strict_syn_snp.txt > ora_ref_strict_syn_snp.bed
+
+rf ${indir}/*/barcodes/*/*.DUPmarked.deduped.ORA.bam > cell_bam_path_ora_mapped.txt
+sed -i 's/^-I //g' cell_bam_path_ora_mapped.txt
+
+samtools merge -@40 -O BAM -b cell_bam_path_ora_mapped.txt merged_samples_ora_ref.bam
+## Can use the hometools pbamrc for parallelisation of bam-readcount
+bam-readcount -b 30 -w 0 -q 40 -l ora_ref_strict_syn_snp.txt -f $refora merged_samples_ora_ref.bam \
+| awk '{n1=split($6,a,":"); n2=split($7,b,":"); n3=split($8,c, ":"); n4=split($9,d,":"); n5=split($10,e,":"); print $1, $2, $3, $4, a[2], b[2], c[2], d[2], e[2]}' > ora_ref_strict_syn_snp_readcount.txt
+
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/readcount_at_syn_snp_pos.py ora_ref_strict_syn_snp.txt ora_ref_strict_syn_snp_readcount.txt ora_ref_strict_syn_snp_allele_readcount.txt
+
+cut -f 7 ora_ref_strict_syn_snp_allele_readcount.txt | sort -n | uniq -c | hometools plthist -xlim 100 800 -o ora_ref_strict_syn_snp_allele_readcount_total_depth.pdf
+
+
+# Select positions with total read depth between 450-650
+awk '{if($7>=450 && $7<=650) print $0}' ora_ref_strict_syn_snp_allele_readcount.txt > ora_ref_strict_syn_snp_allele_readcount.depth450-650.txt
+
+cut -f 8 ora_ref_strict_syn_snp_allele_readcount.depth450-650.txt | sort -n | uniq -c | hometools plthist -xlim 0 1 -o ora_ref_strict_syn_snp_allele_readcount_maf.pdf
+# Select positions with MAF between 0.4-0.6
+awk '{if($8>=0.4 && $8<=0.6) print $0}' ora_ref_strict_syn_snp_allele_readcount.depth450-650.txt > ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt
+awk '{print $1,$2,$2,$3,$5,$4,$6,$7,$8}' ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt > ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.bed
+
+
+for sample in ${samples[@]}; do
+    cd $cwd
+    mkdir $sample
+    cd $sample
+    bed=../../ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.bed
+    bsub -q bigmem -n 40 -R "span[hosts=1] rusage[mem=20000]" -M 20000 -oo rc_ora.log -eo rc_ora.err "
+        xargs -a ${indir}/${sample}/barcodes_list \
+            -P 40 \
+            -I {} \
+            bash -c '
+                bc=\$(basename \${1})
+                mkdir \$bc; cd \$bc
+                /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.ORA.bam \${bc}_read_counts_ORA_b30_q40.depth450-650.af0.4-0.6.bt2.txt 40
+                /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/extract_allele_count_from_bam_readcount.py \${bc}_read_counts_ORA_b30_q40.depth450-650.af0.4-0.6.bt2.txt \$2 ${sample}_\${bc}_ORA_b30_q40.depth450-650.af0.4-0.6.bt2.txt
+                cd ..
+            ' -- {} $bed $refora
+    "
+done
+
+
+# Get aneuploidy change plots
 Rscript /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/get_mitotic_recombination_input_data.R
+
+# Select chromosome with low coverage variance
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_chromosomes_for_mitotic_recombination.py
 
 # Run RTIGER
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
 chrs=('CUR1G' 'CUR2G' 'CUR3G' 'CUR4G' 'CUR5G' 'CUR6G' 'CUR7G' 'CUR8G')
 for chr in ${chrs[@]}; do
     cd ${cwd}/${chr}
-    mkdir rtiger_co_q40_filter
-    bsub -q ioheavy -R "span[hosts=1] rusage[mem=25000]" -M 25000 -oo chr.log -eo chr.err "
-        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R input_q40_filter $chr rtiger_co_q40_filter -R 500 &
+    mkdir rtiger_co_q40_lowvar
+    bsub -q bigmem -R "span[hosts=1] rusage[mem=15000]" -M 15000 -oo chr.log -eo chr.err "
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R input_q40_lowvar $chr cur rtiger_co_q40_lowvar -R 500 &
     "
 done
+
+chrs=( ORA1G ORA2G ORA3G ORA4G ORA5G ORA6G ORA7G ORA8G )
+for chr in ${chrs[@]}; do
+    cd ${cwd}/${chr}
+    mkdir rtiger_co_q40_lowvar
+    bsub -q bigmem -R "span[hosts=1] rusage[mem=15000]" -M 15000 -oo chr.log -eo chr.err "
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R input_q40_lowvar $chr ora rtiger_co_q40_lowvar -R 500 &
+    "
+done
+
+## Run code here:
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_rtiger_out_and_get_stats.py
 
 
 # Testing reversed CUR6G
@@ -848,8 +936,6 @@ bsub -q normal -R "span[hosts=1] rusage[mem=25000]" -M 25000 -oo chr.log -eo chr
     /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/run_rtiger_on_chromosome_files.R reversed_input_q40 CUR6G reversed_rtiger_co_q40 -R 2000 &
     "
 
-## Run code here:
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_rtiger_out_and_get_stats.py
 
 
 ################################################################################
