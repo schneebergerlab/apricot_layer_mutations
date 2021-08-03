@@ -1,20 +1,12 @@
 #!usr/bin/env python
+"""
+Filter the COs predicted by RTIGER. Filtering is done based on size, as well as
+Allele Frequency.
+Finally, filtered COs (homozygous regions) predicted when using both genomes are
+considered as TRUE homozygous regions.
+"""
 
-CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
-SAMPLES = ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
-CHRS = ('CUR1G', 'CUR2G', 'CUR3G', 'CUR4G', 'CUR5G', 'CUR6G', 'CUR7G', 'CUR8G')
-INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
-SNPFIN = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.bed'
-CHRLEN = {'CUR1G': 46975282,
-          'CUR2G': 33806098,
-          'CUR3G': 26861604,
-          'CUR4G': 26096899,
-          'CUR5G': 18585576,
-          'CUR6G': 27136638,
-          'CUR7G': 25539660,
-          'CUR8G': 23045982}
-GS = sum(CHRLEN.values())
-
+# Import libraries
 import os
 import re
 import pandas as pd
@@ -26,13 +18,29 @@ from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import ttest_ind
 import sys
- sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/private/Manish/hometools/')
+sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
 from myUsefulFunctions import mergepdf
 from myUsefulFunctions import readfasta
 from intervaltree import IntervalTree, Interval
 import pickle
-
+sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/')
+from select_chromosomes_for_mitotic_recombination import getwindows
+from functools import partial
+from tqdm import tqdm
 ################################################################################
+def getsynregions(f):
+    synreg = deque()
+    with open(f, 'r') as fin:
+        for line in fin:
+            if 'SYN' not in line: continue
+            if 'SYNAL' in line: continue
+            if 'SNP' in line: continue
+            line = line.strip().split()
+            if line[10] == 'SYN':
+                synreg.append((line[0], int(line[1]), int(line[2]), line[5], int(line[6]), int(line[7])))
+    return synreg
+
+
 def getcelldata(df, sample, bc, chr):
     if sample != 'NA':
         garb = df.loc[(df['sample'] == sample)].copy()
@@ -43,13 +51,13 @@ def getcelldata(df, sample, bc, chr):
     if chr != 'NA':
         garb = garb.loc[(garb['chr'] == chr)]
     return garb
-    # return df.loc[(df['sample'] == sample) & (df['bc'] == bc) & (df['chr'] == chr)]
 
-def readCO(chr):
-    print(chr)
+
+def readco(codir):
+    print(codir)
     chrdf = deque()
-    os.chdir(CWD + chr + '/rtiger_co_q40_filter/')     # Analyse samples with q=40
-    # os.chdir(CWD + chr + '/rtiger_co_q40/')     # Analyse samples with q=40
+    # os.chdir(CWD + chr + '/rtiger_co_q40_filter/')     # Analyse samples with q=40
+    os.chdir(codir)     # Analyse samples with q=40
     dirs = [d for d in os.listdir() if os.path.isdir(d)]
     for d in dirs:
         s = [s for s in SAMPLES if s+'_' in d][0]
@@ -65,14 +73,7 @@ def readCO(chr):
         chrdf.append(bcdf)
     return pd.concat(chrdf)
 
-# Read the CO regions predicted by RTIGER
-with Pool(processes=8) as pool:
-    df = pool.map(readCO, CHRS)
-df = pd.concat(df)
-df.sort_values(['sample', 'bc', 'chr'], inplace=True)
-# df.to_pickle(CWD+'df.pkl')
-df = pd.read_pickle(CWD+'df.pkl')
-# Get the coordinate of the terminal (101st SNP) marker. COs identified before this marker would be filtered out.
+
 def readterm(chr):
     dirpath = CWD + chr + "/input_q40_filter/"
     fins = os.listdir(dirpath)
@@ -89,17 +90,503 @@ def readterm(chr):
                     chrdata.append([s, bc, chr, int(line.strip().split()[1])])
                     break
     return pd.DataFrame(chrdata)
-with Pool(processes=3) as pool:
-    term = pool.map(readterm, CHRS)
-term = pd.concat(term)
-term.columns = ['sample', 'bc', 'chr', 'cutoff']
 
 
-## Read SNP markers used for CO detection
-SNPS = pd.read_table(SNPFIN, header=None, sep=' ')
-SNPS = SNPS.drop([2, 5, 6, 7, 8], axis=1)
-SNPS.columns = ['chr', 'pos', 'ref', 'alt']
+def mergegenotype(indf):
+    outdf = pd.DataFrame()
+    for grp in indf.groupby(['sample', 'bc', 'chr', 'ref']):
+        # if len(pd.unique(grp[1]['genotype'])) == 1: continue
+        tmp = deque()
+        current = ''
+        for row in grp[1].itertuples(index=False):
+            if current == '':
+                current = list(row)
+                continue
+            if current[5] != row.genotype:
+                tmp.append(current)
+                current = list(row)
+            else:
+                current[4] = row.end
+        tmp.append(current)
+        tmp = pd.DataFrame(tmp)
+        tmp.columns = grp[1].columns
+        outdf = pd.concat([outdf, tmp])
+    return outdf
 
+
+def getcoverage_SNP(f, chrs, binpos, window):
+    try:
+        fdf = pd.read_table(f, header=None)
+    except pd.errors.EmptyDataError:
+        return
+    chrvar = dict()
+    for c in chrs:
+        cdf = fdf.loc[fdf[0]==c]
+        snprc = {row[1]: row[3] + row[5] for row in cdf.itertuples(index=False)}
+        binsum = dict()
+        scnt = 0    # Number of sequenced markers
+        for k, pos in binpos[c].items():
+            cnt = 0
+            for p in pos:
+                try:
+                    cnt += snprc[p]
+                    scnt += 1
+                except KeyError: cnt += 0
+            binsum[k] = cnt
+        winave = dict()
+        for k, bin in window[c].items():
+            # winsum = sum([binsum[p] for p in bin[0]])
+            try:
+                winave[k] = sum([binsum[p] for p in bin[0]])/bin[1]
+            except ZeroDivisionError:
+                winave[k] = 0
+        chrvar[c] = {'scnt': scnt,
+                     'm': mean(list(winave.values())),
+                     'v': var(list(winave.values()))}
+    return chrvar
+
+
+def getcocells(grp, insnp, fins):
+    """
+    grp: df corresponding to a BC chromosome
+    snps: snp position in the chromosome
+    """
+    # print(grp[0])
+    if grp[1]['highhom'][0] == 1:
+        return
+    if len(pd.unique(grp[1]['genotype'])) == 1:
+        return
+    # snps = defaultdict(list)
+    # for row in SNPS.loc[SNPS['chr']==grp[0][2]].itertuples(index=False):
+    #     snps[row.pos] = [0, 0]
+    # with open('{INDIR}/rtiger_out/{chr}/input_q40_filter/{chr}_{s}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(INDIR=INDIR, s=grp[0][0], bc=grp[0][1], chr=grp[0][2]), 'r') as fin:
+    snps = insnp[grp[0][2]]
+    with open(fins.format(s=grp[0][0], bc=grp[0][1], chr=grp[0][2]), 'r') as fin:
+        for line in fin:
+            line = line.strip().split()
+            snps[int(line[1])] = [int(line[3]), int(line[5])]
+    snppos = np.array(list(snps.keys()))
+    hetpos = deque([])
+    for row in grp[1].itertuples(index=False):
+        if row.genotype in ['AA', 'BB']: continue
+        hetpos.extend(snppos[(snppos >= row.start) & (snppos < row.end)])
+    if len(hetpos) < 1000:
+        print("Too little het markers {}".format(grp[0]))
+        return
+    hetpos = np.array(hetpos)
+    rcnthet = np.array([snps[h][0] for h in hetpos])
+    qcnthet = np.array([snps[h][1] for h in hetpos])
+    rmeanhet = [np.mean(np.random.choice(rcnthet, 500, replace=False)) for _ in range(100)]
+    qmeanhet = [np.mean(np.random.choice(qcnthet, 500, replace=False)) for _ in range(100)]
+
+    cnt = 0
+    newgen = deque()
+
+    for row in grp[1].itertuples(index=False):
+        # cnt += 1
+        # if cnt == 1: break
+        if row.genotype == 'AB':
+            newgen.append('AB')
+            continue
+        hompos = snppos[(snppos >= row.start) & (snppos < row.end)]
+        if row.genotype == 'AA':
+            h = rmeanhet
+            l = qmeanhet
+            hcnthom = np.array([snps[h][0] for h in hompos])
+            lcnthom = np.array([snps[h][1] for h in hompos])
+        else:
+            h = qmeanhet
+            l = rmeanhet
+            hcnthom = np.array([snps[h][1] for h in hompos])
+            lcnthom = np.array([snps[h][0] for h in hompos])
+        if sum(hcnthom>0) < 250:
+            # print(Counter(hcnthom))
+            newgen.append('AB')
+            continue
+        hmeanhom = [np.mean(np.random.choice(hcnthom, 500, replace=False)) for _ in range(100)]
+        lmeanhom = [np.mean(np.random.choice(lcnthom, 500, replace=False)) for _ in range(100)]
+        if np.mean(lmeanhom) > 0.5*np.mean(hmeanhom):
+            newgen.append('AB')
+        elif ttest_ind(hmeanhom, h, alternative='greater', equal_var=False).pvalue > 0.001:
+            newgen.append('AB')
+        # elif np.mean(hmeanhom) < 1.5*np.mean(h) or np.mean(hmeanhom) > 3*np.mean(h):
+        elif np.mean(hmeanhom) < 1.5*np.mean(h):
+            newgen.append('AB')
+        elif ttest_ind(lmeanhom, l, alternative='less', equal_var=False).pvalue > 0.001:
+            newgen.append('AB')
+        elif np.mean(lmeanhom) > 0.5*np.mean(l):
+            newgen.append('AB')
+        else:
+            newgen.append(row.genotype)
+    if len(pd.unique(newgen)) == 1: return
+    else:
+        print("found: ", grp[0])
+        outdf = grp[1].copy()
+        outdf['newgen'] = newgen
+        return outdf
+
+with Pool(processes=64) as pool:
+    newdf = pool.map(partial(getcocells, insnp=SNPPOS, fins=fins), tqdm(df3.groupby(['sample', 'bc', 'chr'])))
+
+grp = (('MUT_11_1', 'AAACCTGAGCCCAACC', 'CUR3G'), getcelldata(df3, 'MUT_11_1', 'AAACCTGAGCCCAACC', 'CUR3G'))
+
+
+if __name__ == '__main__':
+    # Set constants
+    INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
+    RCDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
+    CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
+    SNPFIN = {'cur':'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt',
+              'ora':'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt'}
+    SYRIOUT='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
+
+    SAMPLES = ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+    CHRS = {'cur': ('CUR1G', 'CUR2G', 'CUR3G', 'CUR4G', 'CUR5G', 'CUR6G', 'CUR7G', 'CUR8G'),
+            'ora': ('ORA1G', 'ORA2G', 'ORA3G', 'ORA4G', 'ORA5G', 'ORA6G', 'ORA7G', 'ORA8G')}
+
+    # Read SNP markers used for CO detection
+    CURSNPS = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt', header=None)
+    CURSNPS = CURSNPS.drop([3, 5, 6, 7], axis=1)
+    CURSNPS.columns = ['chr', 'pos', 'ref', 'alt']
+    ORASNPS = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt', header=None)
+    ORASNPS = ORASNPS.drop([3, 5, 6, 7], axis=1)
+    ORASNPS.columns = ['chr', 'pos', 'ref', 'alt']
+    SNPPOS = {grp[0]: dict(zip(grp[1]['pos'], [[0,0]]*grp[1].shape[0])) for grp in pd.concat([CURSNPS, ORASNPS]).groupby(['chr'])}
+
+    CURLEN = {'CUR1G': 46975282,
+              'CUR2G': 33806098,
+              'CUR3G': 26861604,
+              'CUR4G': 26096899,
+              'CUR5G': 18585576,
+              'CUR6G': 27136638,
+              'CUR7G': 25539660,
+              'CUR8G': 23045982}
+    ORALEN = {'ORA1G': 47941709,
+              'ORA2G': 31001264,
+              'ORA3G': 27362024,
+              'ORA4G': 28585890,
+              'ORA5G': 18998592,
+              'ORA6G': 27963823,
+              'ORA7G': 24593044,
+              'ORA8G': 22326149}
+    GS = {'cur': sum(CURLEN.values()), 'ora': sum(ORALEN.values())}
+
+    STEP = 100000
+    WINSIZE = 1000000
+
+    # Read the CO regions predicted by RTIGER
+    curdirs = [CWD+d+"/rtiger_co_q40_lowvar/" for d in CHRS['cur']]
+    with Pool(processes=4) as pool:
+        curdf = pool.map(readco, curdirs)
+    curdf = pd.concat(curdf)
+    curdf['ref'] = 'cur'
+
+    oradirs = [CWD+d+"/rtiger_co_q40_lowvar/" for d in CHRS['ora']]
+    with Pool(processes=4) as pool:
+        oradf = pool.map(readco, oradirs)
+    oradf = pd.concat(oradf)
+    oradf['ref'] = 'ora'
+
+    df = pd.concat([curdf, oradf])
+    df.sort_values(['sample', 'bc', 'chr'], inplace=True)
+    # df.to_pickle(CWD+'df.pkl')
+    df = pd.read_pickle(CWD+'df.pkl')
+
+    # Get the coordinate of the terminal (101st SNP) marker. COs identified before this marker would be filtered out.
+    # with Pool(processes=3) as pool:
+    #     term = pool.map(readterm, CHRS)
+    # term = pd.concat(term)
+    # term.columns = ['sample', 'bc', 'chr', 'cutoff']
+
+    # Remove chromosomes with only Het regions
+    df2 = deque()
+    for grp in df.groupby(['sample', 'bc', 'chr', 'ref']):
+        if grp[1].shape[0] == 1:
+            if grp[1]['genotype'].to_list()[0] == 'AB':
+                continue
+        df2.append(grp[1])
+    df2 = pd.concat(df2)
+
+    # Set all small CO regions as Het
+    df2['l'] = df2['end'] - df2['start'] + 1
+    df2.loc[df2['l'] < 500000, 'genotype'] = 'AB'
+    df2 = mergegenotype(df2)
+
+    # Again filter chromosomes with only Het regions
+    df3 = deque()
+    for grp in df2.groupby(['sample', 'bc', 'chr', 'ref']):
+        if grp[1].shape[0] == 1:
+            if grp[1]['genotype'].to_list()[0] == 'AB':
+                continue
+        df3.append(grp[1])
+    df3 = pd.concat(df3)
+    df3['l'] = df3['end'] - df3['start'] + 1
+    # df3.to_pickle(CWD+'df3.pkl')
+    df3 = pd.read_pickle(CWD+'df3.pkl')
+
+    csnps, csnpcnt, cbinpos, cbinlen, cwindow = getwindows(CURLEN, SNPFIN['cur'], STEP=STEP, WINSIZE=WINSIZE)
+    osnps, osnpcnt, obinpos, obinlen, owindow = getwindows(ORALEN, SNPFIN['ora'], STEP=STEP, WINSIZE=WINSIZE)
+
+    df3['highhom'] = 0
+    for grp in df3.groupby(['sample', 'bc', 'chr']):
+        if sum(grp[1].loc[grp[1]['genotype']=='AB','l']) < 0.1 * sum(grp[1]['l']):
+            df3.loc[(df3['sample']==grp[0][0]) & (df3['bc']==grp[0][1]) & (df3['chr']==grp[0][2]), 'highhom'] = 1
+
+
+    fins = CWD + '{chr}/input_q40_lowvar/{chr}_{s}_{bc}_b30_q40.depth450-650.af0.4-0.6.bt2.txt'
+    with Pool(processes=64) as pool:
+        newdf = pool.map(partial(getcocells, insnp=SNPPOS, fins=fins), tqdm(df3.groupby(['sample', 'bc', 'chr'])))
+
+    newdf = pd.concat(newdf)
+
+
+
+
+
+    newdf.loc[(newdf.end - newdf.start) < 500000, 'newgen'] = 'AB'
+    newdf['genotype'] = newdf['newgen']
+    newdf2 = mergegenotype(newdf)
+    newdf2.to_pickle(CWD+'newdf2.pkl')
+    COLOR = {'AA': 'red', 'AB': 'purple', 'BB': 'blue'}
+    with PdfPages(CWD + 'CO_selected_coverage_overlap_with_SNP.pdf') as pdf:
+        count = 0
+        fig = plt.figure(figsize=[8, 15])
+        for grp in newdf2.groupby(['sample', 'bc', 'chr']):
+            ax = plt.subplot2grid((30, 1), (count, 0), rowspan=2)
+            acnt = {}
+            with open('{INDIR}/rtiger_out/{chr}/input_q40_filter/{chr}_{s}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(INDIR=INDIR, s=grp[0][0], bc=grp[0][1], chr=grp[0][2]), 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    acnt[int(line[1])] = [int(line[3]), int(line[5])]
+            ax.bar(acnt.keys(), [v[0] for v in acnt.values()], width=20000, color='red')
+            ax.bar(acnt.keys(), [-1*v[1] for v in acnt.values()], width=20000, color='blue')
+            ax.set_ylabel('#Reads')
+            ax.set_xlim([0, CHRLEN['CUR1G']])
+            ax.set_title(" ".join(grp[0]))
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.set_xticks([])
+
+            count += 2
+            ax = plt.subplot2grid((30, 1), (count, 0), rowspan=2)
+            ax.set_xlim([0, CHRLEN['CUR1G']])
+            # ax.set_ylim([0, 1])
+            ax.plot(covs[grp[0]][0].keys(), covs[grp[0]][0].values(), color='darkred', lw=0.75, label='ref cov')
+            ax.plot(covs[grp[0]][1].keys(), covs[grp[0]][1].values(), color='blue', lw=0.75, label='qry cov')
+            ax.plot(totcov[grp[0]].keys(), totcov[grp[0]].values(), color='black', lw=0.75, label='tot cov', ls='--')
+            for row in grp[1].itertuples(index=False):
+                ax.add_patch(Rectangle((row.start, 0), row.end-row.start, 1, facecolor=COLOR[row.genotype], alpha=0.5))
+            ax.set_ylabel('Coverage')
+            ax.hlines(avecov[grp[0]], 0, CHRLEN[grp[0][2]], label='chr mean', linestyle='dashed', color='black', lw=0.75)
+            ax.hlines(cellcov[(grp[0][0], grp[0][1])], 0, CHRLEN[grp[0][2]], label='cell mean', linestyle='dotted', color='black', lw=0.75)
+            # if count == 1:
+            ax.legend(fontsize='small', ncol=5, loc='upper right',facecolor="none", frameon=False)
+
+            count += 3
+            if count >= 30:
+                plt.subplots_adjust(left=0.1,
+                                    bottom=0.02,
+                                    right=0.98,
+                                    top=0.98,
+                                    wspace=0.4,
+                                    hspace=0.5)
+                # break
+                pdf.savefig()
+                count = 0
+                fig = plt.figure(figsize=[8, 15])
+        plt.tight_layout()
+        plt.close()
+        pdf.savefig()
+
+
+
+
+
+
+
+
+    def getcoverage_SNP(grp, window_size=1000000, step_size=100000):
+        """
+        Get read-mapping coverage using SNP markers and separately for the two haplotypes
+
+        Need to Optimize this. Repeatitive searching using interval tree is a bit slow
+        """
+        print(grp[0])
+        # print(str(datetime.now()))
+
+        snpf = CWD + '{chr}/input_q40_filter/{chr}_{sample}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(sample=grp[0][0], bc= grp[0][1], chr=grp[0][2])
+        rin = deque()
+        qin = deque()
+        selectedpos = deque()
+        with open(snpf, 'r') as fin:
+            for line in fin:
+                line = line.strip().split()
+                p = int(line[1])
+                rin.append(Interval(p, p+1, int(line[3])))
+                qin.append(Interval(p, p+1, int(line[5])))
+                selectedpos.append(p)
+
+        selectedpos = set(selectedpos)
+        snps = SNPS.loc[SNPS['chr']==grp[0][2], 'pos']
+        for snp in snps:
+            if snp not in selectedpos:
+                rin.append(Interval(snp, snp+1, 0))
+                qin.append(Interval(snp, snp+1, 0))
+        rtree = ivtree(rin)
+        qtree = ivtree(qin)
+
+        # print(str(datetime.now()))
+        rmean_cov = {}
+        qmean_cov = {}
+        for i in range(1, CHRLEN[grp[0][2]], step_size):
+            pos = rtree[i: (i+window_size)]
+            try:
+                rmean_cov[i+(window_size/2)] = sum([i[2] for i in pos]) / len(pos)
+            except ZeroDivisionError:
+                rmean_cov[i+(window_size/2)] = 0
+                qmean_cov[i + (window_size / 2)] = 0
+                continue
+            pos = qtree[i: (i+window_size)]
+            qmean_cov[i+(window_size/2)] = sum([i[2] for i in pos])/len(pos)
+        # print(str(datetime.now()))
+        return {grp[0]: [rmean_cov, qmean_cov]}
+
+    with Pool(processes=80) as pool:
+        covs = pool.map(getcoverage_SNP, df.groupby(['sample', 'bc', 'chr']))
+    covs = {list(i.keys())[0]: list(i.values())[0] for i in covs}
+    # with open(CWD+'covs.pickle.object', 'wb') as f:
+    #     pickle.dump(covs, f)
+    # # This covs object is saved here (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/covs.pickle.object) and can be pickle.load
+    covs = pickle.load(open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/covs.pickle.object', 'rb'))
+
+    # Get Total coverage across chrs
+    totcov = {}
+    for k, v in covs.items():
+        totcov[k] = {p: (v[0][p] + v[1][p]) for p in v[0].keys()}
+
+    # Get average coverage for chrs
+    avecov = {}
+    for k, v in totcov.items():
+        avecov[k] = sum(v.values())/len(v)
+
+    # Get average coverage for cells
+    cellcov = {}
+    for grp in df.groupby(['sample', 'bc']):
+        cov, s = 0, 0
+        for c in CHRS:
+            try:
+                cov += avecov[(grp[0][0], grp[0][1], c)]*CHRLEN[c]
+                s += CHRLEN[c]
+            except KeyError:
+                pass
+        cellcov[(grp[0][0], grp[0][1])] = cov/s
+
+
+    # Save plots for original (semi-filtered) chromosomes with homozygous regions
+    COLOR = {'AA': 'red', 'AB': 'purple', 'BB': 'blue'}
+    count = 1
+    with PdfPages(CWD + 'CO_coverage_overlap_with_SNP.pdf') as pdf:
+        fig = plt.figure(figsize=[8, 15])
+        # cnt = 0
+        for grp in df3.groupby(['sample', 'bc', 'chr']):
+            # cnt += 1
+            # if cnt ==21 : break
+            # break
+            ax = fig.add_subplot(10, 1, count)
+            ax.set_xlim([0, CHRLEN['CUR1G']])
+            # ax.set_ylim([0, 1])
+            ax.plot(covs[grp[0]][0].keys(), covs[grp[0]][0].values(), color='darkred', lw=0.75, label='ref cov')
+            ax.plot(covs[grp[0]][1].keys(), covs[grp[0]][1].values(), color='blue', lw=0.75, label='qry cov')
+            ax.plot(totcov[grp[0]].keys(), totcov[grp[0]].values(), color='black', lw=0.75, label='tot cov', ls='--')
+            for row in grp[1].itertuples(index=False):
+                ax.add_patch(Rectangle((row.start, 0), row.end-row.start, 1, facecolor=COLOR[row.genotype], alpha=0.5))
+            ax.set_title(" ".join(grp[0]))
+            ax.set_ylabel('Coverage')
+            ax.hlines(avecov[grp[0]], 0, CHRLEN[grp[0][2]], label='chr mean', linestyle='dashed', color='black', lw=0.75)
+            ax.hlines(cellcov[(grp[0][0], grp[0][1])], 0, CHRLEN[grp[0][2]], label='cell mean', linestyle='dotted', color='black', lw=0.75)
+            # if count == 1:
+            ax.legend(fontsize='small', ncol=5, loc='upper right',facecolor="none", frameon=False)
+            count += 1
+            if count == 11:
+                plt.tight_layout()
+                pdf.savefig()
+                count = 1
+                fig = plt.figure(figsize=[8, 15])
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close()
+
+
+
+    gen_cov = defaultdict(deque)
+    for grp in df3.groupby(['sample', 'bc', 'chr']):
+        # break
+        for row in grp[1].itertuples(index=False):
+            mc = 0
+            cnt = 0
+            for i in range(row.start, row.end, 100000):
+                mc += totcov[grp[0]][((i//100000)*100000)+500001]
+                cnt += 1
+            gen_cov[row.genotype].append(mc/cnt)
+
+    from scipy.stats import gaussian_kde
+    fig = plt.figure()
+    ax = fig.add_subplot(2, 1, 1)
+    x_vals = np.linspace(0, 0.6, 200)       # Specifying the limits of our data
+    density = gaussian_kde(gen_cov['AA'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='red', label='AA')
+    density = gaussian_kde(gen_cov['AB'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='purple', label='AB')
+    density = gaussian_kde(gen_cov['BB'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='blue', label='BB')
+    ax.legend()
+    ax.set_xlabel('Coverage')
+    ax.set_ylabel('Frequency')
+
+
+    # Get deviation from the mean coverage of the chr
+    gen_cov_dev = defaultdict(deque)
+    for grp in df3.groupby(['sample', 'bc', 'chr']):
+        for row in grp[1].itertuples(index=False):
+            mc = 0
+            cnt = 0
+            for i in range(row.start, row.end, 100000):
+                mc += totcov[grp[0]][((i//100000)*100000)+500001]
+                cnt += 1
+            gen_cov_dev[row.genotype].append((mc/cnt) - avecov[(grp[0][0], grp[0][1], grp[0][2])])
+
+    # fig = plt.figure()
+    ax = fig.add_subplot(2, 1, 2)
+    x_vals = np.linspace(-0.4, 0.4, 200)       # Specifying the limits of our data
+    density = gaussian_kde(gen_cov_dev['AA'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='red', label='AA')
+    density = gaussian_kde(gen_cov_dev['AB'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='purple', label='AB')
+    density = gaussian_kde(gen_cov_dev['BB'])
+    density.covariance_factor = lambda : .5 #Smoothing parameter
+    density._compute_covariance()
+    ax.plot(x_vals, density(x_vals), color='blue', label='BB')
+    ax.legend()
+    ax.set_xlabel('Deviation from cell mean-coverage')
+    ax.set_ylabel('Frequency')
+    plt.tight_layout()
+    plt.savefig(CWD+'coverage_in_het_hom_regions.pdf')
+
+    # There are differences in the coverage of the Heterozygous and Homozygous. To remove homozygous regions that are selected only because of chromosome region dropout, I do a permutation test of the mean.
+    # For a cell, I get read counts at the heterezygous positions, and then select N random positions M times to get a distribution of mean. Similarly, I get a distribution of mean for each homozygous position. If the mean read coverage of homozygous position has a different distribution than the heterozygous positions, then that positions is filtered out.
+
+#################### TEMP FIN ############################3
 
 ################################################################################
 ######################### Plot CO Counts in BCs ################################
@@ -390,464 +877,6 @@ plt.savefig(CWD + '/CO_density_filter_q40.pdf')
 ############################################################################
 ############### Filter out noisy low-confidence COs ########################
 ############################################################################
-
-def mergegenotype(indf):
-    outdf = pd.DataFrame()
-    for grp in indf.groupby(['sample', 'bc', 'chr']):
-        # if len(pd.unique(grp[1]['genotype'])) == 1: continue
-        tmp = deque()
-        current = ''
-        for row in grp[1].itertuples(index=False):
-        # for row in garb.itertuples(index=False):
-            if current == '':
-                current = list(row)
-                continue
-            if current[5] != row.genotype:
-                tmp.append(current)
-                current = list(row)
-            else:
-                current[4] = row.end
-        tmp.append(current)
-        tmp = pd.DataFrame(tmp)
-        tmp.columns = grp[1].columns
-        outdf = pd.concat([outdf, tmp])
-    return outdf
-
-# Remove chromosomes with only Het regions
-df2 = pd.DataFrame()
-for grp in df.groupby(['sample', 'bc', 'chr']):
-    if grp[1].shape[0] == 1:
-        if grp[1]['genotype'].to_list()[0] == 'AB':
-            continue
-    df2 = pd.concat([df2, grp[1]])
-
-# Set all small CO regions as Het
-df2['l'] = df2['end'] - df2['start'] + 1
-df2.loc[df2['l'] < 500000, 'genotype'] = 'AB'
-df2 = mergegenotype(df2)
-
-# Again filter chromosomes with only Het regions
-df3 = pd.DataFrame()
-for grp in df2.groupby(['sample', 'bc', 'chr']):
-    if grp[1].shape[0] == 1:
-        if grp[1]['genotype'].to_list()[0] == 'AB':
-            continue
-    df3 = pd.concat([df3, grp[1]])
-df3['l'] = df3['end'] - df3['start'] + 1
-# df3.to_pickle(CWD+'df3.pkl')
-df3 = pd.read_pickle(CWD+'df3.pkl')
-
-# Getting coverage from all reads is not used anymore, instead coverage is only
-# calculated from the SNPs
-# def getcoverage(grp, window_size=1000000, step_size=100000):
-#     """
-#     Get read-mapping coverage based on all high quality mapping reads
-#     """
-#     print(grp[0])
-#     bam = INDIR + grp[0][0] + os.sep + 'barcodes' + os.sep + grp[0][1] + os.sep + grp[0][1] + '.DUPmarked.deduped.bam'
-#     chr = grp[0][2]
-#     from subprocess import Popen, PIPE
-#     p = Popen("/srv/netscratch/dep_mercier/grp_schneeberger/bin/bin_manish/samtools depth -aa -d 0 -Q 40 -q 30 -r {} {}".format(chr, bam).split(), stdout=PIPE, stderr=PIPE)
-#     o = p.communicate()
-#     if o[1] != b'':
-#         sys.exit("Error in using samtools depth:{}".format(o[1].decode()))
-#     rc = np.zeros(CHRLEN[chr]+1)
-#     start = 0
-#     o2 = o[0].decode()
-#     h = re.finditer('\n', o2)
-#     for b in h:
-#         line = o2[start:b.start()].strip().split('\t')
-#         start = b.end()
-#         rc[int(line[1])] = int(line[2])
-#     mean_cov = {}
-#     for i in range(1, CHRLEN[chr], step_size):
-#         mean_cov[i] = sum(rc[i:(i+window_size)])/window_size
-#     return {grp[0]: mean_cov}
-# with Pool(processes=45) as pool:
-#     covs = pool.map(getcoverage, df3.groupby(['sample', 'bc', 'chr']))
-# covs = {list(i.keys())[0]: list(i.values())[0] for i in covs}
- .
-
-
-def getcoverage_SNP(grp, window_size=1000000, step_size=100000):
-    """
-    Get read-mapping coverage based only on SNP markers and separately for the two haplotypes
-
-    Need to Optimize this. Repeatitive searching using interval tree is a bit slow
-    """
-    print(grp[0])
-    # print(str(datetime.now()))
-
-    snpf = CWD + '{chr}/input_q40_filter/{chr}_{sample}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(sample=grp[0][0], bc= grp[0][1], chr=grp[0][2])
-    rin = deque()
-    qin = deque()
-    selectedpos = deque()
-    with open(snpf, 'r') as fin:
-        for line in fin:
-            line = line.strip().split()
-            p = int(line[1])
-            rin.append(Interval(p, p+1, int(line[3])))
-            qin.append(Interval(p, p+1, int(line[5])))
-            selectedpos.append(p)
-
-    selectedpos = set(selectedpos)
-    snps = SNPS.loc[SNPS['chr']==grp[0][2], 'pos']
-    for snp in snps:
-        if snp not in selectedpos:
-            rin.append(Interval(snp, snp+1, 0))
-            qin.append(Interval(snp, snp+1, 0))
-    rtree = ivtree(rin)
-    qtree = ivtree(qin)
-
-    # print(str(datetime.now()))
-    rmean_cov = {}
-    qmean_cov = {}
-    for i in range(1, CHRLEN[grp[0][2]], step_size):
-        pos = rtree[i: (i+window_size)]
-        try:
-            rmean_cov[i+(window_size/2)] = sum([i[2] for i in pos]) / len(pos)
-        except ZeroDivisionError:
-            rmean_cov[i+(window_size/2)] = 0
-            qmean_cov[i + (window_size / 2)] = 0
-            continue
-        pos = qtree[i: (i+window_size)]
-        qmean_cov[i+(window_size/2)] = sum([i[2] for i in pos])/len(pos)
-    # print(str(datetime.now()))
-    return {grp[0]: [rmean_cov, qmean_cov]}
-
-with Pool(processes=80) as pool:
-    covs = pool.map(getcoverage_SNP, df.groupby(['sample', 'bc', 'chr']))
-covs = {list(i.keys())[0]: list(i.values())[0] for i in covs}
-# with open(CWD+'covs.pickle.object', 'wb') as f:
-#     pickle.dump(covs, f)
-# # This covs object is saved here (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/covs.pickle.object) and can be pickle.load
-covs = pickle.load(open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/covs.pickle.object', 'rb'))
-
-# Get Total coverage across chrs
-totcov = {}
-for k, v in covs.items():
-    totcov[k] = {p: (v[0][p] + v[1][p]) for p in v[0].keys()}
-
-# Get average coverage for chrs
-avecov = {}
-for k, v in totcov.items():
-    avecov[k] = sum(v.values())/len(v)
-
-# Get average coverage for cells
-cellcov = {}
-for grp in df.groupby(['sample', 'bc']):
-    cov, s = 0, 0
-    for c in CHRS:
-        try:
-            cov += avecov[(grp[0][0], grp[0][1], c)]*CHRLEN[c]
-            s += CHRLEN[c]
-        except KeyError:
-            pass
-    cellcov[(grp[0][0], grp[0][1])] = cov/s
-
-# for grp in df.groupby(['sample', 'bc', 'chrs'])
-# cellcov = {}
-# for grp in df.groupby(['sample', 'bc']):
-#     s = 0
-#     with open(INDIR + grp[0][0] + os.sep + 'barcodes' + os.sep + grp[0][1] + os.sep + 'mean_read_cov_q30_Q40.txt', 'r') as fin:
-#         for line in fin:
-#             if line[:3] != 'CUR': continue
-#             line = line.strip().split()
-#             s += float(line[1])*CHRLEN[line[0]]
-#     cellcov[grp[0]] = s/GS
-
-
-# Save plots for original (semi-filtered) chromosomes with homozygous regions
-COLOR = {'AA': 'red', 'AB': 'purple', 'BB': 'blue'}
-count = 1
-with PdfPages(CWD + 'CO_coverage_overlap_with_SNP.pdf') as pdf:
-    fig = plt.figure(figsize=[8, 15])
-    # cnt = 0
-    for grp in df3.groupby(['sample', 'bc', 'chr']):
-        # cnt += 1
-        # if cnt ==21 : break
-        # break
-        ax = fig.add_subplot(10, 1, count)
-        ax.set_xlim([0, CHRLEN['CUR1G']])
-        # ax.set_ylim([0, 1])
-        ax.plot(covs[grp[0]][0].keys(), covs[grp[0]][0].values(), color='darkred', lw=0.75, label='ref cov')
-        ax.plot(covs[grp[0]][1].keys(), covs[grp[0]][1].values(), color='blue', lw=0.75, label='qry cov')
-        ax.plot(totcov[grp[0]].keys(), totcov[grp[0]].values(), color='black', lw=0.75, label='tot cov', ls='--')
-        for row in grp[1].itertuples(index=False):
-            ax.add_patch(Rectangle((row.start, 0), row.end-row.start, 1, facecolor=COLOR[row.genotype], alpha=0.5))
-        ax.set_title(" ".join(grp[0]))
-        ax.set_ylabel('Coverage')
-        ax.hlines(avecov[grp[0]], 0, CHRLEN[grp[0][2]], label='chr mean', linestyle='dashed', color='black', lw=0.75)
-        ax.hlines(cellcov[(grp[0][0], grp[0][1])], 0, CHRLEN[grp[0][2]], label='cell mean', linestyle='dotted', color='black', lw=0.75)
-        # if count == 1:
-        ax.legend(fontsize='small', ncol=5, loc='upper right',facecolor="none", frameon=False)
-        count += 1
-        if count == 11:
-            plt.tight_layout()
-            pdf.savefig()
-            count = 1
-            fig = plt.figure(figsize=[8, 15])
-    plt.tight_layout()
-    pdf.savefig()
-    plt.close()
-
-
-
-gen_cov = defaultdict(deque)
-for grp in df3.groupby(['sample', 'bc', 'chr']):
-    # break
-    for row in grp[1].itertuples(index=False):
-        mc = 0
-        cnt = 0
-        for i in range(row.start, row.end, 100000):
-            mc += totcov[grp[0]][((i//100000)*100000)+500001]
-            cnt += 1
-        gen_cov[row.genotype].append(mc/cnt)
-
-from scipy.stats import gaussian_kde
-fig = plt.figure()
-ax = fig.add_subplot(2, 1, 1)
-x_vals = np.linspace(0, 0.6, 200)       # Specifying the limits of our data
-density = gaussian_kde(gen_cov['AA'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='red', label='AA')
-density = gaussian_kde(gen_cov['AB'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='purple', label='AB')
-density = gaussian_kde(gen_cov['BB'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='blue', label='BB')
-ax.legend()
-ax.set_xlabel('Coverage')
-ax.set_ylabel('Frequency')
-
-
-# Get deviation from the mean coverage of the chr
-gen_cov_dev = defaultdict(deque)
-for grp in df3.groupby(['sample', 'bc', 'chr']):
-    for row in grp[1].itertuples(index=False):
-        mc = 0
-        cnt = 0
-        for i in range(row.start, row.end, 100000):
-            mc += totcov[grp[0]][((i//100000)*100000)+500001]
-            cnt += 1
-        gen_cov_dev[row.genotype].append((mc/cnt) - avecov[(grp[0][0], grp[0][1], grp[0][2])])
-
-# fig = plt.figure()
-ax = fig.add_subplot(2, 1, 2)
-x_vals = np.linspace(-0.4, 0.4, 200)       # Specifying the limits of our data
-density = gaussian_kde(gen_cov_dev['AA'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='red', label='AA')
-density = gaussian_kde(gen_cov_dev['AB'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='purple', label='AB')
-density = gaussian_kde(gen_cov_dev['BB'])
-density.covariance_factor = lambda : .5 #Smoothing parameter
-density._compute_covariance()
-ax.plot(x_vals, density(x_vals), color='blue', label='BB')
-ax.legend()
-ax.set_xlabel('Deviation from cell mean-coverage')
-ax.set_ylabel('Frequency')
-plt.tight_layout()
-plt.savefig(CWD+'coverage_in_het_hom_regions.pdf')
-
-# There are differences in the coverage of the Heterozygous and Homozygous. To remove homozygous regions that are selected only because of chromosome region dropout, I do a permutation test of the mean.
-# For a cell, I get read counts at the heterezygous positions, and then select N random positions M times to get a distribution of mean. Similarly, I get a distribution of mean for each homozygous position. If the mean read coverage of homozygous position has a different distribution than the heterozygous positions, then that positions is filtered out.
-INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
-
-df3['highhom'] = 0
-for grp in df3.groupby(['sample', 'bc', 'chr']):
-    if sum(grp[1].loc[grp[1]['genotype']=='AB','l']) < 0.1 * sum(grp[1]['l']):
-        df3.loc[(df3['sample']==grp[0][0]) & (df3['bc']==grp[0][1]) & (df3['chr']==grp[0][2]), 'highhom'] = 1
-
-def getCOcells(grp):
-    print(grp[0])
-    newgen = deque()
-    if grp[1]['highhom'][0] == 1:
-        return
-    if len(pd.unique(grp[1]['genotype'])) == 1:
-        return
-    snps = defaultdict(dict)
-    for row in SNPS.loc[SNPS['chr']==grp[0][2]].itertuples(index=False):
-        snps[row.pos] = [0, 0]
-    with open('{INDIR}/rtiger_out/{chr}/input_q40_filter/{chr}_{s}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(INDIR=INDIR, s=grp[0][0], bc=grp[0][1], chr=grp[0][2]), 'r') as fin:
-        for line in fin:
-            line = line.strip().split()
-            snps[int(line[1])] = [int(line[3]), int(line[5])]
-    snppos = np.array(list(snps.keys()))
-    hetpos = deque([])
-    for row in grp[1].itertuples(index=False):
-        if row.genotype in ['AA', 'BB']: continue
-        hetpos.extend(snppos[(snppos >= row.start) & (snppos < row.end)])
-    if len(hetpos) < 1000:
-        print("Too little het markers {}".format(grp[0]))
-        return
-    hetpos = np.array(hetpos)
-    rcnthet = np.array([snps[h][0] for h in hetpos])
-    qcnthet = np.array([snps[h][1] for h in hetpos])
-    rmeanhet = [np.mean(np.random.choice(rcnthet, 500, replace=False)) for _ in range(100)]
-    qmeanhet = [np.mean(np.random.choice(qcnthet, 500, replace=False)) for _ in range(100)]
-
-    # cnt = 0
-    for row in grp[1].itertuples(index=False):
-        # cnt += 1
-        # if cnt == 5: break
-        if row.genotype == 'AB':
-            newgen.append('AB')
-            continue
-        hompos = snppos[(snppos >= row.start) & (snppos < row.end)]
-        if row.genotype == 'AA':
-            h = rmeanhet
-            l = qmeanhet
-            hcnthom = np.array([snps[h][0] for h in hompos])
-            lcnthom = np.array([snps[h][1] for h in hompos])
-        else:
-            h = qmeanhet
-            l = rmeanhet
-            hcnthom = np.array([snps[h][1] for h in hompos])
-            lcnthom = np.array([snps[h][0] for h in hompos])
-        if sum(hcnthom>0) < 500:
-            newgen.append('AB')
-            continue
-        hmeanhom = [np.mean(np.random.choice(hcnthom, 500, replace=False)) for _ in range(100)]
-        lmeanhom = [np.mean(np.random.choice(lcnthom, 500, replace=False)) for _ in range(100)]
-        if np.mean(lmeanhom) > 0.05*np.mean(hmeanhom):
-            newgen.append('AB')
-        elif ttest_ind(hmeanhom, h, alternative='greater', equal_var=False).pvalue > 0.000001:
-            newgen.append('AB')
-        elif np.mean(hmeanhom) < 1.75*np.mean(h) or np.mean(hmeanhom) > 2.5*np.mean(h):
-            newgen.append('AB')
-        elif ttest_ind(lmeanhom, l, alternative='less', equal_var=False).pvalue > 0.000001:
-            newgen.append('AB')
-        elif np.mean(lmeanhom) > 0.1*np.mean(l):
-            newgen.append('AB')
-        else:
-            newgen.append(row.genotype)
-    if len(pd.unique(newgen)) == 1: return
-    else:
-        outdf = grp[1].copy()
-        outdf['newgen'] = newgen
-        return outdf
-
-
-# def getCOcells(grp):
-#     print(grp[0])
-#     newgen = deque()
-#     if len(pd.unique(grp[1]['genotype'])) == 1:
-#         return
-#     if 'AB' not in grp[1]['genotype'].to_list():
-#         return
-#     bcsnps = defaultdict(dict)
-#     for row in SNPS.itertuples(index=False):
-#         bcsnps[row.chr][row.pos] = 0
-#     with open('{INDIR}/{s}/{bc}/{s}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(INDIR=INDIR, s=grp[0][0], bc=grp[0][1]), 'r') as fin:
-#         for line in fin:
-#             line = line.strip().split()
-#             bcsnps[line[0]][int(line[1])] = int(line[3]) + int(line[5])
-#
-#     bcsnppos = {c: np.array(list(pos.keys())) for c, pos in bcsnps.items()}
-#     hetpos = deque()
-#     for row in grp[1].itertuples(index=False):
-#         if row.genotype in ['AA', 'BB']: continue
-#         for pos in bcsnppos[row.chr][(bcsnppos[row.chr] >= row.start) & (bcsnppos[row.chr] < row.end)]:
-#             hetpos.append(bcsnps[row.chr][pos])
-#     if len(hetpos) < 10000:
-#         print("Too little het markers {}".format(grp[0]))
-#         return
-#     hetpos = np.array(hetpos)
-#     means = [np.mean(np.random.choice(hetpos, 500, replace=False)) for _ in range(100)]
-#     for row in grp[1].itertuples(index=False):
-#         if row.genotype == 'AB':
-#             newgen.append('AB')
-#             continue
-#         rcs = np.array([bcsnps[row.chr][pos] for pos in bcsnppos[row.chr][(bcsnppos[row.chr] >= row.start) & (bcsnppos[row.chr] < row.end)]])
-#         if len(rcs) < 500:
-#             newgen.append('AB')
-#             continue
-#         rmean = [np.mean(np.random.choice(rcs, 500, replace=False)) for _ in range(100)]
-#         if ttest_ind(means, rmean, alternative='greater').pvalue < 0.000001: newgen.append('AB')
-#         else:
-#             print(row.genotype)
-#             newgen.append(row.genotype)
-#     if len(pd.unique(newgen)) == 1: return
-#     else:
-#         outdf = grp[1].copy()
-#         outdf['newgen'] = newgen
-#         return outdf
-
-with Pool(processes=4) as pool:
-    newdf = pool.map(getCOcells, df3.groupby(['sample', 'bc', 'chr']))
-newdf = pd.concat(newdf)
-newdf.loc[(newdf.end - newdf.start) < 500000, 'newgen'] = 'AB'
-newdf['genotype'] = newdf['newgen']
-newdf2 = mergegenotype(newdf)
-newdf2.to_pickle(CWD+'newdf2.pkl')
-COLOR = {'AA': 'red', 'AB': 'purple', 'BB': 'blue'}
-with PdfPages(CWD + 'CO_selected_coverage_overlap_with_SNP.pdf') as pdf:
-    count = 0
-    fig = plt.figure(figsize=[8, 15])
-    for grp in newdf2.groupby(['sample', 'bc', 'chr']):
-        ax = plt.subplot2grid((30, 1), (count, 0), rowspan=2)
-        acnt = {}
-        with open('{INDIR}/rtiger_out/{chr}/input_q40_filter/{chr}_{s}_{bc}_b30_q40.depth350-550.af0.35-0.6.bt2.txt'.format(INDIR=INDIR, s=grp[0][0], bc=grp[0][1], chr=grp[0][2]), 'r') as fin:
-            for line in fin:
-                line = line.strip().split()
-                acnt[int(line[1])] = [int(line[3]), int(line[5])]
-        ax.bar(acnt.keys(), [v[0] for v in acnt.values()], width=20000, color='red')
-        ax.bar(acnt.keys(), [-1*v[1] for v in acnt.values()], width=20000, color='blue')
-        ax.set_ylabel('#Reads')
-        ax.set_xlim([0, CHRLEN['CUR1G']])
-        ax.set_title(" ".join(grp[0]))
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
-        ax.set_xticks([])
-
-        count += 2
-        ax = plt.subplot2grid((30, 1), (count, 0), rowspan=2)
-        ax.set_xlim([0, CHRLEN['CUR1G']])
-        # ax.set_ylim([0, 1])
-        ax.plot(covs[grp[0]][0].keys(), covs[grp[0]][0].values(), color='darkred', lw=0.75, label='ref cov')
-        ax.plot(covs[grp[0]][1].keys(), covs[grp[0]][1].values(), color='blue', lw=0.75, label='qry cov')
-        ax.plot(totcov[grp[0]].keys(), totcov[grp[0]].values(), color='black', lw=0.75, label='tot cov', ls='--')
-        for row in grp[1].itertuples(index=False):
-            ax.add_patch(Rectangle((row.start, 0), row.end-row.start, 1, facecolor=COLOR[row.genotype], alpha=0.5))
-        ax.set_ylabel('Coverage')
-        ax.hlines(avecov[grp[0]], 0, CHRLEN[grp[0][2]], label='chr mean', linestyle='dashed', color='black', lw=0.75)
-        ax.hlines(cellcov[(grp[0][0], grp[0][1])], 0, CHRLEN[grp[0][2]], label='cell mean', linestyle='dotted', color='black', lw=0.75)
-        # if count == 1:
-        ax.legend(fontsize='small', ncol=5, loc='upper right',facecolor="none", frameon=False)
-
-        count += 3
-        if count >= 30:
-            plt.subplots_adjust(left=0.1,
-                    bottom=0.02,
-                    right=0.98,
-                    top=0.98,
-                    wspace=0.4,
-                    hspace=0.5)
-            # break
-            pdf.savefig()
-            count = 0
-            fig = plt.figure(figsize=[8, 15])
-    plt.tight_layout()
-    plt.close()
-    pdf.savefig()
-
-
-# Frow newdf2, remove chromosomes that are only het.
-df2 = pd.DataFrame()
-for grp in newdf2.groupby(['sample', 'bc', 'chr']):
-    if grp[1].shape[0] == 1:
-        if grp[1]['genotype'].to_list()[0] == 'AB':
-            continue
-    df2 = pd.concat([df2, grp[1]])
 
 
 ################################################################################

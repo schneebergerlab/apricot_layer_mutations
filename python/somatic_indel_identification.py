@@ -209,6 +209,7 @@ def multicell(args):
 
 
 def get_readcounts(fin, loc):
+    keys = set(loc.keys())
     sample_dict = {}
     with open(fin, 'r') as fin:
         for line in fin:
@@ -216,8 +217,8 @@ def get_readcounts(fin, loc):
                 if not '-' in line:
                     continue
             line = line.strip().split()
-            if line[0] + '_' + line[1] in loc:
-                sample_dict[line[0] + '_' + line[1]] = {line[i]: line[i+1] for i in range(9, len(line), 2)}
+            if line[0] + '_' + line[1] in keys:
+                sample_dict[line[0] + '_' + line[1]] = {line[i]: line[i+1] for i in range(9, len(line), 2) if line[i] in loc[line[0] + '_' + line[1]]}
                 sample_dict[line[0] + '_' + line[1]]['RC'] = line[3]
     return sample_dict
 
@@ -245,7 +246,8 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
                 except KeyError as e:
                     print("ERROR: Candidate does not have any reads: {}".format(pos, s))
             else:
-                for p in [pos, pos2]:
+                # for p in [pos, pos2]:
+                for p in [pos]:
                     try:
                         c = sum([int(c) for k, c in snps_readcount[s][p].items() if k != 'RC'])
                         # if len(c) > 1: print('ERROR')
@@ -277,8 +279,6 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
 
     # Get alt allele-freq at candidate positions in all samples
     sample_alfreq = deque()
-
-
     for pos, v in candidate_readcount[sample].items():
         sample_c = 0
         other_c = 0
@@ -297,9 +297,10 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
                 except ZeroDivisionError as e:
                     print("ERROR: Candidate does not have any reads: {}".format(pos, s))
             else :
-                for p in [pos, pos2]:
+                # for p in [pos, pos2]:
+                for p in [pos]:
                     try:
-                        c = sum([int(c) for k, c in snps_readcount[s][p].items()])/int(snps_readcount[s][pos]['RC'])
+                        c = sum([int(c) for k, c in snps_readcount[s][p].items() if k != 'RC'])/int(snps_readcount[s][pos]['RC'])
                         other_c += c
                     except KeyError as e:
                         other_c += 0
@@ -432,7 +433,7 @@ def filterbackground(args):
 
     candidate_readcount = OrderedDict()
     for sample in SAMPLES:
-        # print(sample)
+        print(sample)
         sample_dict = defaultdict()
         with open('{}/{}/multi_cell_{}_bt2_indel_candidate.sorted.filtered.bed'.format(CWD, sample, sample), 'r') as fin:
             for line in fin:
@@ -441,16 +442,18 @@ def filterbackground(args):
         candidate_readcount[sample] = sample_dict
     candidate_readcount = OrderedDict(candidate_readcount)
 
-    loc = deque()
+    loc = defaultdict(deque)
     for sample in SAMPLES:
         for k, v in candidate_readcount[sample].items():
-            loc.append(k)
-            c, p = k.rsplit('_', 1)
-            if '-' in candidate_readcount[sample][k][1]:
-                loc.append(c + "_" + str(int(p) - 1))
-            if '+' in candidate_readcount[sample][k][1]:
-                loc.append(c + "_" + str(int(p) + 1))
-    loc = set(loc)
+            loc[k].append(v[1])
+            # c, p = k.rsplit('_', 1)
+            # if '-' in candidate_readcount[sample][k][1]:
+            #     loc.append(c + "_" + str(int(p) - 1))
+            # if '+' in candidate_readcount[sample][k][1]:
+            #     loc.append(c + "_" + str(int(p) + 1))
+    for k in loc.keys():
+        loc[k] = set(loc[k])
+    # loc = set(loc)
     # loc = set([k for sample in SAMPLES for k in ])
 
     fins = ['{}{}/bam_read_counts_b30_q10.bt2.txt'.format(CWD, sample) for sample in SAMPLES]

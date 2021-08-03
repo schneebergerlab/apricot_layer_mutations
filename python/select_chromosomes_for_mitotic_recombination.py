@@ -12,13 +12,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 from functools import partial
 
 
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
-os.chdir(CWD)
-SAMPLES=('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
-INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
-STEP = 100000
-WINSIZE = 1000000
-
 def getwindows(CHRLEN, SNPSFIN, STEP=100000, WINSIZE=1000000):
     chrs = list(CHRLEN.keys())
     snps = pd.read_table(SNPSFIN, header=None, sep='\t')
@@ -33,7 +26,6 @@ def getwindows(CHRLEN, SNPSFIN, STEP=100000, WINSIZE=1000000):
         for i in range(1, CHRLEN[c], STEP):
             binpos[c][i//STEP] = tuple(cdf.loc[(cdf['pos'] >= i) & (cdf['pos'] < i+STEP), 'pos'])
             binlen[c][i//STEP] = len(binpos[c][i//STEP])
-
         bins = set(binlen[c].keys())
         for i in range(1, CHRLEN[c], WINSIZE):
             binin = tuple([j//STEP for j in range(i, i+WINSIZE, STEP) if j//STEP in bins])
@@ -176,62 +168,70 @@ def writechrrc(grp, outdir):
         cdf = df.loc[df[0] == row[9]]
         cdf.to_csv(outdir + row[9] + '/input_q40_lowvar/{chr}_{sample}_{bc}_b30_q40.depth450-650.af0.4-0.6.bt2.txt'.format(chr=row[9], sample=sample, bc=bc), sep='\t', index=False, header=False)
 
-
-CURLEN = {'CUR1G': 46975282,
-          'CUR2G': 33806098,
-          'CUR3G': 26861604,
-          'CUR4G': 26096899,
-          'CUR5G': 18585576,
-          'CUR6G': 27136638,
-          'CUR7G': 25539660,
-          'CUR8G': 23045982}
-CSNPFIN = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt'
-ORALEN = {'ORA1G': 47941709,
-          'ORA2G': 31001264,
-          'ORA3G': 27362024,
-          'ORA4G': 28585890,
-          'ORA5G': 18998592,
-          'ORA6G': 27963823,
-          'ORA7G': 24593044,
-          'ORA8G': 22326149}
-OSNPFIN = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt'
-
-CHRN = {'CUR1G': 1, 'CUR2G': 2, 'CUR3G': 3, 'CUR4G': 4, 'CUR5G': 5, 'CUR6G': 6, 'CUR7G': 7, 'CUR8G': 8, 'ORA1G': 1, 'ORA2G': 2, 'ORA3G': 3, 'ORA4G': 4, 'ORA5G': 5, 'ORA6G': 6, 'ORA7G': 7, 'ORA8G': 8}
+if __name__ == '__main__':
+    CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/'
+    os.chdir(CWD)
+    SAMPLES=('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+    INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
+    STEP = 100000
+    WINSIZE = 1000000
 
 
-csnps, csnpcnt, cbinpos, cbinlen, cwindow = getwindows(CURLEN, CSNPFIN, STEP=STEP, WINSIZE=WINSIZE)
-osnps, osnpcnt, obinpos, obinlen, owindow = getwindows(ORALEN, OSNPFIN, STEP=STEP, WINSIZE=WINSIZE)
+    CURLEN = {'CUR1G': 46975282,
+              'CUR2G': 33806098,
+              'CUR3G': 26861604,
+              'CUR4G': 26096899,
+              'CUR5G': 18585576,
+              'CUR6G': 27136638,
+              'CUR7G': 25539660,
+              'CUR8G': 23045982}
+    CSNPFIN = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt'
+    ORALEN = {'ORA1G': 47941709,
+              'ORA2G': 31001264,
+              'ORA3G': 27362024,
+              'ORA4G': 28585890,
+              'ORA5G': 18998592,
+              'ORA6G': 27963823,
+              'ORA7G': 24593044,
+              'ORA8G': 22326149}
+    OSNPFIN = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/ora_ref_strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.txt'
 
-# Read data for CUR as reference analysis
-fins = [f for sample in SAMPLES for f in glob.glob(CWD+sample+"/*/*b30_q40.depth450-650.af0.4-0.6.bt2.txt") if 'read_counts' not in f and 'ORA' not in f]
-cbcdf = readBCdata(fins, list(CURLEN), csnpcnt, cbinpos, cwindow)
+    CHRN = {'CUR1G': 1, 'CUR2G': 2, 'CUR3G': 3, 'CUR4G': 4, 'CUR5G': 5, 'CUR6G': 6, 'CUR7G': 7, 'CUR8G': 8, 'ORA1G': 1, 'ORA2G': 2, 'ORA3G': 3, 'ORA4G': 4, 'ORA5G': 5, 'ORA6G': 6, 'ORA7G': 7, 'ORA8G': 8}
 
-# Read data for ORA as reference analysis
-fins = [f for sample in SAMPLES for f in glob.glob(CWD+sample+"/*/*ORA_b30_q40.depth450-650.af0.4-0.6.bt2.txt") if 'read_counts' not in f]
-obcdf = readBCdata(fins, list(ORALEN), osnpcnt, obinpos, owindow)
 
-# Save plots
-with PdfPages(CWD+'coverage_variance_chromosomes.pdf') as pdf:
-    plotfigure(cbcdf, pdf, CURLEN, 'Cur reference stats')
-    plotfigure(obcdf, pdf, ORALEN, 'Ora reference stats')
+    csnps, csnpcnt, cbinpos, cbinlen, cwindow = getwindows(CURLEN, CSNPFIN, STEP=STEP, WINSIZE=WINSIZE)
+    osnps, osnpcnt, obinpos, obinlen, owindow = getwindows(ORALEN, OSNPFIN, STEP=STEP, WINSIZE=WINSIZE)
 
-# Filter out chromosomes with noisy sequencing based on manually selected cut-offs
-maxvcov = 0.008
-minscnt = 2000
-minnscnt = 0.05
+    # Read data for CUR as reference analysis
+    fins = [f for sample in SAMPLES for f in glob.glob(CWD+sample+"/*/*b30_q40.depth450-650.af0.4-0.6.bt2.txt") if 'read_counts' not in f and 'ORA' not in f]
+    cbcdf = readBCdata(fins, list(CURLEN), csnpcnt, cbinpos, cwindow)
 
-cbcdffilt = cbcdf.loc[(cbcdf['scnt'] >= 2000) & (cbcdf['vcov'] < 0.008) & (cbcdf['nscnt'] >= 0.05)].copy()
-obcdffilt = obcdf.loc[(obcdf['scnt'] >= 2000) & (cbcdf['vcov'] < 0.008) & (obcdf['nscnt'] >= 0.05)].copy()
+    # Read data for ORA as reference analysis
+    fins = [f for sample in SAMPLES for f in glob.glob(CWD+sample+"/*/*ORA_b30_q40.depth450-650.af0.4-0.6.bt2.txt") if 'read_counts' not in f]
+    obcdf = readBCdata(fins, list(ORALEN), osnpcnt, obinpos, owindow)
 
-cbcdffilt['chrn'] = [CHRN[row[2]] for row in cbcdffilt.itertuples(index=False)]
-obcdffilt['chrn'] = [CHRN[row[2]] for row in obcdffilt.itertuples(index=False)]
+    # Save plots
+    with PdfPages(CWD+'coverage_variance_chromosomes.pdf') as pdf:
+        plotfigure(cbcdf, pdf, CURLEN, 'Cur reference stats')
+        plotfigure(obcdf, pdf, ORALEN, 'Ora reference stats')
 
-# Chromosomes passing cutoffs for both references
-conserved = cbcdffilt.merge(obcdffilt, on=['sample', 'bc', 'chrn'], how='inner')
+    # Filter out chromosomes with noisy sequencing based on manually selected cut-offs
+    maxvcov = 0.008
+    minscnt = 2000
+    minnscnt = 0.05
 
-# Generate RTIGER input files
-OUTDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
-for k in CHRN:
-    os.makedirs(OUTDIR + k +'/input_q40_lowvar/')
-with Pool(processes=4) as pool:
-    pool.map(partial(writechrrc, outdir=OUTDIR), tqdm(conserved.groupby(['sample', 'bc'])))
+    cbcdffilt = cbcdf.loc[(cbcdf['scnt'] >= 2000) & (cbcdf['vcov'] < 0.008) & (cbcdf['nscnt'] >= 0.05)].copy()
+    obcdffilt = obcdf.loc[(obcdf['scnt'] >= 2000) & (cbcdf['vcov'] < 0.008) & (obcdf['nscnt'] >= 0.05)].copy()
+
+    cbcdffilt['chrn'] = [CHRN[row[2]] for row in cbcdffilt.itertuples(index=False)]
+    obcdffilt['chrn'] = [CHRN[row[2]] for row in obcdffilt.itertuples(index=False)]
+
+    # Chromosomes passing cutoffs for both references
+    conserved = cbcdffilt.merge(obcdffilt, on=['sample', 'bc', 'chrn'], how='inner')
+
+    # Generate RTIGER input files
+    OUTDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/rtiger_out/'
+    for k in CHRN:
+        os.makedirs(OUTDIR + k +'/input_q40_lowvar/')
+    with Pool(processes=4) as pool:
+        pool.map(partial(writechrrc, outdir=OUTDIR), tqdm(conserved.groupby(['sample', 'bc'])))
