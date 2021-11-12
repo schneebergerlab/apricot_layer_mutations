@@ -274,7 +274,7 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
     for i in good_pos:
         # s_rc = sample_readcount[sample][i]
         # s_all_rc = sum([sample_readcount[s][i] for s in SAMPLES])
-        if sample_readcount[i][1] <= 1.2*sample_readcount[i][0]:
+        if sample_readcount[i][1] <= 0.2*sample_readcount[i][0]:
             high_conf.append(i)
 
     # Get alt allele-freq at candidate positions in all samples
@@ -307,34 +307,6 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
                     except ZeroDivisionError as e:
                         other_c += 1
         sample_alfreq.append([sample_c, other_c])
-            # try:
-            #     c = [c for k, c in snps_readcount[s][pos].items() if k==v[1]]
-            #     if len(c) > 1: print('ERROR')
-            #     if len(c) == 1: sample_alfreq[s].append(int(c[0])/int(snps_readcount[s][pos]['RC']))
-            #     else: sample_alfreq[s].append(0)
-            # except KeyError as e:
-            #     sample_alfreq[s].append(0)
-            # except ZeroDivisionError as e:
-            #     sample_alfreq[s].append(1)
-
-    #
-    # for pos, v in candidate_readcount[sample].items():
-    #     sample_c = 0
-    #     other_c = 0
-    #     for s in SAMPLES:
-    #     else:
-    #         for p in [pos, pos2]:
-    #             try:
-    #                 c = sum([int(c) for k, c in snps_readcount[s][p].items()])
-    #                 # if len(c) > 1: print('ERROR')
-    #                 # if len(c) == 1: sample_readcount[s].append(int(c[0]))
-    #                 # else: sample_readcount[s].append(0)
-    #                 other_c += c
-    #             except KeyError as e:
-    #                 other_c += c
-    #     sample_readcount.append([sample_c, other_c])
-    #
-
 
     # Filter positions where the cumulative alt allele freq is more than or equal
     # to the focal sample
@@ -371,55 +343,7 @@ def selectgoodcandidate(sample, candidate_readcount, snps_readcount, SAMPLES, CW
             chr, p = keys[i].rsplit('_', 1)
             d = [str(c) for c in candidate_readcount[sample][keys[i]]]
             fout.write('\t'.join([chr, str(int(p)-1), p] + d) + '\n')
-
-    # positions_set = [set(range(len(sample_readcount))), all_bad, all_mid, all_high]
-    # pcnt = 1
-    # fig = plt.figure(figsize=[10, 10])
-    # marker = ['+', 'x', '.']
-    # plt.rc('font', size=8)
-    # for i in range(4):
-    #     positions = positions_set[i]
-    #     ax = fig.add_subplot(4, 2, pcnt)
-    #     pcnt += 1
-    #     # m = 0
-    #     # for s in SAMPLES:
-    #     #     if s == sample: continue
-    #     #     ax.scatter([sample_readcount[sample][i] for i in positions], [sample_readcount[s][i] for i in positions], label=s, marker=marker[m])
-    #     #     m += 1
-    #     ax.scatter([sample_readcount[sample][i] for i in positions], [sample_readcount[s][i] for i in positions], label=s, marker=marker[m])
-    #
-    #     ax.legend(loc='upper left')
-    #     ax.set_xlabel('{}'.format(sample))
-    #     ax.set_ylabel('Other samples')
-    #     if i == 0: title, lim = ('Alt allele readcount: All Candidates (#{})'.format(len(positions)), 250)
-    #     elif i == 1: title, lim = ('Alt allele readcount: Bad Candidates (#{})'.format(len(positions)), 250)
-    #     elif i == 2: title, lim = ('Alt allele readcount: Uncertain Candidates (#{})'.format(len(positions)), 250)
-    #     elif i == 3: title, lim = ('Alt allele readcount: Good Candidates (#{})'.format(len(positions)), 250)
-    #     ax.set_title(title)
-    #     ax.set_ylim([-1, lim + 1])
-    #     ax.set_xlim([-1, lim + 1])
-    #
-    #     ax = fig.add_subplot(4, 2, pcnt)
-    #     pcnt += 1
-    #     m = 0
-    #     for s in SAMPLES:
-    #         if s == sample: continue
-    #         ax.scatter([sample_alfreq[sample][i] for i in positions], [sample_alfreq[s][i] for i in positions], label=s, marker=marker[m])
-    #         m += 1
-    #     ax.legend(loc='upper left')
-    #     ax.set_xlabel('{}'.format(sample))
-    #     ax.set_ylabel('Other samples')
-    #     if i == 0: title, lim = ('Alt allele frequency: All Candidates (#{})'.format(len(positions)), 1.05)
-    #     elif i == 1: title, lim = ('Alt allele frequency: Bad Candidates (#{})'.format(len(positions)), 1.05)
-    #     elif i == 2: title, lim = ('Alt allele frequency: Uncertain Candidates (#{})'.format(len(positions)), 1.05)
-    #     elif i == 3: title, lim = ('Alt allele frequency: Good Candidates (#{})'.format(len(positions)), 1.05)
-    #     ax.set_title(title)
-    #     ax.set_ylim([-0.05, lim])
-    #     ax.set_xlim([-0.05, lim])
-    # plt.tight_layout()
-    # plt.savefig('{}{}/{}_indel_alt_alleles.png'.format(CWD, sample, sample))
-    # plt.close()
-
+#END
 
 def filterbackground(args):
     import os

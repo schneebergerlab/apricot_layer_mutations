@@ -14,16 +14,19 @@ if __name__=='__main__':
     parser.add_argument('f', help='path to bam_readcount output', type=argparse.FileType('r'))
     parser.add_argument('-n', dest='n', help='minimum number of non-reference reads', type=int, default=3)
     parser.add_argument('-p', dest='p', help='prefix for output file', type=str, default='filtered_low_ref_al_')
+    parser.add_argument('-o', dest='o', help='Output file name', type=argparse.FileType('w'))
 
     args = parser.parse_args()
-
     from collections import deque
 
     with open(args.f.name) as fin:
-        if '/'.join(args.f.name.split("/")[:-1]) == '':
-            foutname = './' + "{}".format(args.p) + args.f.name.split("/")[-1]
+        if args.o is None:
+            if '/'.join(args.f.name.split("/")[:-1]) == '':
+                foutname = './' + "{}".format(args.p) + args.f.name.split("/")[-1]
+            else:
+                foutname = '/'.join(args.f.name.split("/")[:-1]) + "/{}".format(args.p) + args.f.name.split("/")[-1]
         else:
-            foutname = '/'.join(args.f.name.split("/")[:-1]) + "/{}".format(args.p) + args.f.name.split("/")[-1]
+            foutname = args.o.name
         with open(foutname, 'w') as fout:
             count = 0
             outstr = deque()

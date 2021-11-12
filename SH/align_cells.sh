@@ -45,7 +45,7 @@ xargs -a barcodes_list -n 1 -P 40 -I {} /bin/bash -c "
       -x \$3 \
       -1 \${bc}_dedup_R1.fastq.gz \
       -2 \${bc}_dedup_R2.fastq.gz \
-      --rg-id \$bc \
+      --rg-id \$bc\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
     | samtools sort -@1 -O BAM - \
     > \${bc}.DUPmarked.deduped.ORA.bam
     samtools index -@1 \${bc}.DUPmarked.deduped.ORA.bam
