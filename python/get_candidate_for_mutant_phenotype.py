@@ -7,12 +7,15 @@ import pandas as pd
 from subprocess import run
 import sys
 sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python')
-from get_candidate_for_mutant_phenotype_funcs import getlinefrombamrc
+from get_candidate_for_mutant_phenotype_funcs import getlinefrombamrc, tepid_te_del_igv_batch
 from multiprocessing import set_start_method, Pool
 # set_start_method('spawn')
 from matplotlib import pyplot as plt
 import numpy as np
 from datetime import datetime
+from upsetplot import UpSet, from_contents
+from matplotlib import pyplot as plt
+import pybedtools as bdt
 
 CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/'
 INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
@@ -62,30 +65,6 @@ for sample in SAMPLES:
 with Pool(processes=4) as pool:
     snps_readcount = pool.map(partial(get_readcounts, loc=loc), fins)
 snps_readcount = dict(zip(SAMPLES, snps_readcount))
-
-# positions which have either double or half allele-frequency in MUT vs WT
-goodmt = deque()
-for s in loc:
-    try:
-        wrc = snps_readcount['WT_1'][s][0] + snps_readcount['WT_19'][s][0]
-        waf = wrc/(snps_readcount['WT_1'][s][1] + snps_readcount['WT_19'][s][1])
-        mrc = snps_readcount['MUT_11_1'][s][0] + snps_readcount['MUT_15'][s][0]
-        maf = mrc/(snps_readcount['MUT_11_1'][s][1] + snps_readcount['MUT_15'][s][1])
-        if wrc < 0.5*mrc and waf < 0.5*maf:
-            goodmt.append([s, wrc, waf, mrc, maf])
-        elif wrc > 2*mrc and waf > 2*maf:
-            goodmt.append([s, wrc, waf, mrc, maf])
-    except ZeroDivisionError:
-        pass
-
-x0, x1 = 0, 1
-fig = plt.figure()
-ax = fig.add_subplot(1,1,1)
-for s in goodmt:
-    if s[1] < 20 and s[3] < 20: continue
-    # fig.add_artist(lines.Line2D([0, 1], (s[1], s[3])))
-    ax.plot([0, 1], (s[1], s[3]))
-
 
 # Select positions where the number of alt reads in WT samples is less than
 # or equal to 20% of the alt reads count in MUT sample with lower alt read-count
@@ -499,77 +478,78 @@ fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
 fig.show(renderer="browser")
 
 ## Compare the unfiltered bam readcount for the four samples directly
-def foo():
-    w1 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/WT_1.b0.q0.txt", 'r')
-    w2 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/WT_19.b0.q0.txt", 'r')
-    m1 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/MUT_11_1.b0.q0.txt", 'r')
-    m2 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/MUT_15.b0.q0.txt", 'r')
-    BASE_DICT = {'A': 0,
-                 'C': 1,
-                 'G': 2,
-                 'T': 3
-                 }
-    posdata = defaultdict(dict)
-    READSIZE = 100000
-    goodpos = {}
-    files = {'w1': w1, 'w2': w2, 'm1': m1, 'm2': m2}
-    cnt = 0
-    while True:
-        print(cnt, str(datetime.now()))
-        cnt+=1
-        if cnt == 5: break
-        changed = False
-        for k, v in files.items():
-            for i in range(READSIZE):
-                w1l = v.readline().strip().split()
-                if w1l == '': break
-                else:
-                    x = list(map(int, w1l[4:8]))
-                    posdata[(w1l[0], w1l[1], w1l[2])][k] = x
-                    changed = True
-        rem = deque()
-        for k, v in posdata.items():
-            if len(v) < 4:
-                #TODO: FIX the below line
-                if k[0] != w1l[0]: rem.append(k)
-                continue
-            rem.append(k)
-            if k[-1] == 'N': continue
-            skip = BASE_DICT[k[-1]]
+w1 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/WT_1.b0.q0.txt", 'r')
+w2 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/WT_19.b0.q0.txt", 'r')
+m1 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/MUT_11_1.b0.q0.txt", 'r')
+m2 = open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/MUT_15.b0.q0.txt", 'r')
+BASE_DICT = {'A': 0,
+             'C': 1,
+             'G': 2,
+             'T': 3
+             }
+posdata = defaultdict(dict)
+READSIZE = 100000
+goodpos = {}
+files = {'w1': w1, 'w2': w2, 'm1': m1, 'm2': m2}
+cnt = 0
+while True:
+    print(cnt, str(datetime.now()))
+    cnt+=1
+    if cnt == 5: break
+    changed = False
+    for k, v in files.items():
+        for i in range(READSIZE):
+            w1l = v.readline().strip().split()
+            if w1l == '': break
+            else:
+                x = list(map(int, w1l[4:8]))
+                posdata[(w1l[0], w1l[1], w1l[2])][k] = x
+                changed = True
+    rem = deque()
+    for k, v in posdata.items():
+        if len(v) < 4:
+            #TODO: FIX the below line
+            if k[0] != w1l[0]: rem.append(k)
+            continue
+        rem.append(k)
+        if k[-1] == 'N': continue
+        skip = BASE_DICT[k[-1]]
 
-            # Remove candidates where multiple alt alleles have >= 5 reads or where no sample has >=5 alt reads
-            hashi = False
-            for s, c in v.items():
-                high = sum([True if c1 >= 5 else False for c1 in c])
-                if high > 2: break
-                if high == 2: hashi = True
-            if high > 2: continue
-            if not hashi: continue
+        # Remove candidates where multiple alt alleles have >= 5 reads or where no sample has >=5 alt reads
+        hashi = False
+        for s, c in v.items():
+            high = sum([True if c1 >= 5 else False for c1 in c])
+            if high > 2: break
+            if high == 2: hashi = True
+        if high > 2: continue
+        if not hashi: continue
 
-            # Remove candidates where samples have different alleles with >= 5 reads
-            m = []
-            for s, c in v.items():
-                for i in range(4):
-                    if c[i] >= 5:
-                        if i == skip: continue
-                        m.append(i)
-                        break
-            if len(set(m)) > 1: continue
-            # if len(set(m)) == 0: print("ERROR in finding mutation position")
-            m = m[0]
+        # Remove candidates where samples have different alleles with >= 5 reads
+        m = []
+        for s, c in v.items():
+            for i in range(4):
+                if c[i] >= 5:
+                    if i == skip: continue
+                    m.append(i)
+                    break
+        if len(set(m)) > 1: continue
+        # if len(set(m)) == 0: print("ERROR in finding mutation position")
+        m = m[0]
 
-            # Get minor allele count and frequency in the four samples, and select cand which have 2 fold difference between WT and MUT
-            wtrc = v['w1'][m] + v['w2'][m]
-            wtaf = wtrc/sum(v['w1'] + v['w2'])
-            mtrc = v['m1'][m] + v['m2'][m]
-            mtaf = mtrc/sum(v['m1'] + v['m2'])
-            if wtaf < 0.5*mtaf: goodpos[k] = v
-            elif wtaf > 2*mtaf: goodpos[k] = v
-        for r in rem: posdata.pop(r)
-        if not changed: break
+        # Get minor allele count and frequency in the four samples, and select cand which have 2 fold difference between WT and MUT
+        wtrc = v['w1'][m] + v['w2'][m]
+        wtaf = wtrc/sum(v['w1'] + v['w2'])
+        mtrc = v['m1'][m] + v['m2'][m]
+        mtaf = mtrc/sum(v['m1'] + v['m2'])
+        if wtaf < 0.5*mtaf: goodpos[k] = v
+        elif wtaf > 2*mtaf: goodpos[k] = v
+    for r in rem: posdata.pop(r)
+    if not changed: break
 
 import pickle
-with open("TMP_goodpos.pickle", 'rb') as fin:
+# with open(CWD+"goodpos.pickle", 'wb') as fout:
+#     pickle.dump(goodpos, fout)
+with open(CWD+"goodpos.pickle", 'rb') as fin:
     goodpos = pickle.load(fin)
 pos = list(goodpos.keys())
 BASE_DICT = {'A': 0,
@@ -639,63 +619,66 @@ ax.set_xlabel("Merged WT")
 ax.set_ylabel("Merged MUT")
 
 
+## Check crosslabelling of WT and MUT samples
+candidate_readcount = dict()
+for sample in SAMPLES:
+    sample_dict = defaultdict()
+    os.chdir('{}/{}'.format(INDIR, sample))
+    with open('multi_cell_bt2_{}_bt2_filtered_SNPs_candidate.sorted.bed'.format(sample), 'r') as fin:
+        for line in fin:
+            line = line.strip().split()
+            sample_dict[line[0] + '_' + line[2]] = (line[3], line[4], int(line[5]), float(line[6]))
+    candidate_readcount[sample] = sample_dict
+candidate_readcount = OrderedDict(candidate_readcount)
 
-chrlen=OrderedDict()
-with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.chrlen.txt", "r") as fin:
-    for l in fin:
-        l = l.strip().split()
-        chrlen[l[0]] = int(l[1])
-
-
-
-cand = deque()
-w1l, w2l, m1l, m2l = None, None, None, None
-for c in chrlen.keys():
-    rcarr = np.array(['']*(chrlen[c]+1), dtype=object)
-    if w1l is not None: rcarr[int(w1l[1])] += ",".join(w1l[4:8])+';'
-    for line in tqdm(w1):
-        line = line.strip().split()
-        if line[0] == c:
-            rcarr[int(line[1])] += ",".join(line[4:8])+';'
-        else:
-            w1l = line
-            break
-    if w2l is not None: rcarr[int(w2l[1])] += ",".join(w2l[4:8])+';'
-    for line in tqdm(w2):
-        line = line.strip().split()
-        if line[0] == c:
-            rcarr[int(line[1])] += ",".join(line[4:8])+';'
-        else:
-            w2l = line
-            break
-    if m1l is not None: rcarr[int(m1l[1])] += ",".join(m1l[4:8])+';'
-    for line in tqdm(m1):
-        line = line.strip().split()
-        if line[0] == c:
-            rcarr[int(line[1])] += ",".join(line[4:8])+';'
-        else:
-            m1l = line
-            break
-    if m2l is not None: rcarr[int(m2l[1])] += ",".join(m2l[4:8])+';'
-    for line in tqdm(m2):
-        line = line.strip().split()
-        if line[0] == c:
-            rcarr[int(line[1])] += ",".join(line[4:8])+';'
-        else:
-            m2l = line
-            break
-    for p in rcarr:
-        rcw1
-    break
-
-
-p1 = w1.readline().strip().split()
-p2 = w2.readline().strip().split()
-p3 = m1.readline().strip().split()
-p4 = m2.readline().strip().split()
-while True:
-    if p1 == '' and p2 == '' and p3 == '' and p4 == '': break
-    if p1[0] == p2[0] == p3[0] == p4[0]: c = p1[0]
+### Check if any of the WT is a MUT
+wt1pos = set(candidate_readcount['WT_1'].keys())
+wt19pos = set(candidate_readcount['WT_19'].keys())
+mut11pos = set(candidate_readcount['MUT_11_1'].keys())
+mut15pos = set(candidate_readcount['MUT_15'].keys())
+mut_pos = mut11pos.intersection(mut15pos)
+locmt = set([m for m in mut_pos if candidate_readcount['MUT_11_1'][m][:2] == candidate_readcount['MUT_15'][m][:2]])
+locwt19 = locmt.intersection(wt19pos) - wt1pos
+locwt19 = set([m for m in locwt19 if candidate_readcount['MUT_11_1'][m][:2] == candidate_readcount['WT_19'][m][:2]])
+locwt1 = locmt.intersection(wt1pos) - wt19pos
+locwt1 = set([m for m in locwt1 if candidate_readcount['MUT_11_1'][m][:2] == candidate_readcount['WT_1'][m][:2]])
+loc = set(locwt1).union(locwt19)
+def get_readcounts(fin, loc):
+    sample_dict = {}
+    with open(fin, 'r') as fin:
+        for line in tqdm(fin):
+            line = line.strip().split()
+            if line[0] + '_' + line[1] in loc:
+                sample_dict[line[0] + '_' + line[1]] = (int(line[4]), int(line[5]), int(line[6]), int(line[7]))
+    return sample_dict
+snps_readcount = []
+fins = []
+for sample in SAMPLES:
+    fin='{}{}/bam_read_counts_b30_q10.bt2.txt'.format(INDIR, sample)
+    fins.append(fin)
+with Pool(processes=4) as pool:
+    snps_readcount = pool.map(partial(get_readcounts, loc=loc), fins)
+snps_readcount = dict(zip(SAMPLES, snps_readcount))
+goodw19 = deque()
+for s in locwt19:
+    refi = BASE_DICT[candidate_readcount['WT_19'][s][0]]
+    alti = BASE_DICT[candidate_readcount['MUT_11_1'][s][1]]
+    altrc = np.mean([candidate_readcount[p][s][2] for p in ['MUT_11_1', 'MUT_15', 'WT_19']])
+    altaf = sum([candidate_readcount[p][s][2] for p in ['MUT_11_1', 'MUT_15', 'WT_19']])/sum([sum(snps_readcount[p][s]) for p in ['MUT_11_1', 'MUT_15', 'WT_19']])
+    bgrc = snps_readcount['WT_1'][s][alti]
+    bgaf = snps_readcount['WT_1'][s][alti]/sum(snps_readcount['WT_1'][s])
+    if bgrc <= 0.5*altrc and bgaf <= 0.5*altaf:
+        goodw19.append((s, altrc, altaf, bgrc, bgaf))
+goodw1 = deque()
+for s in locwt1:
+    refi = BASE_DICT[candidate_readcount['WT_1'][s][0]]
+    alti = BASE_DICT[candidate_readcount['WT_1'][s][1]]
+    altrc = np.mean([candidate_readcount[p][s][2] for p in ['MUT_11_1', 'MUT_15', 'WT_1']])
+    altaf = sum([candidate_readcount[p][s][2] for p in ['MUT_11_1', 'MUT_15', 'WT_1']])/sum([sum(snps_readcount[p][s]) for p in ['MUT_11_1', 'MUT_15', 'WT_1']])
+    bgrc = snps_readcount['WT_19'][s][alti]
+    bgaf = snps_readcount['WT_19'][s][alti]/sum(snps_readcount['WT_19'][s])
+    if bgrc <= 0.5*altrc and bgaf <= 0.5*altaf:
+        goodw1.append((s, altrc, altaf, bgrc, bgaf))
 
 
 
@@ -885,4 +868,93 @@ with open(CWD + "indel_lose.txt", 'w') as fout:
         except KeyError:
             outstr += ['0', '0']
         fout.write("\t".join(outstr) + "\n")
+
+################################################################################
+########################## TE Indels Identification ############################
+################################################################################
+# Analysing TE identified using TEPID
+CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/'
+SAMPLES = ("MUT_11_1", "MUT_15", "WT_1", "WT_19")
+
+## Deletions
+deldf = pd.DataFrame()
+for s in SAMPLES:
+    df = pd.read_table(CWD+"{s}/deletions_{s}.bed".format(s=s), header=None)
+    df['s'] = s
+    deldf = pd.concat([deldf, df])
+upsetdf = from_contents({'WT_1': pd.unique(deldf.loc[deldf['s'] == 'WT_1', 4]),
+                         'WT_19': pd.unique(deldf.loc[deldf['s'] == 'WT_19', 4]),
+                         'MUT_11_1': pd.unique(deldf.loc[deldf['s'] == 'MUT_11_1', 4]),
+                         'MUT_15': pd.unique(deldf.loc[deldf['s'] == 'MUT_15', 4])
+                         })
+UpSet(upsetdf, subset_size='count').plot()
+fig = plt.figure(figsize=[8, 8])
+UpSet(upsetdf, subset_size='count').plot(fig=fig)
+plt.show()
+plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/tepid_TE_upset_deletions.pdf')
+plt.close()
+wtdel = deque()
+mutdel = deque()
+for g in deldf.groupby(4):
+    if len(g[1]) != 2: continue
+        s = list(g[1]['s'])
+        if 'WT_1' in s and 'WT_19' in s: wtdel.append(g[0])
+        if 'MUT_11_1' in s and 'MUT_15' in s: mutdel.append(g[0])
+mutdeldf = deldf.loc[deldf[4].isin(mutdel)].sort_values([4])
+wtdeldf = deldf.loc[deldf[4].isin(wtdel)].sort_values([4])
+mutdeldf.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_del_tepid_TE.txt", header=False, index=False, sep='\t')
+wtdeldf.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/wt_del_tepid_TE.txt", header=False, index=False, sep='\t')
+tepid_te_del_igv_batch(CWD+'mut_del_tepid_TE.txt', CWD+'mut_del_tepid_TE.igv.batch', CWD+'mut_del_tepid_TE_snapshots')
+
+## Insertions
+insdf = pd.DataFrame()
+wt1 = bdt.BedTool(CWD+"{s}/insertions_{s}.bed".format(s='WT_1'))
+wt19 = bdt.BedTool(CWD+"{s}/insertions_{s}.bed".format(s='WT_19'))
+mut11 = bdt.BedTool(CWD+"{s}/insertions_{s}.bed".format(s='MUT_11_1'))
+mut15 = bdt.BedTool(CWD+"{s}/insertions_{s}.bed".format(s='MUT_15'))
+BPDIFF = 15
+names = ['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id', 'chr2', 's2', 'e2', 'cin2', 'sin2', 'ein2', 'name2', 'id2', 'l']
+mut  = mut11.intersect(mut15, wao=True).to_dataframe(names=names)
+m1w1 = mut11.intersect(wt1, wao=True).to_dataframe(names=names)
+m1w2 = mut11.intersect(wt19, wao=True).to_dataframe(names=names)
+m2w1 = mut15.intersect(wt1, wao=True).to_dataframe(names=names)
+m2w2 = mut15.intersect(wt19, wao=True).to_dataframe(names=names)
+
+w1df = wt1.to_dataframe(names=['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id'])
+w19df = wt19.to_dataframe(names=['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id'])
+
+def chkovrlap(bd, i):
+    match = bd.loc[bd['id']==i]
+    good=False
+    for m in match.itertuples(index=False):
+        if any([p in m[14].split(',') for p in m[6].split(',')]): continue
+        if abs(m[1]-m[9]) < BPDIFF or abs(m[2]-m[10]) < BPDIFF: continue
+        # if m[9]-m[1] < BPDIFF or m[10]-m[2] < BPDIFF : continue
+        good=True
+    return good
+
+def chkovrlap(m , df, t):
+    if len(df.loc[(df['chr']==m[0]) &
+           ((df['s'] - m[2]) < t) &
+           ((m[1] - df['e']) < t)]) > 0:
+        return False
+    if len(df.loc[(df['chr']==m[8]) &
+           ((df['s'] - m[10]) < t) &
+           ((m[9] - df['e']) < t)]) > 0:
+        return False
+    return True
+
+goodmt = deque()
+test = deque()
+for m in mut.itertuples(index=False):
+    if not any([p in m[14].split(',') for p in m[6].split(',')]): continue
+    if m[1]-m[9] > BPDIFF and m[2]-m[10] > BPDIFF: continue
+    if m[9]-m[1] > BPDIFF and m[10]-m[2] > BPDIFF : continue
+    if not chkovrlap(m, w1df, 1000): continue
+    if not chkovrlap(m, w19df, 1000): continue
+    goodmt.append(m)
+
+mutinsdf = pd.DataFrame(goodmt)
+mutinsdf.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_ins_tepid_TE.txt", header=False, index=False, sep='\t')
+tepid_te_ins_igv_batch(CWD+'mut_ins_tepid_TE.txt', CWD+'mut_ins_tepid_TE.igv.batch', CWD+'mut_ins_tepid_TE_snapshots')
 

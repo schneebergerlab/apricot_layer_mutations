@@ -855,7 +855,226 @@ gatk DetermineGermlineContigPloidy \
         --output-genotyped-segments genotyped-segments-cohort24-twelve-NA19017.vcf.gz \
         --sequence-dictionary ref/Homo_sapiens_assembly38.dict
 
-## Couldn't finish the GATK pipeline as there were constant issues
+## Couldn't finish the GATK pipeline as there were constant issues. Maybe try again later.
+## =======================================================================================
+
+# Find TE insertion/deletion sites using TEPID
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/
+BCLIST=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+yhindex=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.X15_01_65525S
+
+## Merge and map scDNA reads
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    mkdir $s ; cd $s
+    bsub -q multicore40 -n 1 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
+        rm ${s}.R1.fastq.gz ${s}.R2.fastq.gz
+        echo Merging fastq.gz
+        cat ${BCLIST}/${s}/barcodes/*/*_dedup_R1.fastq.gz > ${s}.R1.fastq.gz
+        cat ${BCLIST}/${s}/barcodes/*/*_dedup_R2.fastq.gz > ${s}.R2.fastq.gz
+
+        echo Running tepid map
+        source activate tepid
+        tepid-map \
+            -x $refcur \
+            -y $yhindex \
+            -p 40 \
+            -s 400 \
+            -n $s \
+            -1 ${s}.R1.fastq.gz \
+            -2 ${s}.R2.fastq.gz \
+            -z
+        source deactivate
+    "
+done
+grep -v "#" /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.ann.gff3 \
+ | egrep -v 'Low|Simple|RNA|other|Satellite'  \
+ | cut -f 1,4,5,7,9 \
+ | sed 's/;/\t/g ; s/ID=//g ; s/Subfamily=//g ; s/Family=//g ; s/Class=//g' > TMP.bed
+paste <(cut -f 1-6 TMP.bed) <(cut -f7- TMP.bed | tr '\t' '/') \
+ > cur.TE.bed
+
+
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    mkdir $s ; cd $s
+    bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=100000]" -M 120000 -oo ${s}.log -eo ${s}.err "
+        echo Getting discordant reads
+        samtools view -b -@ 40 -F 1294 ${s}.bam \
+        | samtools sort -n -@ 40 -O BAM -o ${s}.discordants.bam -
+
+        /bin/bash
+        echo Running tepid discover
+        source activate tepid
+        /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/tepid/bin/python /srv/netscratch/dep_mercier/grp_schneeberger/software/TEPID/Scripts/tepid-discover \
+            -k \
+            -D ${s}.discordants.bam \
+            -p 40 \
+            -n $s \
+            -c ${s}.bam \
+            -s ${s}.split.bam \
+            -t ../cur.TE.bed
+        source deactivate
+    "
+done
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD; cd $s
+    {
+        samtools sort -@ 10 -O BAM  ${s}.split.bam > ${s}.split.sorted.bam
+        samtools index -@ 10 ${s}.split.sorted.bam
+        samtools sort -@ 10 -O BAM  ${s}.discordants.bam > ${s}.discordants.sorted.bam
+        samtools index -@ 10 ${s}.discordants.sorted.bam
+    } &
+done
+
+
+## Count number of
+
+## Find TE insertion/deletion sites using SPLITREADER (V2) https://github.com/baduelp/public
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/
+
+cd $CWD
+grep '>' TE_library.fa \
+| sed 's/>//g; s/#.*$//g' \
+| sort \
+| uniq \
+> TE_list.txt
+egrep -v 'Low|Simple|RNA|other|Satellite' TE_annotation.gff | sed 's/Subfamily/Name/g' > TE_annotation_edited.gff
+python -c "
+import sys
+sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/')
+from get_candidate_for_mutant_phenotype_funcs import generate_TEfiles_splitreader
+generate_TEfiles_splitreader('TE_annotation_edited.gff', 'TE-information-all.txt')
+"
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd ${CWD}/splitreader
+    mkdir $s ; cd $s
+    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
+#        /bin/bash
+#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part1_mg.sh \
+#        ${s} \
+#        part1 \
+#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/${s}/ \
+#        .sorted.bt2 \
+#        ${s} \
+#        ${CWD}/splitreader/${s} \
+#        ${CWD}/splitreader
+#
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part2_mg.sh \
+        ${s} \
+        ${s} \
+        ${CWD}/splitreader/${s} \
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta \
+        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/splitreader/TE_annotation_edited.gff
+    "
+    break
+done
+
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part2_mg.sh \
+${s} \
+${s} \
+${CWD}/splitreader/${s} \
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta \
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/splitreader/TE_annotation_edited.gff
+
+
+
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part1_mg.sh \
+WT_1 \
+part1 \
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/${s}/ \
+.sorted.bt2 \
+WT_1 \
+${CWD}/splitreader/${s} \
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel//splitreader
+
+/srv/netscratch/dep_mercier/grp_schneeberger/projects/SynSearch/tests/splitreader_test/tmp \
+
+in=$1 # bam file name
+TE_fam=$2 # HERE PART1
+InputDir=$3 # bam file directory
+ext=$4 # bam file extension e.g. "_dupl_fixed_paired.bam"
+cohort=$5 # name cohort of genomes analyzed
+workdir=$6 # working directory
+TEfile=$7 # directory with TE annotations files
+
+
+################################################################################
+##### STEP 9: Check unmapped reads for mutant specific pathogen infection ######
+################################################################################
+# Filter unampped reads
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/patho_inf/
+INDIR=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    {
+    samtools view -@10 -hf 13 -O SAM ${INDIR}/${s}/${s}.sorted.bt2.bam \
+    | samtools sort -@10 -n -O SAM - \
+    | samtools fasta -@10 -1 ${s}_R1.fa.gz -2 ${s}_R2.fa.gz -s /dev/null -0 /dev/null -
+    } &
+done
+
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=20000]" -M 22000 -oo ${s}.log -eo ${s}.err "
+#        megahit -m 20000000000 -t 20  -1 ${s}_R1.fa.gz -2 ${s}_R2.fa.gz -o ${s}_megahit_assembly
+        cd-hit -i ${s}_megahit_assembly/final.contigs.fa -o ${s}_megahit_assembly/final.contigs.cdhit.fa
+    "
+done
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    cd-hit -i ${s}_megahit_assembly/final.contigs.fa -o ${s}_megahit_assembly/final.contigs.cdhit.fa > ${s}_cdhit.log 2>&1 &
+done
+
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD/${s}_megahit_assembly/
+    for i in {00..48}; do
+        bsub -q normal -n 4 -R "span[hosts=1] rusage[mem=5000]" -M 10000 -oo nt${i}.log -eo nt${i}.err "
+            blastn -query final.contigs.cdhit.fa \
+                -db /opt/share/blastdb/ncbi/nt.${i} \
+                -out nt_${i}.oblast \
+                -outfmt '6 delim=  qaccver saccver staxid pident qcovs qcovhsp qcovus length mismatch gapopen qstart qend sstart send evalue bitscore stitle' \
+                -num_threads 4 \
+                -perc_identity 90 \
+                -subject_besthit \
+                -evalue 0.000001 &
+        "
+    done
+done
+
+
+while read ctg; do
+    for i in {00..48}; do
+        blastn -query ../../individual_ctgs/${ctg}.fa -db /opt/share/blastdb/ncbi/nt.0${i} -out ${ctg}_againt_ncbi_nt_nt_0${i}.oblast -outfmt 0 -max_target_seqs 5
+    done
+    for i in {10..48}; do
+        blastn -query ../../individual_ctgs/${ctg}.fa -db /opt/share/blastdb/ncbi/nt.${i} -out ${ctg}_againt_ncbi_nt_nt_${i}.oblast -outfmt 0 -max_target_seqs 5
+    done
+    #
+    mkdir ${ctg}_blast_result
+    mv ${ctg}_againt_ncbi_nt_nt_*.oblast ${ctg}_blast_result
+done < ../../low_pollen_support_contig.txt
+
+bsub -q short -R "span[hosts=1] rusage[mem=4000]" -M 5000 -oo a.log -eo a.err "
+blastn -query final.contigs.cdhit.fa -db /opt/share/blastdb/ncbi/nt.00 -out TMP.oblast -outfmt '6 delim=  qaccver saccver staxid pident qcovhsp length mismatch gapopen qstart qend sstart send evalue bitscore stitle qcovs qcovhsp qcovus' -max_target_seqs 5 -num_threads 10 -perc_identity 90 -subject_besthit -evalue 0.000001 &
+"
+
+/srv/netscratch/dep_mercier/grp_schneeberger/private/manish/toolbox/Parser/FASTA/split_fasta.pl
+
+    blastn -query ${r}.fasta \
+     -task megablast \
+     -db ../filtered.contigs.v3.fasta \
+     -out ${r}.oblast \
+     -outfmt 7 \
+     -max_target_seqs 100 \
+     -max_hsps 100 \
+     -perc_identity 95 \
+     -evalue 0.0001 \
+     -num_threads 60 \
+     >> blastall_blastn.log
+
 
 
 

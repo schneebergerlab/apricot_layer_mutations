@@ -108,3 +108,98 @@ def getlinefrombamrc(f, cand):
     return out
 #END
 
+def generate_TEfiles_splitreader(tegff, famout):
+    from collections import defaultdict, deque
+    # tsdfin = '/srv/netscratch/dep_mercier/grp_schneeberger/software/splitreader/thaliana/superfamily_TSD.txt'
+    # tegff = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/TE_annotation_edited.gff'
+    # tsds = {}
+    # with open(tsdfin, 'r') as fin:
+    #     line = fin.readline()
+    #     for line in fin:
+    #         line = line.strip().split()
+    #         tsds[line[0]] = int(line[1])
+    gff = defaultdict(deque)
+    with open(tegff, 'r') as fin:
+        for i in range(3): fin.readline()
+        for line in fin:
+            line = line.strip().split()
+            d = line[8].split(';')
+            gff[d[2].split("=")[1] + '_' + d[3].split("=")[1]].append(d[1].split("=")[1])
+    # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/TEfamily_superfamily.txt", 'w') as fout:
+    with open(famout, 'w') as fout:
+        for k,v in gff.items():
+            for f in set(v):
+                fout.write("\t".join([f, k]) + "\n")
+#END
+
+bed = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_del_tepid_TE.txt'
+igvb = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_del_tepid_TE.igv.batch'
+outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_del_tepid_TE_snapshots'
+
+def tepid_te_del_igv_batch(bed, igvb, outdir):
+    from collections import deque
+    from subprocess import run
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/'
+    BAMS = deque()
+    M = 200
+    for s in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+        BAMS.append(indir + '{s}/{s}.bam'.format(s=s))
+        # BAMS.append(indir + '{s}/{s}.discordants.sorted.bam'.format(s=s))
+    GENOME = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta"
+    HEIGHT = 600
+    IGV = '/srv/netscratch/dep_mercier/grp_schneeberger/software/igv/IGV_Linux_2.10.2/igv.sh'
+    OUTDIR = outdir
+
+    with open(bed, 'r') as fin, open(igvb, 'w') as fout:
+        fout.write("new"+"\n")
+        fout.write("genome {}\n".format(GENOME))
+        for bam in BAMS:
+            fout.write("load {}\n".format(bam))
+        fout.write("snapshotDirectory {}\n".format(OUTDIR))
+        fout.write("maxPanelHeight {}\n".format(HEIGHT))
+        fout.write("squish\n")
+        for line in fin:
+            line = line.strip().split()
+            c = line[0]
+            s = int(line[1]) - M
+            e = int(line[2]) + M
+            fout.write("goto {}:{}-{}\n".format(c, s, e))
+            fout.write("snapshot {}:{}-{}.png\n".format(c, s, e))
+        fout.write("exit\n")
+    with open(indir+"igv.log", 'a') as igvlog:
+        run("{} -b {}".format(IGV, igvb).split(), stdout=igvlog, stderr=igvlog)
+#END
+
+def tepid_te_ins_igv_batch(bed, igvb, outdir):
+    from collections import deque
+    from subprocess import run
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/'
+    BAMS = deque()
+    M = 200
+    for s in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+        BAMS.append(indir + '{s}/{s}.bam'.format(s=s))
+        # BAMS.append(indir + '{s}/{s}.discordants.sorted.bam'.format(s=s))
+    GENOME = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta"
+    HEIGHT = 600
+    IGV = '/srv/netscratch/dep_mercier/grp_schneeberger/software/igv/IGV_Linux_2.10.2/igv.sh'
+    OUTDIR = outdir
+
+    with open(bed, 'r') as fin, open(igvb, 'w') as fout:
+        fout.write("new"+"\n")
+        fout.write("genome {}\n".format(GENOME))
+        for bam in BAMS:
+            fout.write("load {}\n".format(bam))
+        fout.write("snapshotDirectory {}\n".format(OUTDIR))
+        fout.write("maxPanelHeight {}\n".format(HEIGHT))
+        fout.write("squish\n")
+        for line in fin:
+            line = line.strip().split()
+            c = line[0]
+            s = min(int(line[1]), int(line[9])) - M
+            e = max(int(line[2]), int(line[10])) + M
+            fout.write("goto {}:{}-{}\n".format(c, s, e))
+            fout.write("snapshot {}:{}-{}.png\n".format(c, s, e))
+        fout.write("exit\n")
+    with open(indir+"igv.log", 'a') as igvlog:
+        run("{} -b {}".format(IGV, igvb).split(), stdout=igvlog, stderr=igvlog)
+#END
