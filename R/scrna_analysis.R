@@ -437,6 +437,35 @@ for(plt in plts){
 dev.off()
 
 
+## get barcode clusters
+outdir<-'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/barcodes/'
+snames <- c('wt1'='WT_1', 'wt19'='WT_19', 'mut11'='MUT_11_1', 'mut15'='MUT_15')
+for(s in c('wt1', 'wt19', 'mut11', 'mut15')){
+  seu <- sdata[[paste0(s, 'seuobj')]]
+  bcs <- gsub(pattern = "\\..*", replacement = "", names(Idents(seu)))
+  clstrs <- as.integer(Idents(seu))
+  df <- data.frame(Idents(seu))
+  df['bcs'] <- gsub(pattern = "\\..*", replacement = "", names(Idents(seu)))
+  write.table(df, paste0(outdir, snames[s], "_bcs_clstr_id.txt"), quote = FALSE,row.names = FALSE, col.names = FALSE)
+}
+
+## get barcode readcounts
+for(s in SAMPLES){
+  bcs <- gsub("\\..*", '', colnames(samcnt[[s]]))
+  rcs <- colSums(samcnt[[s]])
+  df <- data.frame(rcs, bcs)
+  write.table(df, paste0(outdir, s, "_bc_readcnts.txt"), quote = FALSE, row.names = FALSE, col.names = FALSE)
+}
+
+
+
+head(bcs)
+head(clstrs)
+head(df)
+s<-'wt1'
+
+
+
 # Plot for poster
 plt1 <- FeaturePlot(wt1seuobj, features = "Gene.31380", min.cutoff = "q05", max.cutoff = "q95")
 plt1 <- plt1 + ggtitle("Branch 1") + theme_bw() + theme(text = element_text(size = 20))

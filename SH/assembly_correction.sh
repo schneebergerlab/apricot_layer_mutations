@@ -1035,7 +1035,7 @@ for s in cur ora; do
   cd ${cwd}/$s
   gbref=$(ls ${gbdir}/${s}*.filtered.fasta)
   echo $gbref
-#  minimap2 -ax asm5 --eqx -t10 $gbref ${s}_manually_curated.renamed.v1.fasta > ref_man_${s}_v1.sam &
+#  minimap2 -ax asm5 --eqx -t10 $gbref ${s}.manually_curated.renamed.v1.fasta > ref_man_${s}_v1.sam &
 #  minimap2 -ax asm5 --eqx -t10 ${ragtagdir}/${s}/genmap_grouping/ragtag.scaffolds.fasta ${s}_manually_curated.renamed.v1.fasta > ragtag_man_${s}_v1.sam &
   for outfmt in pdf png; do
     syripy /biodata/dep_mercier/grp_schneeberger/projects/SynSearch/scripts/python/syri2/syri2/src/py/drawsamplot.py \
@@ -1052,6 +1052,20 @@ for s in cur ora; do
   cd ${cwd}/$s
   cat ${s}_manually_curated.renamed.v1.fasta unplaced_contigs.fasta > ${s}.genome.v1.fasta
 done
+
+# Map HiFi reads
+indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemble_phased_reads/'
+for r in cur ora unknown; do
+    minimap2 -ax map-pb -t 45 --secondary=no \
+        -R "@RG\\tID:hap-${r}\\tPL:PB-CCS\\tSM:1" \
+        cur.genome.v1.fasta \
+        ${indir}/haplotype-${r}.fasta.gz \
+    | samtools sort -@ 45 -O BAM - \
+    > cur.genome.v1.hap_${r}.bam
+done
+samtools merge -@45 -O BAM cur.genome.v1.hap_reads.bam cur.genome.v1.hap_cur.bam cur.genome.v1.hap_ora.bam cur.genome.v1.hap_unknown.bam
+samtools index cur.genome.v1.hap_reads.bam
+
 
 
 ################################################################################

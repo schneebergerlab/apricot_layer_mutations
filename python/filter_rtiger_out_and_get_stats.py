@@ -199,8 +199,13 @@ def getcocells(grp, insnp, fins):
             l = rmeanhet
             hcnthom = np.array([snps[h][1] for h in hompos])
             lcnthom = np.array([snps[h][0] for h in hompos])
+        # No CO if supported by <250 reads
         if sum(hcnthom>0) < 250:
             # print(Counter(hcnthom))
+            newgen.append('AB')
+            continue
+        # No CO if < 500 SNPs are sequenced
+        if len(hompos) < 500:
             newgen.append('AB')
             continue
         hmeanhom = [np.mean(np.random.choice(hcnthom, 500, replace=False)) for _ in range(100)]
@@ -336,12 +341,9 @@ if __name__ == '__main__':
     fins = CWD + '{chr}/input_q40_lowvar/{chr}_{s}_{bc}_b30_q40.depth450-650.af0.4-0.6.bt2.txt'
     with Pool(processes=64) as pool:
         newdf = pool.map(partial(getcocells, insnp=SNPPOS, fins=fins), tqdm(df3.groupby(['sample', 'bc', 'chr'])))
+    # Running the above filtering didn't find any CO when lowvar chromosomes were checked. So code below is not required for the final lowvar dataset
 
     newdf = pd.concat(newdf)
-
-
-
-
 
     newdf.loc[(newdf.end - newdf.start) < 500000, 'newgen'] = 'AB'
     newdf['genotype'] = newdf['newgen']

@@ -7,15 +7,16 @@ import pandas as pd
 from subprocess import run
 import sys
 sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python')
-from get_candidate_for_mutant_phenotype_funcs import getlinefrombamrc, tepid_te_del_igv_batch
+from get_candidate_for_mutant_phenotype_funcs import getlinefrombamrc, tepid_te_del_igv_batch, tefinder_igv_batch
 from multiprocessing import set_start_method, Pool
 # set_start_method('spawn')
 from matplotlib import pyplot as plt
 import numpy as np
 from datetime import datetime
 from upsetplot import UpSet, from_contents
-from matplotlib import pyplot as plt
 import pybedtools as bdt
+from pybedtools.cbedtools import Interval
+import pyranges as pr
 
 CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/'
 INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
@@ -491,25 +492,33 @@ posdata = defaultdict(dict)
 READSIZE = 100000
 goodpos = {}
 files = {'w1': w1, 'w2': w2, 'm1': m1, 'm2': m2}
+curchr = {'w1': deque(), 'w2': deque(), 'm1': deque(), 'm2': deque()}
 cnt = 0
 while True:
     print(cnt, str(datetime.now()))
     cnt+=1
-    if cnt == 5: break
+    # if cnt == 5: break
     changed = False
+    # Get allele counts at positions for all samples
     for k, v in files.items():
         for i in range(READSIZE):
-            w1l = v.readline().strip().split()
             if w1l == '': break
             else:
+                w1l = v.readline().strip().split()
+                changed = True
                 x = list(map(int, w1l[4:8]))
                 posdata[(w1l[0], w1l[1], w1l[2])][k] = x
-                changed = True
+                if len(curchr[k]) == 0: curchr[k].append(w1l[0])
+                elif curchr[k][-1] != w1l[0]: curchr[k].append(w1l[0])
+
     rem = deque()
     for k, v in posdata.items():
         if len(v) < 4:
-            #TODO: FIX the below line
-            if k[0] != w1l[0]: rem.append(k)
+            missc = [c for c in curchr.keys() if c not in list(v.keys())]
+            for mc in missc:
+                if curchr[mc][-1] != k[0]:
+                    rem.append(k)
+                    break
             continue
         rem.append(k)
         if k[-1] == 'N': continue
@@ -584,9 +593,9 @@ for p in tqdm(pos):
                       sum(goodpos[p]['m1']) + sum(goodpos[p]['m2']))
         continue
 
-fig = plt.figure()
+fig = plt.figure(figsize=[6,6])
 ax = fig.add_subplot(2,1,1)
-ax.scatter([v[0] for v in posdata.values()], [v[2] for v in posdata.values()])
+ax.scatter([v[0] for v in posdata.values()], [v[2] for v in posdata.values()], s=0.5)
 ax.set_xlim(-10, 200)
 ax.set_ylim(-10, 200)
 ax.set_title("Alternate allele read-count")
@@ -594,30 +603,15 @@ ax.set_xlabel("Merged WT")
 ax.set_ylabel("Merged MUT")
 
 ax = fig.add_subplot(2,1,2)
-ax.scatter([v[0]/v[1] for v in posdata.values()], [v[2]/v[3] for v in posdata.values()])
+ax.scatter([v[0]/v[1] for v in posdata.values()], [v[2]/v[3] for v in posdata.values()], s=0.5)
 ax.set_xlim(-0.05, 1)
 ax.set_ylim(-0.05, 1)
 ax.set_title("Alternate allele frequency")
 ax.set_xlabel("Merged WT")
 ax.set_ylabel("Merged MUT")
-
-fig = plt.figure()
-ax = fig.add_subplot(2,1,1)
-ax.scatter([v[0] for v in garb.values()], [v[2] for v in garb.values()])
-ax.set_xlim(-10, 50)
-ax.set_ylim(-10, 200)
-ax.set_title("Alternate allele read-count")
-ax.set_xlabel("Merged WT")
-ax.set_ylabel("Merged MUT")
-
-ax = fig.add_subplot(2,1,2)
-ax.scatter([v[0]/v[1] for v in garb.values()], [v[2]/v[3] for v in garb.values()])
-ax.set_xlim(-0.05, 1)
-ax.set_ylim(-0.05, 1)
-ax.set_title("Alternate allele frequency")
-ax.set_xlabel("Merged WT")
-ax.set_ylabel("Merged MUT")
-
+plt.tight_layout()
+plt.savefig(CWD+"mut_vs_wt_alt_all_rc_af.no_qual_filt.pdf")
+plt.savefig(CWD+"mut_vs_wt_alt_all_rc_af.no_qual_filt.png", transparent=True)
 
 ## Check crosslabelling of WT and MUT samples
 candidate_readcount = dict()
@@ -923,15 +917,6 @@ m2w2 = mut15.intersect(wt19, wao=True).to_dataframe(names=names)
 w1df = wt1.to_dataframe(names=['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id'])
 w19df = wt19.to_dataframe(names=['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id'])
 
-def chkovrlap(bd, i):
-    match = bd.loc[bd['id']==i]
-    good=False
-    for m in match.itertuples(index=False):
-        if any([p in m[14].split(',') for p in m[6].split(',')]): continue
-        if abs(m[1]-m[9]) < BPDIFF or abs(m[2]-m[10]) < BPDIFF: continue
-        # if m[9]-m[1] < BPDIFF or m[10]-m[2] < BPDIFF : continue
-        good=True
-    return good
 
 def chkovrlap(m , df, t):
     if len(df.loc[(df['chr']==m[0]) &
@@ -958,3 +943,87 @@ mutinsdf = pd.DataFrame(goodmt)
 mutinsdf.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/mut_ins_tepid_TE.txt", header=False, index=False, sep='\t')
 tepid_te_ins_igv_batch(CWD+'mut_ins_tepid_TE.txt', CWD+'mut_ins_tepid_TE.igv.batch', CWD+'mut_ins_tepid_TE_snapshots')
 
+### Checking to see if there are branch specific TE insertions
+BPDIFF = 15
+names = ['chr', 's', 'e', 'cin', 'sin', 'ein', 'name', 'id', 'chr2', 's2', 'e2', 'cin2', 'sin2', 'ein2', 'name2', 'id2', 'l']
+mut11m = bdt.BedTool([Interval(f.chrom, max(0, f.start-500), f.end+500) for f in mut11]).merge()
+mut15m = bdt.BedTool([Interval(f.chrom, max(0, f.start-500), f.end+500) for f in mut15])
+wt1m = bdt.BedTool([Interval(f.chrom, max(0, f.start-500), f.end+500) for f in wt1])
+wt19m = bdt.BedTool([Interval(f.chrom, max(0, f.start-500), f.end+500) for f in wt19])
+
+bg = mut15m.cat(wt1m, postmerge=True).cat(wt19m, postmerge=True)
+mt11sp = mut11m.intersect(bg, v=True)
+mt11spori = mut11.intersect(mt11sp, u=True)
+mt11sp.saveas(CWD+'/MUT_11_1/MUT_11_1_specific_TE_ins.bed')
+tepid_te_ins_bs_igv_batch(CWD+'/MUT_11_1/MUT_11_1_specific_TE_ins.bed', CWD+'/MUT_11_1/igv_ins.bat', CWD+'/MUT_11_1/ins_snap')
+### On manual checking, NO MUT_11_1 specific TE insertion was identified. So, other samples were not checked.
+
+# Analysing TE identified using TEfinder
+## Get TEs that PASS the filtering
+def filtered_grange(bed, m=100):
+    """
+    also adds margin (increase size) on both ends of the range
+    """
+    fin=pr.read_bed(bed)
+    fin.columns = ['Chromosome', 'Start', 'End', 'Name', 'read_cnt', 'bias', 'info']
+    # finf = fin[pd.Series('PASS' in i for i in fin.info)]
+    finf = fin
+    finf.Start = finf.Start - m
+    finf.End = finf.End + m
+    return finf
+
+CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/tefinder/'
+mut11 = filtered_grange(CWD+'MUT_11_1/TEinsertions.sorted.bed', m=500)
+mut15 = filtered_grange(CWD+'MUT_15/TEinsertions.sorted.bed', m=500)
+wt1 = filtered_grange(CWD+'WT_1/TEinsertions.sorted.bed', m=500)
+wt19 = filtered_grange(CWD+'WT_19/TEinsertions.sorted.bed', m=500)
+
+mt11f = mut11[pd.Series('PASS' in i for i in mut11.info)]
+mt15f = mut15[pd.Series('PASS' in i for i in mut15.info)]
+wt1f = wt1[pd.Series('PASS' in i for i in wt1.info)]
+wt19f = wt19[pd.Series('PASS' in i for i in wt19.info)]
+
+mt11o = mt11f.overlap(mt15f)
+mt15o = mt15f.overlap(mt11f)
+mt = pr.concat([mt11o, mt15o]).merge()
+
+wt1o = wt1f.overlap(wt19f)
+wt19o = wt19f.overlap(wt1f)
+wt = pr.concat([wt1o, wt19o]).merge()
+
+mtsp = mt.overlap(pr.concat([wt1, wt19]).merge(), invert=True)
+wtsp = wt.overlap(pr.concat([mut11, mut15]).merge(), invert=True)
+### this results in 2 and 8 mut/wt specific TE insertions. But, in IGV all branches have TE insertions reads
+
+### Checking to see if there are branch specific TE insertions
+mt11sp = mut11.overlap(pr.concat([mut15, wt1, wt19]).merge(), invert=True)
+mt11spf = mt11sp[pd.Series((mt11sp.read_cnt > 50) & (mt11sp.read_cnt < 300))].sort(by='read_cnt')
+pos = mt11spf.Chromosome.astype(str) + ":" + mt11spf.Start.astype(str) + "-" + mt11spf.End.astype(str)
+### On manual checking, NO MUT_11_1 specific TE insertion was identified. So, other samples were not checked.
+
+################################################################################
+########################## Pathogen infection test #############################
+################################################################################
+
+# Generate species vector for each branch
+fname = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/patho_inf/{}_megahit_assembly/ntall.oblast'
+spcnt = {}
+for s in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+    cnts = defaultdict(int)
+    df = pd.read_table(fname.format(s), header=None)
+    for grp in df.groupby([0]):
+        sps = set(["_".join(i.split()[:2]) for i in grp[1][16]])
+        for sp in sps:
+            cnts[sp] += 1
+    spcnt[s] = cnts
+
+allsp = set(list(spcnt['WT_1'])+list(spcnt['WT_19'])+list(spcnt['MUT_11_1'])+list(spcnt['MUT_15'])
+allspcnt = {s:[spcnt[p][s] for p in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')] for s in allsp}
+varsp = {s:allspcnt[s] for s in allsp if allspcnt[s][0]+allspcnt[s][1] < 0.5*(allspcnt[s][2]+allspcnt[s][3]) or allspcnt[s][0]+allspcnt[s][1] > 2*(allspcnt[s][2]+allspcnt[s][3])}
+varsphigh = {k:v for k,v in varsp.items() if any([True if i > 10 else False for i in v])}
+### print(varsphigh)
+### {'Primula_capitata': [8, 11, 3, 6],
+###  'Ixonanthes_chinensis': [8, 17, 6, 5],
+###  'Pontederia_cordata': [7, 13, 5, 4],
+###  'Maranta_leuconeura': [8, 13, 4, 6],
+###  'Homo_sapiens': [9, 14, 5, 5]}

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 """
 Plot the SNPs/mutation change histogram
@@ -76,11 +77,12 @@ def get_mut_plt(args):
         ax.bar(x + x_off, y, width, label=SAMPLES[i], color=COLS[i])
         x_off += width
 
-    ax.legend()
+    if args.samples is not None:
+        ax.legend()
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel(ylab)
-    ax.set_title('Mutation changes')
+    ax.set_title(" ".join(args.t))
     plt.tight_layout()
     plt.savefig(args.o.name)
     plt.close()

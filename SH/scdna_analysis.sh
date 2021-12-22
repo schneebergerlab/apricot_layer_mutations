@@ -47,6 +47,11 @@ grep '>' cur.genome.v1.fasta | sed 's/>//g' >cur.genome.v1.fasta.contig_list
 # Create genome dict for GATK
 java -jar /srv/netscratch/dep_mercier/grp_schneeberger/software/picard_2.25.0/picard.jar CreateSequenceDictionary R=cur.genome.v1.fasta O=cur.genome.v1.dict
 
+# Create blast database
+makeblastdb -dbtype nucl -in cur.genome.v1.fasta -input_type fasta -title cur.genome.v1.fasta
+makeblastdb -dbtype nucl -in ora.genome.v1.fasta -input_type fasta -title ora.genome.v1.fasta
+
+
 ################################################################################
 ###################### RUN CELLRANGER TO CORRECT BARCODE #######################
 ################################################################################
@@ -291,7 +296,7 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
 cd $cwd
 cat */*good_candidates.txt | awk '{if($6>=10) print}' >high_cov_mutants.txt
 cat */*good_candidates.txt | awk '{if($6>=20) print}' >high_cov_mutants_AF20.txt
-sort -k1,1 -k2,2n -k3,3n high_cov_mutants.txt >high_cov_mutants_sorted.txt
+sort -k1,1 -k2,2n -k3,3n high_cov_mutants.txt > high_cov_mutants_sorted.txt
 python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
     -f high_cov_mutants.txt \
     -rc 4 \
@@ -315,6 +320,17 @@ python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/py
 
 # Filter candidates with low sequencing depth based on number of neighboring SNPs, mapping quality, and BAQ
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_noisy_candidates.py
+
+# Get mutations spectra for the final-list of SNPs
+manual_selected_somatic_mutations.csv
+python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
+    -f manual_selected_somatic_mutations.csv \
+    -rc 3 \
+    -qc 4 \
+    -t Nucleotide substitute \
+    -W 8 \
+    -ymax 40 \
+    -o somatic_snps_substitution.png &
 
 ####################################################################
 ############ Step 5: Get mutated positions (for Indels)
@@ -410,6 +426,20 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
     head -39 mutations.regions | awk '{if($7>0.1){print $0}}' | grep $s$ | cut -f2 | grep -f /dev/stdin  ${s}_rna_mutations.bam_rc.txt >> snps_expressions_in_rna.min_snp_af0.1.txt
     head -39 mutations.regions | awk '{if($7<0.1){print $0}}' | grep $s$ | cut -f2 | grep -f /dev/stdin  ${s}_rna_mutations.bam_rc.txt >> snps_expressions_in_rna.max_snp_af0.1.txt
 done
+
+
+# Combine SNP and Indel somatic mutations into one output file
+
+cat manual_selected_somatic_mutations.csv > somatic_snvs.txt
+cut -f 1,3,4,5,6,7,8 manual_selected_low_cov_somatic_mutations.txt >> somatic_snvs.txt
+cut -f 1,3,4,5,6,7,8 high_conf_indels_manually_selected.csv > somatic_indels.txt
+cut -f 1,3,4,5,6,7,8 all_good_candidate_indels.selected_manually.bed >> somatic_indels.txt
+cat somatic_snvs.txt somatic_indels.txt > mutations.txt
+
+### Get neighboring bases at the SNV positions
+head -39 mutations.bed \
+| awk '{print $1"\t"$2-1"\t"$3+1}' \
+| hometools exseq --f /dev/stdin /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta -o snps_with_neighbour_sequence.fa
 ################################################################################
 ############ STEP 6: Mitotic recombinations in individual cells  ###############
 ################################################################################
@@ -929,76 +959,301 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
 done
 
 
-## Count number of
+## Count number of Mutant specific Deletions and Insertions
+### Using code in /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidate_for_mutant_phenotype.py
 
-## Find TE insertion/deletion sites using SPLITREADER (V2) https://github.com/baduelp/public
+## Find TE insertion/deletion sites using TEfinder
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/tefinder
+RPout=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.out.gff
+INDIR=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
 refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
-CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/
-
+picard='/srv/netscratch/dep_mercier/grp_schneeberger/software/picard_2.25.0/picard.jar'
 cd $CWD
-grep '>' TE_library.fa \
-| sed 's/>//g; s/#.*$//g' \
-| sort \
-| uniq \
-> TE_list.txt
-egrep -v 'Low|Simple|RNA|other|Satellite' TE_annotation.gff | sed 's/Subfamily/Name/g' > TE_annotation_edited.gff
-python -c "
-import sys
-sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/')
-from get_candidate_for_mutant_phenotype_funcs import generate_TEfiles_splitreader
-generate_TEfiles_splitreader('TE_annotation_edited.gff', 'TE-information-all.txt')
-"
+grep -v -iE '(Motif\:[ATGC]+\-rich)|(Motif\:\([ATGC]+\)n)' $RPout > TEs.gtf
+awk -F '\t' '{print $9}' TEs.gtf | awk -F '"' '{print $2}' | sort | uniq > List_of_TEs.txt
+
 for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    cd ${CWD}/splitreader
-    mkdir $s ; cd $s
-    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
-#        /bin/bash
-#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part1_mg.sh \
-#        ${s} \
-#        part1 \
-#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/${s}/ \
-#        .sorted.bt2 \
-#        ${s} \
-#        ${CWD}/splitreader/${s} \
-#        ${CWD}/splitreader
-#
-        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part2_mg.sh \
-        ${s} \
-        ${s} \
-        ${CWD}/splitreader/${s} \
-        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta \
-        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/splitreader/TE_annotation_edited.gff
+    cd $CWD;
+    mkdir $s; cd $s
+#    rm -r tefinder
+    bsub -q ioheavy -n 40 -R "span[hosts=1] rusage[mem=100000]" -M 120000 -oo ${s}.log -eo ${s}.err "
+        # TEfinder_mg has minor modifications to ensure proper parallelisation
+        TEfinder_mg \
+        -picard $picard \
+        -fis 270 \
+        -k 30 \
+        -intermed yes \
+        -maxHeapMem 2500 \
+        -threads 40 \
+        -workingdir tefinder \
+        -alignment $INDIR/$s/${s}.sorted.bt2.bam \
+        -fa $refcur\
+        -gtf ../TEs.gtf \
+        -te ../List_of_TEs.txt
     "
-    break
 done
 
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part2_mg.sh \
-${s} \
-${s} \
-${CWD}/splitreader/${s} \
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta \
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/splitreader/TE_annotation_edited.gff
+### Get Discordant reads BAM. This is being done manually because TEfinder jobs were crashing for this step
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD; cd $s
+    {
+        sams=$(ls tefinder/*/*_DiscordantPairs.bam)
+        rm read_names.txt
+        for sam in ${sams[@]}; do
+            samtools view -@12 $sam | cut -f 1  | sort | uniq >> read_names.txt
+        done
+        sort read_names.txt | uniq  > read_names.sorted.uniq.txt
+#        rm read_names.txt
+        samtools view -H -@12 Alignments.bam > all_discordants.sam
+        samtools view -@12 Alignments.bam | grep -Ff read_names.txt >> all_discordants.sam
+        samtools sort -O BAM -@ 12 all_discordants.sam \
+        > all_discordants.bam
+        samtools index -@ 12 all_discordants.bam
+    } &
+done
+
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD; cd $s
+    bedtools sort -i tefinder/TEinsertions.bed > TEinsertions.sorted.bed
+done
+### Filtering done here:
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidate_for_mutant_phenotype.py
+
+### Tried to find branch specific TE insertions, but could not find any
+
+## Find TE insertion/deletion sites using SPLITREADER (V2) https://github.com/baduelp/public
+## Using splitreader is too difficult as the documentation is incomplete
+#refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+#CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/
+#
+#cd $CWD
+#grep '>' TE_library.fa \
+#| sed 's/>//g; s/#.*$//g' \
+#| sort \
+#| uniq \
+#> TE_list.txt
+#egrep -v 'Low|Simple|RNA|other|Satellite' TE_annotation.gff | sed 's/Subfamily/Name/g' > TE_annotation_edited.gff
+#python -c "
+#import sys
+#sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/')
+#from get_candidate_for_mutant_phenotype_funcs import generate_TEfiles_splitreader
+#generate_TEfiles_splitreader('TE_annotation_edited.gff', 'TE-information-all.txt')
+#"
+#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+#    cd ${CWD}/splitreader
+#    mkdir $s ; cd $s
+#    bsub -q multicore20 -n 20 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
+##        /bin/bash
+##        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part1_mg.sh \
+##        ${s} \
+##        part1 \
+##        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/${s}/ \
+##        .sorted.bt2 \
+##        ${s} \
+##        ${CWD}/splitreader/${s} \
+##        ${CWD}/splitreader
+##
+#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part2_mg.sh \
+#        ${s} \
+#        ${s} \
+#        ${CWD}/splitreader/${s} \
+#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta \
+#        /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel/splitreader/TE_annotation_edited.gff
+#    "
+#    break
+#done
+
+################################################################################
+####### STEP 9: Check linked mutations for the Branch specific mutations #######
+################################################################################
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    {
+    cd ${CWD}/${s}
+    head -39 ../mutations.regions \
+    | grep -P "${s}$" \
+    | awk '{print $1":"$2"-"$3}' \
+    > snp.mutations.regions
+    rm snp_read_names.txt
+    while read r; do
+        samtools view ${s}.sorted.bt2.bam $r \
+        | cut -f1 \
+        >> snp_read_names.txt
+    done < snp.mutations.regions
+    rm ${s}.snp_reads.bam ${s}.snp_reads.sam
+    samtools view -H ${s}.sorted.bt2.bam > ${s}.snp_reads.sam
+    samtools view ${s}.sorted.bt2.bam \
+    | grep -Ff snp_read_names.txt \
+    >> ${s}.snp_reads.sam
+    samtools view -O BAM ${s}.snp_reads.sam \
+    > ${s}.snp_reads.bam
+    } &
+done
 
 
+################################################################################
+####################### STEP 10: Check telomere lenght #########################
+################################################################################
+# Calculate and compare the length of the telomere in the pollen/leaf/fruit WGS data. If the telomere length in the pollen and other tissues is different than that would mean that apricot loses telomeres while growing which are replenished when the gamete (pollen) are formed. If the lenght of the pollen and leaf/fruit tissue is same, then it would mean that either the tree do not lose telomere or that the telomeres are not replenished in the pollen.
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/telomer_length/
+telfa=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/telomeric_sequence.fa
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
 
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/SPLITREADER-beta2.5_part1_mg.sh \
-WT_1 \
-part1 \
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/${s}/ \
-.sorted.bt2 \
-WT_1 \
-${CWD}/splitreader/${s} \
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/pheno_mut/TE_indel//splitreader
+## Align pollen reads to telomere sequence and cur genome
+INDIR=/biodata/dep_mercier/grp_schneeberger/reads/Apricot/combined_scDNA/
+for s in A B; do
+    cd $CWD
+    mkdir pollen; cd pollen
+    bsub -q ioheavy -n 10 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo pollen_${s}.log -eo pollen_${s}.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 10 \
+        -x $telfa \
+        -1 ${INDIR}4350_and_4279_all_reads_${s}_R1_allruns_615_617_619.fastq.gz \
+        -2 ${INDIR}4350_and_4279_all_reads_${s}_R2_allruns_615_617_619.fastq.gz \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools sort -@10 -O BAM - \
+        > pollen_${s}_vs_telo.bam
+    samtools index -@10 pollen_${s}_vs_telo.bam
+    "
+    bsub -q ioheavy -n 10 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo pollen_${s}.log -eo pollen_${s}.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 10 \
+        -x $refcur \
+        -1 ${INDIR}4350_and_4279_all_reads_${s}_R1_allruns_615_617_619.fastq.gz \
+        -2 ${INDIR}4350_and_4279_all_reads_${s}_R2_allruns_615_617_619.fastq.gz \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools sort -@10 -O BAM - \
+        > pollen_${s}_vs_cur.bam
+    samtools index -@10 pollen_${s}_vs_cur.bam
+    "
+done
 
-/srv/netscratch/dep_mercier/grp_schneeberger/projects/SynSearch/tests/splitreader_test/tmp \
+## Align leaf re-sequencing reads to
+INDIR=/biodata/dep_mercier/grp_schneeberger/reads/Apricot/Reseq-RP.P-B.P/data/seqs/
+for s in A B C D; do
+    cd $CWD
+    mkdir leaf; cd leaf
+    bsub -q ioheavy -n 10 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo leaf_${s}.log -eo leaf_${s}.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 10 \
+        -x $telfa \
+        -1 ${INDIR}3649_${s}_run531_*_L008_R1_001.fastq.gz \
+        -2 ${INDIR}3649_${s}_run531_*_L008_R2_001.fastq.gz \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools sort -@10 -O BAM - \
+        > leaf_${s}_vs_telo.bam
+    samtools index -@10 leaf_${s}_vs_telo.bam
+    "
+    bsub -q ioheavy -n 10 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo leaf_${s}.log -eo leaf_${s}.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 10 \
+        -x $refcur \
+        -1 ${INDIR}3649_${s}_run531_*_L008_R1_001.fastq.gz \
+        -2 ${INDIR}3649_${s}_run531_*_L008_R2_001.fastq.gz \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools sort -@10 -O BAM - \
+        > leaf_${s}_vs_cur.bam
+    samtools index -@10 leaf_${s}_vs_cur.bam
+    "
+done
 
-in=$1 # bam file name
-TE_fam=$2 # HERE PART1
-InputDir=$3 # bam file directory
-ext=$4 # bam file extension e.g. "_dupl_fixed_paired.bam"
-cohort=$5 # name cohort of genomes analyzed
-workdir=$6 # working directory
-TEfile=$7 # directory with TE annotations files
+## Align scDNA-WGS reads to telomere
+INDIR=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD
+    mkdir scdna; cd scdna
+    bsub -q ioheavy -n 10 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo scdna_${s}.log -eo scdna_${s}.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 10 \
+        -x $telfa \
+        -1 ${INDIR}/${s}/${s}_fqfrom10xBam_bxCorrected_R1.fq.gz \
+        -2 ${INDIR}/${s}/${s}_fqfrom10xBam_bxCorrected_R2.fq.gz \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools view -h -@10 -F4 - \
+        | samtools sort -@10 -O BAM - \
+        > scdna_${s}_vs_telo.bam
+    samtools index -@10 scdna_${s}_vs_telo.bam
+    "
+done
+
+## Align scDNA-WGS ONLY R2 reads to telomere and cur-genome
+INDIR=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scdna/bigdata/
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd ${CWD}/scdna
+    mkdir onlyR2; cd onlyR2
+    reads=$(ls ${INDIR}/${s}/renamed_L50_${s}*_R2_001.fastq.gz | tr '\n' ',')
+    bsub -q ioheavy -n 20 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo scdna_${s}_telo.log -eo scdna_${s}_telo.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 20 \
+        -x $telfa \
+        -U $reads \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools view -h -@20 -F4 - \
+        | samtools sort -@20 -O BAM - \
+        > scdna_${s}_vs_telo.onlyr2.bam
+    samtools index -@20 scdna_${s}_vs_telo.onlyr2.bam
+    "
+
+    bsub -q ioheavy -n 20 -R "span[hosts=1] rusage[mem=25000]" -M 30000 -oo scdna_${s}_cur.log -eo scdna_${s}_cur.err "
+    bowtie2 --end-to-end \
+        --very-sensitive \
+        --threads 20 \
+        -x $refcur \
+        -U $reads \
+        --rg-id ${s}\"\\t\"PL:ILLUMINA\"\\t\"SM:1 \
+        | samtools view -h -@20 -F4 - \
+        | samtools sort -@20 -O BAM - \
+        > scdna_${s}_vs_cur.onlyr2.bam
+    samtools index -@10 scdna_${s}_vs_cur.onlyr2.bam
+    "
+done
+
+## Get average of read depth in the genome and in the telomere
+### Pollen
+INDIR=/biodata/dep_mercier/grp_schneeberger/reads/Apricot/combined_scDNA/
+for s in A B; do
+    cd $CWD/pollen
+    bsub -q normal -n 2 -R "span[hosts=1] rusage[mem=15000]" -M 20000 -oo pollen_${s}_cov.log -eo pollen_${s}_cov.err "
+    syri3.8
+    hometools bamcov pollen_${s}_vs_telo.bam pollen_${s}_vs_telo.cov &
+    hometools bamcov pollen_${s}_vs_cur.bam pollen_${s}_vs_cur.cov
+    "
+done
+
+### Leaf
+for s in A B C D; do
+    cd $CWD/leaf
+    bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 10000 -oo leaf_${s}_cov.log -eo leaf_${s}_cov.err "
+    syri3.8
+    hometools bamcov leaf_${s}_vs_telo.bam leaf_${s}_vs_telo.cov
+    hometools bamcov leaf_${s}_vs_cur.bam leaf_${s}_vs_cur.cov
+    "
+done
+
+### scdna-wgs leaf
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd ${CWD}/scdna
+    bsub -q normal -n 2 -R "span[hosts=1] rusage[mem=15000]" -M 20000 -oo scdna_${s}_cov.log -eo scdna_${s}_cov.err "
+    syri3.8
+    hometools bamcov scdna_${s}_vs_telo.bam scdna_${s}_vs_telo.cov
+    "
+done
+
+### scdna-wgs leaf onlyR2
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd ${CWD}/scdna/onlyR2
+    bsub -q normal -n 2 -R "span[hosts=1] rusage[mem=15000]" -M 20000 -oo scdna_${s}_cov.log -eo scdna_${s}_cov.err "
+    syri3.8
+    hometools bamcov scdna_${s}_vs_telo.onlyr2.bam scdna_${s}_vs_telo.onlyr2.cov &
+    hometools bamcov scdna_${s}_vs_cur.onlyr2.bam scdna_${s}_vs_cur.onlyr2.cov
+    "
+done
 
 
 ################################################################################
@@ -1044,48 +1299,16 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
     done
 done
 
-
-while read ctg; do
-    for i in {00..48}; do
-        blastn -query ../../individual_ctgs/${ctg}.fa -db /opt/share/blastdb/ncbi/nt.0${i} -out ${ctg}_againt_ncbi_nt_nt_0${i}.oblast -outfmt 0 -max_target_seqs 5
-    done
-    for i in {10..48}; do
-        blastn -query ../../individual_ctgs/${ctg}.fa -db /opt/share/blastdb/ncbi/nt.${i} -out ${ctg}_againt_ncbi_nt_nt_${i}.oblast -outfmt 0 -max_target_seqs 5
-    done
-    #
-    mkdir ${ctg}_blast_result
-    mv ${ctg}_againt_ncbi_nt_nt_*.oblast ${ctg}_blast_result
-done < ../../low_pollen_support_contig.txt
-
-bsub -q short -R "span[hosts=1] rusage[mem=4000]" -M 5000 -oo a.log -eo a.err "
-blastn -query final.contigs.cdhit.fa -db /opt/share/blastdb/ncbi/nt.00 -out TMP.oblast -outfmt '6 delim=  qaccver saccver staxid pident qcovhsp length mismatch gapopen qstart qend sstart send evalue bitscore stitle qcovs qcovhsp qcovus' -max_target_seqs 5 -num_threads 10 -perc_identity 90 -subject_besthit -evalue 0.000001 &
-"
-
-/srv/netscratch/dep_mercier/grp_schneeberger/private/manish/toolbox/Parser/FASTA/split_fasta.pl
-
-    blastn -query ${r}.fasta \
-     -task megablast \
-     -db ../filtered.contigs.v3.fasta \
-     -out ${r}.oblast \
-     -outfmt 7 \
-     -max_target_seqs 100 \
-     -max_hsps 100 \
-     -perc_identity 95 \
-     -evalue 0.0001 \
-     -num_threads 60 \
-     >> blastall_blastn.log
-
-
-
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $CWD/${s}_megahit_assembly/
+    cat nt_{00..48}.oblast \
+    | awk '{if($7>=80){print $0}}' \
+    > ntall.oblast
+done
 
 ################################################################################
 ############### STEP 9: Group cells to layers using mutations ##################
 ################################################################################
-tail +2 manual_selected_somatic_mutations.txt > mutations.txt
-cut -f 1,3,4,5,6,7,8,9 manual_selected_low_cov_somatic_mutations.txt >> mutations.txt
-cut -f 1,3,4,5,6,7,8,9 high_conf_indels_manually_selected.csv >> mutations.txt
-cut -f 1,3,4,5,6,7,8,9 all_good_candidate_indels.selected_manually.bed >> mutations.txt
-
 rf */cells_readcount/*/*readcount.bt2.txt > cells_readcount_paths.txt
 
 <<Comment

@@ -3,12 +3,14 @@ from matplotlib import pyplot as plt
 import warnings
 warnings.filterwarnings("error")
 
+# Get germline SNPs from SyRI output in syntenic regions
 snps = defaultdict(dict)
 with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out', 'r') as fin:
     for line in fin:
         line = line.strip().split()
         if line[10] != 'SNP': continue
         if line[3] == 'N' or line[4] == 'N': continue
+
         snps[line[0]][line[1]] = [line[3], line[4], line[9]]
 
 garb = dict()
