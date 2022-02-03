@@ -9,7 +9,7 @@ def get_pos(fin):
             count += 1
             line = line.strip().split()
             out[line[0]].append(line[1])
-    for k,v in out.items():
+    for k, v in out.items():
         out[k] = set(v)
     return out
 #END
@@ -94,6 +94,101 @@ def sample_snps(fin, fout, CAN_N, RC_MIN, RC_MAX, CAN_CNT=-1):
     pos = get_pos(fin)
     write_pos_only_snps(fin, fout, pos, CAN_N, RC_MIN, RC_MAX, CAN_CNT)
 #END
+
+
+def getlocs(f, n=20):
+    '''
+    Read bamrc or filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt file to select positions having more than n alt reads
+    '''
+    locs = deque()
+    BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+    with open(f, 'r') as fin:
+        for line in fin:
+            line = line.strip().split()
+            if int(line[3]) - int(line[BASE_DICT[line[2]]]) >= n:
+                locs.append(f'{line[0]}_{line[1]}')
+    return set(locs)
+#END
+
+
+def filterbg(fg, bg, bgtype='any'):
+    '''
+    Select positions present in all foreground list of positions, and then
+    filter out positions in bg.
+
+    bgtype can be 'any' if a position if to be filtered out if it is present in any bg sample or 'all' if a position has to be filtered out only when it is present in all of the bg samples.
+    '''
+    fgmerge = fg[0].copy()
+    for i in range(1, len(fg)):
+        fgmerge = fgmerge.intersection(fg[i])
+    bgmerge = bg[0]
+    if bgtype == 'any':
+        for i in range(1, len(bg)):
+            bgmerge = bgmerge.union(bg[i])
+    elif bgtype == 'all':
+        for i in range(1, len(bg)):
+            bgmerge = bgmerge.intersection(bg[i])
+    else:
+        print(f'Invalid bgtype value "{bgtype}". Only "any" and "all" are accepted.')
+    fgmerge -= bgmerge
+    return fgmerge
+# END
+
+def filterclosepos(pos):
+    from pandas import DataFrame as pd_df
+    from pandas import concat
+    p = [i.rsplit('_', 1) for i in pos]
+    p = pd_df(p)
+    p[1] = p[1].astype(int)
+    pout = pd_df()
+    for g in p.groupby(0):
+        gc = g[1].copy()
+        gc.sort_values([1], inplace=True)
+        gc.reset_index(inplace=True, drop=True)
+        g1 = [False] + list(gc[1].array[1:] - gc[1].array[:-1] < 100)
+        g2 = list(gc[1].array[:-1] - gc[1].array[1:] > -100) + [False]
+        gc['filter'] = [a or b for a, b in zip(g1, g2)]
+        gc = gc.loc[gc['filter'] != True]
+        pout = concat([pout, gc])
+    return set(pout[0].astype(str) + '_' + pout[1].astype(str))
+# END
+
+
+def plot_selected_pos(pos, igvb, outdir, M=200, HEIGHT=600):
+    from subprocess import run
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    BAMS = ['WT_1/WT_1.sorted.bt2.bam',
+            'wt7/wt7.deduped.bam',
+            'wt18/wt18.deduped.bam',
+            'WT_19/WT_19.sorted.bt2.bam',
+            'mut4/mut4.deduped.bam',
+            'MUT_11_1/MUT_11_1.sorted.bt2.bam',
+            'mut11_2/mut11_2.deduped.bam',
+            'MUT_15/MUT_15.sorted.bt2.bam']
+
+    GENOME = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta"
+    IGV = '/srv/netscratch/dep_mercier/grp_schneeberger/software/igv/IGV_Linux_2.10.2/igv.sh'
+    OUTDIR = outdir
+
+    with open(igvb, 'w') as fout:
+        fout.write("new"+"\n")
+        fout.write("genome {}\n".format(GENOME))
+        for bam in BAMS:
+            fout.write("load {}\n".format(bam))
+        fout.write("snapshotDirectory {}\n".format(OUTDIR))
+        fout.write("maxPanelHeight {}\n".format(HEIGHT))
+        fout.write("squish\n")
+        for p in pos:
+            c, m = p.rsplit('_', 1)
+            s = int(m) - M
+            e = int(m) + M
+            fout.write("goto {}:{}-{}\n".format(c, s, e))
+            fout.write("snapshot {}:{}-{}.png\n".format(c, s, e))
+        fout.write("exit\n")
+    with open(indir+"igv.log", 'a') as igvlog:
+        run("{} -b {}".format(IGV, igvb).split(), stdout=igvlog, stderr=igvlog)
+#END
+
 
 def getlinefrombamrc(f, cand):
     from collections import deque

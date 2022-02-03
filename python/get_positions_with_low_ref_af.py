@@ -37,12 +37,10 @@ if __name__=='__main__':
                 "T": 7
             }
             for line in fin:
-                l = line.strip().split(' ')
-
+                l = line.strip().split()
                 ## Do not consider genomic positions which are N
                 if l[2] == 'N':
                     continue
-
                 if int(l[3]) - int(l[base_dict[l[2]]]) >= args.n:
                     outstr.append(line)
                     count += 1

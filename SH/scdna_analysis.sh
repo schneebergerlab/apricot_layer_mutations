@@ -222,13 +222,13 @@ for sample in ${samples[@]}; do
 done
 
 
-
 ## Step 3d: Get read mapping depth histogram
 for sample in ${samples[@]}; do
     cd $cwd
     cd $sample
     cut -d' ' -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${sample}_bt2 -xlim 0 400 &
 done
+
 ####################################################################
 ############ Step 4: Get mutated positions (for SNPs)
 ####################################################################

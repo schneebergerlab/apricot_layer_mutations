@@ -675,6 +675,105 @@ for s in locwt1:
         goodw1.append((s, altrc, altaf, bgrc, bgaf))
 
 
+################################################################################
+############ SNP Identification when all eight samples are present #############
+################################################################################
+# Select SNPs in each sample of the eight sample:
+readdepth = {'WT_1' : (70, 220),
+             'wt7'  : (60, 160),
+             'wt18' : (60, 160),
+             'WT_19': (70, 250),
+             'mut4' : (60, 150),
+             'MUT_11_1' : (70, 250),
+             'mut11_2': (60, 150),
+             'MUT_15': (80, 230)}
+samples = list(readdepth.keys())
+
+## Test just the four new samples
+### Checked positions that are present in either the mutant or the wt branches
+### Result: No position in WT or MUT that have more than 20 reads supporting de novo mutation. So, no shared mutation between these branches.
+
+## Testing all samples together
+locwt1 = getlocs('WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locwt7 = getlocs('wt7/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locwt18 = getlocs('wt18/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locwt19 = getlocs('WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locmut4 = getlocs('mut4/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locmut11_1 = getlocs('MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locmut11_2 = getlocs('mut11_2/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+locmut15 = getlocs('MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=3)
+
+locwt1hi = getlocs('WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locwt7hi = getlocs('wt7/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locwt18hi = getlocs('wt18/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locwt19hi = getlocs('WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locmut4hi = getlocs('mut4/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locmut11_1hi = getlocs('MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locmut11_2hi = getlocs('mut11_2/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+locmut15hi = getlocs('MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', n=20)
+
+
+locmthi = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi], bgtype='any')
+plot_selected_pos(locmthi, "tmp_igv.bat", "tmp/locmthi/", M=100, HEIGHT=200)
+locmthi2 = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1, locwt7, locwt18, locwt19], bgtype='all')
+#### Only high-confidence mutation is a two bp deletion at CUR4G_680602
+
+#### Bootstrapping to see whether the mutation could be present by chance
+loctst = filterbg([locwt1hi, locwt18hi, locmut4hi, locmut11_1hi], [locwt7hi, locwt19hi, locmut11_2hi, locmut15hi],  bgtype='any')
+plot_selected_pos(loctst, "tmp_igv.bat", "tmp/loctst/", M=100, HEIGHT=200)
+loctst = filterbg([locwt1hi, locwt18hi, locmut4hi, locmut11_1hi], [locwt7, locwt19, locmut11_2, locmut15],  bgtype='all')
+loctst2 = filterbg([locwt7hi, locwt19hi, locmut11_2hi, locmut15hi], [locwt1hi, locwt18hi, locmut4hi, locmut11_1hi],  bgtype='any')
+plot_selected_pos(loctst2, "tmp_igv.bat", "tmp/loctst2/", M=100, HEIGHT=200)
+loctst2 = filterbg([locwt7hi, locwt19hi, locmut11_2hi, locmut15hi], [locwt1, locwt18, locmut4, locmut11_1], bgtype='all')
+#### No mutation found in any config ==> the mutation in MUT sample is probably not random
+
+#### Testing for mutation in WT samples absent in MUT sample
+locwthi = filterbg([locwt1hi, locwt7hi, locwt18hi, locwt19hi], [locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], bgtype='any')
+plot_selected_pos(locwthi, "tmp_igv.bat", "tmp/locwthi/", M=75, HEIGHT=200)
+locwthi2 = filterbg([locwt1hi, locwt7hi, locwt18hi, locwt19hi], [locmut4, locmut11_1, locmut11_2, locmut15], bgtype='all')
+#### No mutation found. Probably this also mean that there is not any gene-coversion in the MUT samples.
+
+#### Test mutations between branches that are closer to each other (that is diverged more recently)
+##### Test-1: MUT11.1 and MUT11.2
+l1_1 = filterbg([locmut11_1hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut11_2hi, locmut15hi], bgtype='any')
+l1_2 = filterbg([locmut11_1hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_2, locmut15], bgtype='any')
+
+l2_1 = filterbg([locmut11_2hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut11_1hi, locmut15hi], bgtype='any')
+l2_2 = filterbg([locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_1, locmut15], bgtype='any')
+
+l12_1 = filterbg([locmut11_1hi, locmut11_2hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut15hi], bgtype='any')
+l12_2 = filterbg([locmut11_1hi, locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut15], bgtype='all')
+l12_3 = filterbg([locmut11_1hi, locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut15], bgtype='any')
+plot_selected_pos(l12_2, "tmp_igv.bat", "tmp/l12_2/", M=75, HEIGHT=200)
+
+##### Test-2: MUT4 and MUT15
+l1_1 = filterbg([locmut4hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut11_1hi, locmut11_2hi, locmut15hi], bgtype='any')
+l1_2 = filterbg([locmut4hi], [locwt1, locwt7, locwt18, locwt19, locmut11_1, locmut11_2, locmut15], bgtype='any')
+
+l2_1 = filterbg([locmut15hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut11_1hi, locmut11_2hi], bgtype='any')
+l2_2 = filterbg([locmut15hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_1, locmut11_2], bgtype='any')
+
+l12_1 = filterbg([locmut4hi, locmut15hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut11_1hi, locmut11_2hi], bgtype='any')
+l12_2 = filterbg([locmut4hi, locmut15hi], [locwt1, locwt7, locwt18, locwt19, locmut11_1, locmut11_2], bgtype='all')
+l12_3 = filterbg([locmut4hi, locmut15hi], [locwt1, locwt7, locwt18, locwt19, locmut11_1, locmut11_2], bgtype='any')
+plot_selected_pos(l12_2, "tmp_igv.bat", "tmp/l12_2/", M=75, HEIGHT=200)
+
+
+##### Test-3: Testing pairs
+p1 = filterbg([locmut4hi, locmut11_1hi], [locwt1, locwt7, locwt18, locwt19, locmut15, locmut11_2], bgtype='all')
+p2 = filterbg([locmut15hi, locmut11_1hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_2], bgtype='all')
+
+p3 = filterbg([locmut4hi, locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut15, locmut11_1], bgtype='all')
+p4 = filterbg([locmut15hi, locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_1], bgtype='all')
+
+p2filt = filterclosepos(p2)
+p3filt = filterclosepos(p3)
+
+p2filt =  filterbg([p2filt], [locwt1, locwt19], bgtype='all')
+p3filt =  filterbg([p3filt], [locwt7, locwt18], bgtype='all')
+
+p2filt =  filterbg([p2], [locwt1, locwt19], bgtype='all')
+p3filt =  filterbg([p3], [locwt7, locwt18], bgtype='all')
 
 ################################################################################
 ######################### Indel Identification #################################
