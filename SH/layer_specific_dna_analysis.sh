@@ -85,8 +85,8 @@ CHRBED=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assem
 refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
 for s in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${s}
-    bsub -q normal -n 4  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc.log -eo ${s}_bamrc.err "
-#        hometools pbamrc -n 4 -b 30 -q 10 -w 0 -S -f $refcur -l $CHRBED ${s}.deduped.bam bam_read_counts_b30_q10.bt2.txt
+    bsub -q ioheavy -n 8  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc.log -eo ${s}_bamrc.err -m 'hpc001 hpc002 hpc003 hpc005 hpc006' "
+        $hometools pbamrc -n 8 -b 30 -q 10 -w 0 -S -I -f $refcur -l $CHRBED ${s}.deduped.bam bam_read_counts_b30_q10.bt2.txt
 
       # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
       /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt

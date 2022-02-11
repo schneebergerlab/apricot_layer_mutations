@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+
 import argparse
 
-if __name__=='__main__':
+if __name__ == '__main__':
     """
     Read output of bam-readcount and select all positions that have more than 3 non-reference bases mapped.
     
@@ -10,6 +12,7 @@ if __name__=='__main__':
     The input file format is:
     Contig_ID   POS REF_Allele  READ_count  A_count C_count G_Count T_count N_Count  [INDEL_counts] [INDEL_counts]  [INDEL_counts]  
     """
+
     parser = argparse.ArgumentParser("Select positions which have more than three reads with non-reference alleles")
     parser.add_argument('f', help='path to bam_readcount output', type=argparse.FileType('r'))
     parser.add_argument('-n', dest='n', help='minimum number of non-reference reads', type=int, default=3)
@@ -38,12 +41,20 @@ if __name__=='__main__':
             }
             for line in fin:
                 l = line.strip().split()
+                if len(l) == 0:
+                    continue
                 ## Do not consider genomic positions which are N
                 if l[2] == 'N':
                     continue
                 if int(l[3]) - int(l[base_dict[l[2]]]) >= args.n:
                     outstr.append(line)
                     count += 1
+                elif len(l) > 9:
+                    RS = sum(map(int, l[4:8])) - int(l[base_dict[l[2]]])
+                    RS += sum([int(l[i]) for i in range(10, len(l), 2)])
+                    if RS >= args.n:
+                        outstr.append(line)
+                        count += 1
                 if count == 1000000:
                     fout.write(''.join(outstr))
                     outstr = deque()

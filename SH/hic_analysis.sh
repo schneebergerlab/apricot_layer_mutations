@@ -7,8 +7,11 @@ CONFIG=/srv/netscratch/dep_mercier/grp_schneeberger/private/manish/configs/nfcor
 cd $CWD
 nextflow run nf-core/hic \
     -profile singularity \
+    -resume sleepy_hodgkin \
     -r 1.3.0 \
     -c $CONFIG \
     --digestion 'dpnii' \
+    --hicpro_maps \
+    --tads_caller 'insulation,hicexplorer' \
     --input '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_HiC/*R{1,2}.fastq.gz' \
     --fasta /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta

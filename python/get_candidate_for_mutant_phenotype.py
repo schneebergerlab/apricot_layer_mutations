@@ -714,13 +714,13 @@ locmut15hi = getlocs('MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt
 
 
 locmthi = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi], bgtype='any')
-plot_selected_pos(locmthi, "tmp_igv.bat", "tmp/locmthi/", M=100, HEIGHT=200)
+plot_selected_pos(locmthi, "tmp_igv.bat", "tmp/locmthi/", M=100, HEIGHT=200, emptydir=True)
 locmthi2 = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1, locwt7, locwt18, locwt19], bgtype='all')
 #### Only high-confidence mutation is a two bp deletion at CUR4G_680602
 
 #### Bootstrapping to see whether the mutation could be present by chance
 loctst = filterbg([locwt1hi, locwt18hi, locmut4hi, locmut11_1hi], [locwt7hi, locwt19hi, locmut11_2hi, locmut15hi],  bgtype='any')
-plot_selected_pos(loctst, "tmp_igv.bat", "tmp/loctst/", M=100, HEIGHT=200)
+plot_selected_pos(loctst, "tmp_igv.bat", "tmp/loctst/", M=100, HEIGHT=200, emptydir=True)
 loctst = filterbg([locwt1hi, locwt18hi, locmut4hi, locmut11_1hi], [locwt7, locwt19, locmut11_2, locmut15],  bgtype='all')
 loctst2 = filterbg([locwt7hi, locwt19hi, locmut11_2hi, locmut15hi], [locwt1hi, locwt18hi, locmut4hi, locmut11_1hi],  bgtype='any')
 plot_selected_pos(loctst2, "tmp_igv.bat", "tmp/loctst2/", M=100, HEIGHT=200)
@@ -729,7 +729,7 @@ loctst2 = filterbg([locwt7hi, locwt19hi, locmut11_2hi, locmut15hi], [locwt1, loc
 
 #### Testing for mutation in WT samples absent in MUT sample
 locwthi = filterbg([locwt1hi, locwt7hi, locwt18hi, locwt19hi], [locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], bgtype='any')
-plot_selected_pos(locwthi, "tmp_igv.bat", "tmp/locwthi/", M=75, HEIGHT=200)
+plot_selected_pos(locwthi, "tmp_igv.bat", "tmp/locwthi/", M=75, HEIGHT=200, emptydir=True)
 locwthi2 = filterbg([locwt1hi, locwt7hi, locwt18hi, locwt19hi], [locmut4, locmut11_1, locmut11_2, locmut15], bgtype='all')
 #### No mutation found. Probably this also mean that there is not any gene-coversion in the MUT samples.
 
@@ -737,9 +737,18 @@ locwthi2 = filterbg([locwt1hi, locwt7hi, locwt18hi, locwt19hi], [locmut4, locmut
 ##### Test-1: MUT11.1 and MUT11.2
 l1_1 = filterbg([locmut11_1hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut11_2hi, locmut15hi], bgtype='any')
 l1_2 = filterbg([locmut11_1hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_2, locmut15], bgtype='any')
+l1_2 = filterbg([locmut11_1hi], [locwt1, locwt19, locmut15], bgtype='all')
+plot_selected_pos(l1_2, "tmp_igv.bat", "tmp/l1_2/", M=75, HEIGHT=200, emptydir=True)
+
+
 
 l2_1 = filterbg([locmut11_2hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut11_1hi, locmut15hi], bgtype='any')
+l2_2 = filterbg([locmut11_2hi], [locwt7hi, locwt18hi, locmut4hi,], bgtype='any')
+plot_selected_pos(l2_2, "tmp_igv.bat", "tmp/l2_2/", M=75, HEIGHT=200, emptydir=True)
+
+
 l2_2 = filterbg([locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_1, locmut15], bgtype='any')
+l2_3 = filterbgcnt([locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut11_1, locmut15], cnt=2)
 
 l12_1 = filterbg([locmut11_1hi, locmut11_2hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi, locmut4hi, locmut15hi], bgtype='any')
 l12_2 = filterbg([locmut11_1hi, locmut11_2hi], [locwt1, locwt7, locwt18, locwt19, locmut4, locmut15], bgtype='all')
@@ -774,6 +783,23 @@ p3filt =  filterbg([p3filt], [locwt7, locwt18], bgtype='all')
 
 p2filt =  filterbg([p2], [locwt1, locwt19], bgtype='all')
 p3filt =  filterbg([p3], [locwt7, locwt18], bgtype='all')
+##### No good candidate could be identified
+
+##### Test-4: Testing all MUT samples
+l1 = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1, locwt7, locwt18, locwt19], bgtype='all')
+l2 = filterbg([locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], [locwt1hi, locwt7hi, locwt18hi, locwt19hi], bgtype='any')
+plot_selected_pos(l2, "tmp_igv.bat", "tmp/l2/", M=75, HEIGHT=200)
+
+##### Test-5: Testing WT samples
+wt17_1 = filterbg([locwt1hi, locwt7hi], [locwt18hi, locwt19hi, locmut4hi, locmut11_1hi, locmut11_2hi, locmut15hi], bgtype='any')
+plot_selected_pos(wt17_1, "tmp_igv.bat", "tmp/wt17_1/", M=75, HEIGHT=200)
+wt17_2 = filterbg([locwt1hi, locwt7hi], [locwt18, locwt19, locmut4, locmut11_1, locmut11_2, locmut15], bgtype='all')
+plot_selected_pos(wt17_2, "tmp_igv.bat", "tmp/wt17_2/", M=75, HEIGHT=200)
+###### Could not find any good mutation shared between the wildtype samples
+
+
+
+
 
 ################################################################################
 ######################### Indel Identification #################################

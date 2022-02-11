@@ -212,12 +212,12 @@ for sample in ${samples[@]}; do
     cd $cwd
     mkdir $sample
     cd $sample
-    rf ${indir}${sample}/barcodes/*/*.DUPmarked.deduped.bam >cell_bam_path.txt
+#    rf ${indir}${sample}/barcodes/*/*.DUPmarked.deduped.bam > cell_bam_path.txt
     bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo align_reads_bt2.log -eo align_reads_bt2.err "
-      bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{printf \$1\" \"\$2\" \"\$3\" \"\$4; for(i=6;i<=10;i++) {n1=split(\$i,a,\":\"); printf \" \"a[2]};  for(i=11;i<=NF;i++) {n1=split(\$i,a,\":\"); printf \" \"a[1]\" \"a[2]}; printf \"\n\"}' > bam_read_counts_b30_q10.bt2.txt
+      # bam-readcount -b 30 -q 10 -w 0 -f $refcur ${sample}.sorted.bt2.bam | awk '{printf \$1\" \"\$2\" \"\$3\" \"\$4; for(i=6;i<=10;i++) {n1=split(\$i,a,\":\"); printf \" \"a[2]};  for(i=11;i<=NF;i++) {n1=split(\$i,a,\":\"); printf \" \"a[1]\" \"a[2]}; printf \"\n\"}' > bam_read_counts_b30_q10.bt2.txt
 
       # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
-      python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
+      /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
   "
 done
 

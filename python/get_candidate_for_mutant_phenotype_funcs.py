@@ -100,6 +100,7 @@ def getlocs(f, n=20):
     '''
     Read bamrc or filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt file to select positions having more than n alt reads
     '''
+    from collections import deque
     locs = deque()
     BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
     with open(f, 'r') as fin:
@@ -107,6 +108,11 @@ def getlocs(f, n=20):
             line = line.strip().split()
             if int(line[3]) - int(line[BASE_DICT[line[2]]]) >= n:
                 locs.append(f'{line[0]}_{line[1]}')
+            elif len(line) > 9:
+                RS = sum(map(int, line[4:8])) - int(line[BASE_DICT[line[2]]])
+                RS += sum([int(line[i]) for i in range(10, len(line), 2)])
+                if RS >= n:
+                    locs.append(f'{line[0]}_{line[1]}')
     return set(locs)
 #END
 
@@ -134,6 +140,35 @@ def filterbg(fg, bg, bgtype='any'):
     return fgmerge
 # END
 
+
+def filterbgcnt(fg, bg, cnt=1):
+    '''
+    Select positions present in all foreground list of positions, and then
+    filter out positions in bg.
+
+    If the position is present in more than cnt samples, then it would be filtered out.
+    '''
+    from collections import Counter, deque
+    fgmerge = fg[0].copy()
+    for i in range(1, len(fg)):
+        fgmerge = fgmerge.intersection(fg[i])
+    bgs = list(bg[0])
+    for i in range(1, len(bg)):
+        bgs += list(bg[i])
+    bgs = Counter(bgs)
+    outfg = deque()
+    for pos in fgmerge:
+        try:
+            c = bgs[pos]
+        except KeyError:
+            outfg.append(pos)
+            continue
+        if c > cnt:
+            continue
+        outfg.append(pos)
+    return set(outfg)
+# END
+
 def filterclosepos(pos):
     from pandas import DataFrame as pd_df
     from pandas import concat
@@ -154,8 +189,9 @@ def filterclosepos(pos):
 # END
 
 
-def plot_selected_pos(pos, igvb, outdir, M=200, HEIGHT=600):
+def plot_selected_pos(pos, igvb, outdir, M=200, HEIGHT=600, emptydir=False):
     from subprocess import run
+    import os
     indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
     BAMS = ['WT_1/WT_1.sorted.bt2.bam',
             'wt7/wt7.deduped.bam',
@@ -169,6 +205,11 @@ def plot_selected_pos(pos, igvb, outdir, M=200, HEIGHT=600):
     GENOME = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta"
     IGV = '/srv/netscratch/dep_mercier/grp_schneeberger/software/igv/IGV_Linux_2.10.2/igv.sh'
     OUTDIR = outdir
+    # Delete the contents of the output folder
+    if emptydir:
+        fins = os.listdir(outdir)
+        for f in fins:
+            os.remove(f'{os.getcwd()}/{outdir}/{f}')
 
     with open(igvb, 'w') as fout:
         fout.write("new"+"\n")
