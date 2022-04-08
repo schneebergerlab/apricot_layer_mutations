@@ -193,14 +193,18 @@ def plot_selected_pos(pos, igvb, outdir, M=200, HEIGHT=600, emptydir=False):
     from subprocess import run
     import os
     indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-    BAMS = ['WT_1/WT_1.sorted.bt2.bam',
-            'wt7/wt7.deduped.bam',
+    # BAMS = ['WT_1/WT_1.sorted.bt2.bam',
+    #         'wt7/wt7.deduped.bam',
+    #         'wt18/wt18.deduped.bam',
+    #         'WT_19/WT_19.sorted.bt2.bam',
+    #         'mut4/mut4.deduped.bam',
+    #         'MUT_11_1/MUT_11_1.sorted.bt2.bam',
+    #         'mut11_2/mut11_2.deduped.bam',
+    #         'MUT_15/MUT_15.sorted.bt2.bam']
+    BAMS = ['wt7/wt7.deduped.bam',
             'wt18/wt18.deduped.bam',
-            'WT_19/WT_19.sorted.bt2.bam',
             'mut4/mut4.deduped.bam',
-            'MUT_11_1/MUT_11_1.sorted.bt2.bam',
-            'mut11_2/mut11_2.deduped.bam',
-            'MUT_15/MUT_15.sorted.bt2.bam']
+            'mut11_2/mut11_2.deduped.bam']
 
     GENOME = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta"
     IGV = '/srv/netscratch/dep_mercier/grp_schneeberger/software/igv/IGV_Linux_2.10.2/igv.sh'

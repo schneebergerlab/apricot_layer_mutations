@@ -1,4 +1,3 @@
-Analyse the
 NOTE: FOR ALL ANALYSIS CURROT assembly would be used as the primary assembly
 
 ################################################################################
@@ -68,6 +67,7 @@ for s in l1 l2 l3; do
         "
 done
 
+# Copied the trimmed-read and alignments to the following folder and would now use that as CWD
 CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/
 for s in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${s}
@@ -85,7 +85,7 @@ CHRBED=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assem
 refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
 for s in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${s}
-    bsub -q ioheavy -n 8  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc.log -eo ${s}_bamrc.err -m 'hpc001 hpc002 hpc003 hpc005 hpc006' "
+    bsub -q ioheavy -n 8  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc.log -eo ${s}_bamrc.err  "
         $hometools pbamrc -n 8 -b 30 -q 10 -w 0 -S -I -f $refcur -l $CHRBED ${s}.deduped.bam bam_read_counts_b30_q10.bt2.txt
 
       # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
@@ -93,13 +93,36 @@ for s in l1 l2 l3; do
   "
 done
 
+grep 'MUT_11_1' /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions > ${CWD}/mut_11_1.mutations.regions
 
-
-## Get read mapping depth histogram
+MUTS=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions
 for s in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${s}
-    cut -d' ' -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_bt2 -xlim 0 400 &
+
+    ## Get read mapping depth histogram
+    cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_bt2 -xlim 0 400 &
+
+    # Get allele-frequency at the mutation positions in MUT_11_1
+#    hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l ../mut_11_1.mutations.regions ${s}.deduped.bam read_count_at_leaf_mut_pos.txt &
+
+    # Get allele-frequency at the mutation positions in all branches
+#    hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l $MUTS ${s}.deduped.bam read_count_at_leaf_mut_pos.all_branches.txt &
+
 done
+
+## Plot allele frequency at MUT_11_1 positions
+layer_specific_dna_analysis.py -> plot_snp_af()
+## Plot allele frequency at all positions
+layer_specific_dna_analysis.py -> plot_snp_af_all_branch()
+
+####################################################################
+############ De-Novo mutation identification
+####################################################################
+
+
+
+
+
 
 ####################################################################
 ############ Gene-conversion identification
@@ -114,3 +137,15 @@ for s in l1 l2 l3; do
   "
 done
 
+# Get read counts at SYRI snp positions
+for sample in l1 l2 l3; do
+    cd ${CWD}/mut_11_1_${sample}
+    N=20
+    for i in {1..8}; do
+        snps="../../snps_split/snps_CUR${i}G.txt"
+        bsub -q multicore40 -n $N -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_snps_pileup.log -eo ${sample}_snps_pileup.err "
+            xargs -a $snps -P $N -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 ${sample}.deduped.bam -r {} -O --output-QNAME > snps_CUR${i}G.pileup 2> garb
+            sort -k2,2n -o snps_CUR${i}G.pileup snps_CUR${i}G.pileup
+        "
+    done
+done

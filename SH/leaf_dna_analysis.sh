@@ -125,115 +125,141 @@ for s in wt7 wt18 mut4 mut11_2; do
   "
 done
 
-
 ## Get read mapping depth histogram
 for s in wt7 wt18 mut4 mut11_2; do
     cd ${CWD}/$s
     cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_bt2 -xlim 0 400 &
 done
 
-
+### Variant identification
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/mutations_in_branches.py
 
 
 ####################################################################
-############ Step 4: Get mutated positions (for SNPs)
+############ Step 4: Gene conversions
 ####################################################################
-refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
-
-## Step 4a: Get candidate variant positions using heuristic cut-offs
-cd $cwd
-## Use python3.7 environment
-
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_candidates_variant_positions.py \
-    WT_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
-    WT_19/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
-    MUT_11_1/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
-    MUT_15/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt \
-    -s WT_1_bt2 WT_19_bt2 MUT_11_1_bt2 MUT_15_bt2 \
-    -n 5 -m 50 -M 250 &
-
-## Step 4b: Select candidates supported by multiple cells
-cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/get_cells/all_barcodes/'
-samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
-
-for sample in ${samples[@]}; do
-    cd $cwd
-    cd $sample
-    barcodes_list=${indir}${sample}/barcodes_list
-    bedbt2=$(rf ${sample}_bt2_SNPs_candidate.regions)
-    inpath=${indir}${sample}/barcodes/
-    mkdir cells_readcount
-    cd cells_readcount
-
-    bsub -q multicore40 -n 25 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo rc2.log -eo rc2.err "
-        xargs -a $barcodes_list \
-        -P 25 \
-        -I {} \
-        bash -c '
-            bc=\$(basename \${1})
-            mkdir \$bc; cd \$bc
-            echo \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_readcount.bt2.txt
-            /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/SH/get_readcounts_in_cells_bt2.sh \$2 \$3 \${1}/\${bc}.DUPmarked.deduped.bam \${bc}_readcount.bt2.txt
-            cd ..
-        ' -- {} $bedbt2 $refcur
+## As initial check, get the alt allele-frequency distribution at the
+## heterozygous positions identified by syri
+syriout=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out
+syrisnp=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt
+grep 'SNP' $syriout | cut -f1,2,3,4,5 | grep -v 'N' > $syrisnp
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
+for sample in wt7 wt18 mut4 mut11_2 ; do
+    cd ${CWD}/${sample}
+    bsub -q multicore40 -n 40  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc_q0.log -eo ${s}_bamrc_q0.err -m 'hpc001 hpc002 hpc003 hpc005 hpc004' "
+        $hometools pbamrc -n 8 -b 30 -q 10 -w 0 -I -n 40 -f $refcur -l $syrisnp ${sample}.deduped.bam ${sample}.syri_snps.bamrc
     "
 done
 
-## Use python3.7 environment
-for sample in ${samples[@]}; do
-    cd $cwd
-    cd $sample
-    echo $sample
-    rf cells_readcount/*/*_readcount.bt2.txt >bt2_rcfiles.txt
+for sample in MUT_11_1 MUT_15 WT_1 WT_19 ; do
+    cd ${CWD}/${sample}
+    bsub -q multicore40 -n 40  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc_q0.log -eo ${s}_bamrc_q0.err -m 'hpc001 hpc002 hpc003 hpc005 hpc004' "
+        $hometools pbamrc -n 8 -b 30 -q 10 -w 0 -I -n 40 -f $refcur -l $syrisnp ${sample}.sorted.bt2.bam ${sample}.syri_snps.bamrc
+    "
+done
+SNPS=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/snps_close.bed
+# Get reads overlapping SNPs
+for sample in wt7 wt18 mut4 mut11_2 ; do
+    cd ${CWD}/${sample}
+    N=20
+    bsub -q multicore40 -n 20  -R "span[hosts=1] rusage[mem=40000]" -M 50000 -oo ${sample}_snps_reads.log -eo ${sample}_snps_reads.err "
+        samtools view -b -L $SNPS -f 2 -@ $N ${sample}.deduped.bam \
+        | samtools sort -n -O SAM -@ $N - \
+        | grep -vP '^@' \
+        | cut -f 1 \
+        | uniq >  snps_read_name.txt
 
-    python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/select_candidate_supported_by_cells3.py \
-        ${sample}_bt2_filtered_SNPs_candidate.sorted.bed \
-        bt2_rcfiles.txt \
-        -o multi_cell_bt2 \
-        -n 5 &
+        samtools view -H ${sample}.deduped.bam > snps_reads.sam
+        samtools sort -O SAM -@ $N -n ${sample}.deduped.bam \
+        | grep -Ff snps_read_name.txt >> snps_reads.sam
+        samtools sort -@ $N -O BAM snps_reads.sam > snps_reads.bam
+        samtools index -@ $N snps_reads.bam
+        rm snps_reads.sam
+    "
+done
+for sample in MUT_11_1 MUT_15 WT_1 WT_19 ; do
+    cd ${CWD}/${sample}
+    N=20
+    bsub -q multicore40 -n 20 -R "span[hosts=1] rusage[mem=40000]" -M 50000 -oo ${sample}_snps_reads.log -eo ${sample}_snps_reads.err "
+        samtools view -b -L $SNPS -f 2 -@ $N ${sample}.sorted.bt2.bam \
+        | samtools sort -n -O SAM -@ $N - \
+        | grep -vP '^@' \
+        | cut -f 1 \
+        | uniq >  snps_read_name.txt
+
+        samtools view -H ${sample}.sorted.bt2.bam > snps_reads.sam
+        samtools sort -O SAM -@ $N -n ${sample}.sorted.bt2.bam \
+        | grep -Ff snps_read_name.txt >> snps_reads.sam
+        samtools sort -@ $N -O BAM snps_reads.sam > snps_reads.bam
+        samtools index -@ $N snps_reads.bam
+        rm snps_reads.sam
+    "
 done
 
-## Step 4c: Select good candidates based on ALT allele depth and frequency comparisons in other samples
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_read_counts_of_candidates_in_other_samples.py
-cd $cwd
-cat */*good_candidates.txt | awk '{if($6>=10) print}' >high_cov_mutants.txt
-cat */*good_candidates.txt | awk '{if($6>=20) print}' >high_cov_mutants_AF20.txt
-sort -k1,1 -k2,2n -k3,3n high_cov_mutants.txt > high_cov_mutants_sorted.txt
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
-    -f high_cov_mutants.txt \
-    -rc 4 \
-    -qc 5 \
-    -samples all_samples_BT2 \
-    -t Mutation changes in $sample \
-    -W 8 \
-    -ymax 40 \
-    -o mutation_changes_${sample}.png &
+# Get pileup data at SNP positions
+awk '{print $1":"$3"-"$3}' /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/snps_close.bed > snps_close.txt
+mkdir snps_split
+for i in {1..8}; do
+    grep CUR${i}G snps_close.txt > snps_split/snps_CUR${i}G.txt
+done
 
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
-    -f high_cov_mutants_AF20.txt \
-    -rc 4 \
-    -qc 5 \
-    -samples all_samples_BT2 \
-    -t Mutation changes in $sample \
-    -W 8 \
-    -ymax 40 \
-    -o mutation_changes_all_sample_AF20.png &
+for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
+    cd ${CWD}/${sample}
+    N=20
+    for i in {1..8}; do
+        snps="../snps_split/snps_CUR${i}G.txt"
+        bsub -q multicore40 -n $N -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_snps_pileup.log -eo ${sample}_snps_pileup.err "
+            xargs -a $snps -P $N -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 snps_reads.bam -r {} -O --output-QNAME > snps_CUR${i}G.pileup 2> garb
+            sort -k2,2n -o snps_CUR${i}G.pileup snps_CUR${i}G.pileup
+        "
+    done
+done
 
+# Get pileup data at selected gene conversion positions
+for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
+    cd ${CWD}/${sample}
+    snps="../gene_conversions_positions.txt"
+    {
+#    bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_geneconv_pileup.log -eo ${sample}_geneconv_pileup.err "
+        xargs -a $snps -P 1 -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 snps_reads.bam -r {} -O --output-QNAME > geneconv.pileup 2> garb
+        sort -k1,1 -k2,2n -o geneconv.pileup geneconv.pileup
+#    "
+    } &
+done
 
-# Filter candidates with low sequencing depth based on number of neighboring SNPs, mapping quality, and BAQ
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/filter_noisy_candidates.py
+# Get bam corresponding to geneconv.reads.txt and pileup
+for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
+    cd ${CWD}/${sample}
+    {
+        samtools view -H snps_reads.bam > geneconv.reads.sam
+        samtools view snps_reads.bam | grep -Ff geneconv.reads.txt >> geneconv.reads.sam
+        samtools view -b -T $refcur geneconv.reads.sam > geneconv.reads.bam
+        samtools index geneconv.reads.bam
+        # Not using mapping quality filter because that removes noise that is needed to filter mismapping reads
+        samtools mpileup -f $refcur -q 40 -E -Q 0 -O --output-QNAME geneconv.reads.bam > geneconv.reads.pileup
+    } &
+done
 
-# Get mutations spectra for the final-list of SNPs
-manual_selected_somatic_mutations.csv
-python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/plot_mutation_changes_spectra.py \
-    -f manual_selected_somatic_mutations.csv \
-    -rc 3 \
-    -qc 4 \
-    -t Nucleotide substitute \
-    -W 8 \
-    -ymax 40 \
-    -o somatic_snps_substitution.png &
+# Get reads overlapping gene-conversion from geneconv.reads.sam and align them to ORA genome
+refora=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/ora.genome.v1.fasta
+for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
+    cd ${CWD}/${sample}
+    bsub -q multicore20 -n 8 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_geneconv_ora_pileup.log -eo ${sample}_geneconv_ora_pileup.err "
+        samtools sort -@ 8 -n geneconv.reads.bam \
+        | samtools fastq -@ 8 -1 geneconv.reads.R1.fq.gz -2 geneconv.reads.R2.fq.gz -n -
+        bowtie2 --end-to-end \
+            --very-sensitive \
+            --threads 8 \
+            -x $refora \
+            -1 geneconv.reads.R1.fq.gz \
+            -2 geneconv.reads.R2.fq.gz \
+            --rg-id ${s} \
+            --rg PL:ILLUMINA \
+            --rg SM:1 \
+        | samtools view -h -@8 -F4 - \
+        | samtools sort -@8 -O BAM - \
+        > geneconv.reads.ora.sorted.bam
+        samtools index geneconv.reads.ora.sorted.bam
+        samtools mpileup -f $refora -q 40 -E -Q 0 -O --output-QNAME geneconv.reads.ora.sorted.bam > geneconv.reads.ora.pileup
+    "
+done

@@ -182,6 +182,7 @@ curidx='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/asse
 curidxbt2='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 samples=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
+CHRBED=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.chrlen.bed
 
 cd $cwd
 
@@ -221,6 +222,15 @@ for sample in ${samples[@]}; do
   "
 done
 
+for s in ${samples[@]}; do
+    cd ${cwd}/$s
+    bsub -q ioheavy -n 8  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc_q0.log -eo ${s}_bamrc_q0.err "
+        $hometools pbamrc -n 8 -b 0 -q 0 -w 0 -S -I -f $refcur -l $CHRBED ${s}.sorted.bt2.bam bam_read_counts_b0_q0.bt2.txt
+
+      # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
+      /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b0_q0.bt2.txt
+  "
+done
 
 ## Step 3d: Get read mapping depth histogram
 for sample in ${samples[@]}; do
@@ -1063,32 +1073,6 @@ done
 #    break
 #done
 
-################################################################################
-####### STEP 9: Check linked mutations for the Branch specific mutations #######
-################################################################################
-CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
-for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    {
-    cd ${CWD}/${s}
-    head -39 ../mutations.regions \
-    | grep -P "${s}$" \
-    | awk '{print $1":"$2"-"$3}' \
-    > snp.mutations.regions
-    rm snp_read_names.txt
-    while read r; do
-        samtools view ${s}.sorted.bt2.bam $r \
-        | cut -f1 \
-        >> snp_read_names.txt
-    done < snp.mutations.regions
-    rm ${s}.snp_reads.bam ${s}.snp_reads.sam
-    samtools view -H ${s}.sorted.bt2.bam > ${s}.snp_reads.sam
-    samtools view ${s}.sorted.bt2.bam \
-    | grep -Ff snp_read_names.txt \
-    >> ${s}.snp_reads.sam
-    samtools view -O BAM ${s}.snp_reads.sam \
-    > ${s}.snp_reads.bam
-    } &
-done
 
 
 ################################################################################
