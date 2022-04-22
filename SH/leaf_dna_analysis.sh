@@ -221,7 +221,7 @@ for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
     snps="../gene_conversions_positions.txt"
     {
 #    bsub -q normal -n 1 -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_geneconv_pileup.log -eo ${sample}_geneconv_pileup.err "
-        xargs -a $snps -P 1 -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 snps_reads.bam -r {} -O --output-QNAME > geneconv.pileup 2> garb
+        xargs -a $snps -P 10 -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 snps_reads.bam -r {} -O --output-QNAME > geneconv.pileup 2> garb
         sort -k1,1 -k2,2n -o geneconv.pileup geneconv.pileup
 #    "
     } &
@@ -253,7 +253,7 @@ for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
             -x $refora \
             -1 geneconv.reads.R1.fq.gz \
             -2 geneconv.reads.R2.fq.gz \
-            --rg-id ${s} \
+            --rg-id ${sample} \
             --rg PL:ILLUMINA \
             --rg SM:1 \
         | samtools view -h -@8 -F4 - \

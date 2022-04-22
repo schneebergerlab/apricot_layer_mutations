@@ -8,7 +8,7 @@ NOTE: FOR ALL ANALYSIS CURROT assembly would be used as the primary assembly
 ################################################################################
 ############################ Pre-process reads #################################
 ################################################################################
-hometools='/netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /srv/biodata/dep_mercier/grp_schneeberger/software/hometools/myUsefulFunctions.py'
+hometools='/srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/python /srv/biodata/dep_mercier/grp_schneeberger/software/hometools/myUsefulFunctions.py'
 
 ### Get sequencing quality plots
 CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/rp_layer_seq/
@@ -96,17 +96,21 @@ done
 grep 'MUT_11_1' /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions > ${CWD}/mut_11_1.mutations.regions
 
 MUTS=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions
+MUTSNEW=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.unique.regions
 for s in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${s}
 
     ## Get read mapping depth histogram
-    cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_bt2 -xlim 0 400 &
+#    cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_bt2 -xlim 0 400 &
 
     # Get allele-frequency at the mutation positions in MUT_11_1
 #    hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l ../mut_11_1.mutations.regions ${s}.deduped.bam read_count_at_leaf_mut_pos.txt &
 
     # Get allele-frequency at the mutation positions in all branches
 #    hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l $MUTS ${s}.deduped.bam read_count_at_leaf_mut_pos.all_branches.txt &
+
+#    Get allele-frequency at the updated mutation positions
+    hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l $MUTSNEW ${s}.deduped.bam read_count_at_leaf_mut_pos.all_branches.updated.txt &
 
 done
 
@@ -118,26 +122,37 @@ layer_specific_dna_analysis.py -> plot_snp_af_all_branch()
 ####################################################################
 ############ De-Novo mutation identification
 ####################################################################
-
-
-
-
+# Get read counts candidate layer_specific SMs
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples
+sort -k1,1 -k2,2n -o layer_SM_candidates.txt layer_SM_candidates.txt
+for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
+    hometools pbamrc -n 4 -b 0 -q 0 -w 0 -I -f $refcur -l layer_SM_candidates.txt ../${sample}/${sample}.sorted.bt2.bam ${sample}.sm_candidate.read_count.txt &
+    echo $sample
+done
+for sample in 'wt7' 'wt18' 'mut4' 'mut11_2' ; do
+    hometools pbamrc -n 4 -b 0 -q 0 -w 0 -I -f $refcur -l layer_SM_candidates.txt ../${sample}/${sample}.deduped.bam ${sample}.sm_candidate.read_count.txt &
+    echo $sample
+done
 
 
 ####################################################################
 ############ Gene-conversion identification
 ####################################################################
+# Get read counts at SYRI snp positions
+syrisnp=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt
 CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/
-HETPOSBED=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth450-650.af0.4-0.6.bed
-refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
-for s in l1 l2 l3; do
+for s in l1 l2 l3 ; do
     cd ${CWD}/mut_11_1_${s}
-    bsub -q normal -n 4  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc_hetpos.log -eo ${s}_bamrc_hetpos.err "
-        hometools pbamrc -n 4 -b 30 -q 10 -w 0 -f $refcur -l $HETPOSBED ${s}.deduped.bam hetpos.read_count.txt
-  "
+    bsub -q multicore40 -n 40  -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${s}_bamrc.log -eo ${s}_bamrc.err "
+        $hometools pbamrc -b 30 -q 10 -w 0 -I -n 40 -f $refcur -l $syrisnp ${s}.deduped.bam ${s}.syri_snps.bamrc
+    "
 done
 
-# Get read counts at SYRI snp positions
+
+
+
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/
 for sample in l1 l2 l3; do
     cd ${CWD}/mut_11_1_${sample}
     N=20
@@ -149,3 +164,7 @@ for sample in l1 l2 l3; do
         "
     done
 done
+
+
+
+

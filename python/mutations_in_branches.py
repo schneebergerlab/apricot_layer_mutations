@@ -6,7 +6,8 @@ from copy import deepcopy
 import sys
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
 from myUsefulFunctions import snvdata
-
+from matplotlib import pyplot as plt
+from multiprocessing import Pool
 
 ## Read snps/indels between assemblies identified by syri
 syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
@@ -514,23 +515,23 @@ import sys
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
 from myUsefulFunctions import snvdata
 snpsdata = {}
-with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.bed", 'r') as fin:
+# with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mitotic_recomb/strict_syn_snp_allele_readcount.depth350-550.af0.35-0.6.bed", 'r') as fin:
+with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/snps_close.bed", 'r') as fin: # Test with lower read depth
     for line in fin:
         line = line.strip().split()
         snpsdata[(line[0], line[2])] = (line[3], line[4])
 
 
 # Select positions for which reads support different haplotypes. Positions for which atleast 5 reads have mismatched haplotypes were selected. Only high quality syri SNP positions are being used
-for sample in SAMPLES:
+
+def get_paired_gene_conv(sample):
     with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', 'w') as fout:
-    # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
+        # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
+        print(sample)
         for i in range(1, 9):
             snps = deque()
             last = -1
-            snp1, snp2 = None, None
-        # for i in range(1, 2):
             c = f'CUR{i}G'
-            print(sample, c)
             with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/snps_{c}.pileup', 'r') as fin:
                 # print(sample,c)
                 for line in tqdm(fin):
@@ -558,7 +559,6 @@ for sample in SAMPLES:
                     if len(snps) > 0:
                         for s in snps:
                             mismatch = 0          # Different haplotypes
-                            match = 0
                             rname = deque()
                             if len(snpd.qry_reads) > 0:
                                 for r in s.ref_reads:
@@ -580,6 +580,9 @@ for sample in SAMPLES:
                                 fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch2}\t{match}\t{",".join(rname)}\tqry_to_ref')
                                 fout.write("\n")
                     snps.append(snpd)
+
+with Pool(processes=8) as pool:
+    pool.map(get_paired_gene_conv, SAMPLES)
 
 # Plot the distribution of read counts with matching and mismatching haplotypes
 from matplotlib.backends.backend_pdf import PdfPages
@@ -660,15 +663,21 @@ for sample in SAMPLES:
     with open(f"/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.pileup", 'r') as fin:
         for line in fin:
             line = line.strip().split()
-            snpd = snvdata(line[:6])
+            if line[3] == '0':
+                continue
             setattr(snpd, "BP", list(map(int, line[6].split(','))))
+            snpd = snvdata(line[:6])
             reads = line[7].split(',')
             setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
             setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], line[1])][1], snpsdata[(line[0], line[1])][1].lower()}]))
             snvsdata[f"{line[0]}:{line[1]}"] = snpd
     for p in pos_pair:
-        snpd1 = snvsdata[p[0]]
-        snpd2 = snvsdata[p[1]]
+        try:
+            snpd1 = snvsdata[p[0]]
+            snpd2 = snvsdata[p[1]]
+        except KeyError as e:
+            pos_mismatch_cnt[p][sample] = (0, 0, 0)
+            continue
         mismatch = 0          # Different haplotypes
         match = 0
         rname = deque()
@@ -712,7 +721,7 @@ ax.set_ylabel("# Gene conversions")
 
 ax = fig.add_subplot(1, 2, 2)
 ax.set_xlim([0, 1])
-ax.hist(goodpos[4]/goodpos[5], bins=20)
+ax.hist(goodpos[4]/goodpos[5], bins=[i/10 for i in range(11)])
 ax.set_xlabel("AF Reads with haplotype switch")
 ax.set_ylabel("# Gene conversions")
 plt.tight_layout()
@@ -735,14 +744,20 @@ for sample in SAMPLES:
         for r in readnames:
             fout.write(r +"\t\n")
 
-# Get bam and pileup for the reads in geneconv.reads.txt. code in leaf_dna_analysis.sh
+import pickle
+# with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'wb') as fout:
+#     pickle.dump(goodpos, fout)
+with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'rb') as fin:
+    goodpos = pickle.load(fin)
 
+# Get bam and pileup for the reads in geneconv.reads.txt. code in leaf_dna_analysis.sh
 # Filter out positions where the reads that support gene conversions also have other mutations that are not present in background reads
-for sample in SAMPLES:
+def filter_noisy_reads(sample):
+    selected = pd.DataFrame()
     readdata = defaultdict(dict)
     posdata = dict()
     with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.pileup', 'r') as fin:
-        for line in fin:
+        for line in tqdm(fin):
             line = line.strip().split()
             pos = snvdata(line[:6])
             if pos.rc != 0:
@@ -755,10 +770,7 @@ for sample in SAMPLES:
             pos.getindelreads(line[4], line[7])
 
     df = goodpos.loc[goodpos['sample'] == sample]
-    p_values = deque()
-    p_values2 = deque()
-    count = 0
-    selected = deque()
+    s = deque()
     for row in df.itertuples(index=False):
         # if row[1] == 18152399:
         #     break
@@ -775,7 +787,7 @@ for sample in SAMPLES:
             ref_ind = 0
             if sum([1 for r in gcreads if r in posdata[p].qry_reads]) >= 3:
                 if p in (f"{row[0]}:{row[1]}", f"{row[2]}:{row[3]}"): continue
-            #     print(p)
+                #     print(p)
                 for r in posdata[p].ref_reads:
                     if r in gcreads:
                         gc_m += 1
@@ -799,8 +811,13 @@ for sample in SAMPLES:
                     bad = True
                     break
         if not bad:
-            selected.append(row)
-    print(sample, df.shape[0], len(selected))
+            s.append(row)
+    return pd.DataFrame(s)
+
+with Pool(processes=2) as pool:
+    selected = pool.map(filter_noisy_reads, SAMPLES)
+selected = pd.concat(selected)
+
 # This filtered gene conversion candidates significantly. The remaining candidates still seem to consist of positions that are a result of mis-mapping
 # Sample, candidate GC, filtered GC
 # WT_1 48 8
@@ -811,7 +828,93 @@ for sample in SAMPLES:
 # MUT_11_1 54 5
 # mut11_2 30 4
 # MUT_15 37 5
+## When using all SNP_pos
+# WT_1 777 202
+# wt7 316 42
+# wt18 235 34
+# WT_19 1103 267
+# mut4 224 33
+# MUT_11_1 1164 339
+# mut11_2 241 30
+# MUT_15 685 169
 # Next idea is to align the reads to the ORA reference genome and check if they still show same haplotype switch. Assumption is that the most of the mis-mapping reads would be gone when aligning with the other haplotype, whereas true reads supporting true gene-coversion would stay.
 # Code to get reads and align them in leaf_dna_analysis.sh
 
+# Read the corresponding positions of CUR SNP in the ORA assembly
+selected_snp_pos = set(list(selected.apos) + list(selected.bpos))
+snp_cur_ora_map = {}
+with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out", 'r') as fin:
+    for line in tqdm(fin):
+        line = line.strip().split()
+        if line[10] != 'SNP': continue
+        if f"{line[0]}:{line[1]}" in selected_snp_pos:
+            snp_cur_ora_map[f"{line[0]}:{line[1]}"] = f"{line[5]}:{line[6]}"
 
+sample_concordance = {}
+for sample in SAMPLES:
+    readdata = defaultdict(dict)
+    posdata = dict()
+    with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.ora.pileup', 'r') as fin:
+        for line in fin:
+            line = line.strip().split()
+            pos = snvdata(line[:6])
+            if pos.rc != 0:
+                reads = line[7].split(',')
+                setattr(pos, "ref_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] in {'.', ','}]))
+                setattr(pos, "qry_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] not in {'.', ','}]))
+                for i in range(len(reads)):
+                    readdata[reads[i]][f'{line[0]}:{line[1]}'] = pos.bases[i]
+            posdata[f'{line[0]}:{line[1]}'] = pos
+            pos.getindelreads(line[4], line[7])
+
+    concordance = deque()
+    for row in selected.loc[selected['sample'] == sample].itertuples(index=False):
+        ora1 = snp_cur_ora_map[row.apos]
+        ora2 = snp_cur_ora_map[row.bpos]
+        c = deque()
+        if row[7] == 'ref_to_qry':
+            for r in row[6].split(","):
+                try:
+                    if readdata[r][ora1] not in [',', '.'] and readdata[r][ora2] in [',', '.']:
+                        c.append(True)
+                    else:
+                        c.append(False)
+                except KeyError:
+                    c.append(False)
+        elif row[7] == 'qry_to_ref':
+            for r in row[6].split(","):
+                try:
+                    if readdata[r][ora1] in [',', '.'] and readdata[r][ora2] not in [',', '.']:
+                        c.append(True)
+                    else:
+                        c.append(False)
+                except KeyError:
+                    c.append(False)
+        concordance.append(sum(c))
+    sample_concordance[sample] = concordance
+
+for sample in SAMPLES:
+    print(sample, Counter(sample_concordance[sample]))
+
+"""
+After running the above test, 3 positions have shown consistent signal for gene conversion (1 in WT_1, and 2 in WT_19). However, these are 10x libraries with PCR amplified DNA and as such these gene conversions are doubtful.
+Sample:Concordant gene conversion reads in CUR and ORA:Number of reads supporting gene conversion (as identified when using CUR as ref)  
+WT_1 : deque([1, 0, 0, 0, 0, 0, 5, 2]) [5, 9, 5, 7, 5, 5, 5, 8]
+wt7 : deque([0, 0, 0, 0, 0]) [5, 7, 7, 7, 7]
+wt18 : deque([0, 0, 0]) [5, 5, 5]
+WT_19 : deque([1, 5, 6, 0, 0]) [6, 5, 6, 5, 6]
+mut4 : deque([0, 0, 0, 0]) [6, 6, 6, 8]
+MUT_11_1 : deque([0, 1, 0, 0, 0]) [5, 5, 5, 5, 6]
+mut11_2 : deque([0, 0, 0, 0]) [6, 5, 5, 5]
+MUT_15 : deque([0, 0, 0, 0, 0]) [5, 6, 6, 5, 5]
+
+# With all SNPs
+WT_1 Counter({0: 170, 1: 15, 2: 6, 6: 4, 5: 3, 3: 2, 7: 1, 4: 1})
+wt7 Counter({0: 42})
+wt18 Counter({0: 28, 1: 6})
+WT_19 Counter({0: 228, 1: 13, 5: 11, 3: 5, 2: 5, 4: 3, 7: 1, 6: 1})
+mut4 Counter({0: 32, 5: 1})
+MUT_11_1 Counter({0: 283, 1: 26, 5: 10, 4: 7, 2: 4, 6: 4, 3: 3, 7: 1, 12: 1})
+mut11_2 Counter({0: 29, 1: 1})
+MUT_15 Counter({0: 128, 4: 10, 1: 9, 5: 8, 2: 5, 6: 4, 7: 3, 3: 2}) 
+"""
