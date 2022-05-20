@@ -216,7 +216,7 @@ def layer_specific_sm_calling():
     # Testing with lower read-depth as this would allow selection of somatic mutations in heterozygous regions as well
     S_COV = {'l1': (20, 150),
              'l2': (20, 130),
-            'l3': (20, 180)}
+             'l3': (20, 180)}
     noise_pos = set()
     snp_pos = set(syri_snp_list.keys())
     indel_pos = set(syri_indel_list.keys())
@@ -309,9 +309,9 @@ def layer_specific_sm_calling():
                 snpsdict[snp][sample] = (None, None, 0, 0)
 
     plt.close()
-    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) for k,v in snpsdict.items()}
+    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) for k, v in snpsdict.items()}
     plt.hist(afdiff.values(), bins=[i/100 for i in range(101)], histtype='step', label='No RC filtering')
-    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) if max([v1[2] for v1 in v.values()]) > 10 else 0  for k,v in snpsdict.items()}
+    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) if max([v1[2] for v1 in v.values()]) > 10 else 0 for k, v in snpsdict.items()}
     plt.hist(afdiff.values(), bins=[i/100 for i in range(101)], histtype='step', label='Max RC > 10')
     plt.legend()
     plt.yscale("linear")
@@ -338,7 +338,7 @@ def layer_specific_sm_calling():
             pass
 
     ## Remove positions where afdiff (with RC filter) <0.25
-    for k,v in afdiff.items():
+    for k, v in afdiff.items():
         if v <= 0.25:
             to_pop.append(k)
 
@@ -421,7 +421,11 @@ def layer_specific_sm_calling():
 layer_specific_sm_calling()
 
 def layer_specific_gene_conversion():
-    # Get mpileup data at SNP positions. code in layer_specific_dna_analysis.sh
+    import numpy as np
+    import pandas as pd
+    from collections import deque
+    from tqdm import tqdm
+    from matplotlib import pyplot as plt
     import sys
     sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
     from myUsefulFunctions import snvdata
@@ -432,43 +436,45 @@ def layer_specific_gene_conversion():
     BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
 
     snpsdata = {}
-    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/snps_close.bed", 'r') as fin: # Test with lower read depth
+    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt", 'r') as fin: # Test with lower read depth
         for line in fin:
             line = line.strip().split()
             snpsdata[(line[0], int(line[2]))] = (line[3], line[4])
-
+    # Get read-counts at SNP positions. code in layer_specific_dna_analysis.sh
+    # Check Allele frequency distribution at SNP positions
+    fig = plt.figure()
+    i = 1
+    snps = {}
     for sample in SAMPLES:
         af = deque()
-        for c in range(1, 9):
-            f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/${sample}.syri_snps.bamrc'
-            with open(f, 'r') as fin:
-                for line in tqdm(fin):
-                    line = line.strip().split()
-                    q = snpsdata[(line[0], int(line[1]))][1]
-                    if int(line[3]) == 0:
-                        af.append(0)
-                        continue
-                    af.append(round(int(line[BASE_DICT[q]])/int(line[3]), 4))
+        f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
+        with open(f, 'r') as fin:
+            for line in tqdm(fin):
+                line = line.strip().split()
+                q = snpsdata[(line[0], int(line[1]))][1]
+                if int(line[3]) == 0:
+                    af.append(0)
+                    continue
+                af.append(round(int(line[BASE_DICT[q]])/int(line[3]), 4))
         ax = fig.add_subplot(3, 1, i)
-        ax.hist(af, bins=100, range=[0.01, 1])
+        ax.hist(af, bins=[v/100 for v in range(101)], range=[0.01, 1])
         ax.set_title(sample)
         ax.grid(which='both', axis='both')
         ax.set_axisbelow(True)
+        ax.set_xlabel("Allele Frequency")
         snps[sample] = af
         i += 1
     plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_samples.syri_snps.allele_frequency.pdf')
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_samples.syri_snps.allele_frequency.png')
 
     snps = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt', header=None)
     snps.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
     for sample in SAMPLES:
-        f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/{sample}.syri_snps.bamrc'
+        f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
         af = deque()
         with open(f, 'r') as fin:
             for line in tqdm(fin):
                 line = line.strip().split()
-                q = syri_snp_list[(line[0], int(line[1]))][1]
+                q = snpsdata[(line[0], int(line[1]))][1]
                 if int(line[3]) == 0:
                     af.append((line[0], int(line[1]), 0, 0))
                     continue
@@ -478,68 +484,59 @@ def layer_specific_gene_conversion():
         afdict.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
         snps = snps.merge(afdict, how='left', on=[0, 1])
         snps.reset_index(drop=True, inplace=True)
-    snps.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_samples.syri_snps.allele_frequency.txt', sep='\t', index=False)
+
+    snps['type'] = 'transversions'
+    snps.loc[(snps[3] == 'A') & (snps[4] == 'G'), 'type'] = 'transitions'
+    snps.loc[(snps[3] == 'C') & (snps[4] == 'T'), 'type'] = 'transitions'
+    snps.loc[(snps[3] == 'G') & (snps[4] == 'A'), 'type'] = 'transitions'
+    snps.loc[(snps[3] == 'T') & (snps[4] == 'C'), 'type'] = 'transitions'
+    snps.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layers.syri_snps.allele_frequency.txt', sep='\t', index=False)
+
+    # Remove snps where allele frequency is in 0.35-0.6 for all layers
+    afdiff = deque()
+    for row in snps.itertuples(index=False):
+        afdiff.append(max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]))
+    snps['afdiff'] = afdiff
+    snps['mean_rc'] = (snps['l1_rc']+snps['l2_rc']+snps['l3_rc'])/3
+
+    filter = deque()
+    for row in snps.itertuples(index=False):
+        if 0.35 <= row[5] <= 0.6:
+            if 0.35 <= row[7] <= 0.6:
+                if 0.35 <= row[9] <= 0.6:
+                    filter.append(False)
+                    continue
+        if row[5] <= 0.1:
+            if row[7] <= 0.1:
+                if row[9] <= 0.1:
+                    filter.append(False)
+                    continue
+        if max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]) < 0.25:
+            filter.append(False)
+            continue
+        filter.append(True)
+    snpsfilt = snps.loc[list(filter)].copy()
 
     ### Filter positions with low sequencing
-    snpsfilt = snps.loc[(snps['wt7_rc'] >= 20) &
-                        (snps['wt18_rc'] >= 20) &
-                        (snps['mut4_rc'] >= 20) &
-                        (snps['mut11_2_rc'] >= 20)].copy()
-
-    snpsfilt = snpsfilt.loc[(snpsfilt['wt7_af'] <= 0.7) &
-                            (snpsfilt['wt18_af'] <= 0.7) &
-                            (snpsfilt['WT_1_af'] <= 0.7) &
-                            (snpsfilt['WT_19_af'] <= 0.7) &
-                            (snpsfilt['wt7_af'] >= 0.25) &
-                            (snpsfilt['wt18_af'] >= 0.25) &
-                            (snpsfilt['WT_1_af'] >= 0.25) &
-                            (snpsfilt['WT_19_af'] >= 0.25)].copy()
-
-    snpsfilt = snpsfilt.loc[((snpsfilt['mut4_af'] >= 0.95) |
-                             (snpsfilt['mut11_2_af'] >= 0.95) |
-                             (snpsfilt['MUT_11_1_af'] >= 0.95) |
-                             (snpsfilt['MUT_15_af'] >= 0.95)) |
-                            ((snpsfilt['mut4_af'] <= 0.05) |
-                             (snpsfilt['mut11_2_af'] <= 0.05) |
-                             (snpsfilt['MUT_11_1_af'] <= 0.05) |
-                             (snpsfilt['MUT_15_af'] <= 0.05))]
-
-    from matplotlib.backends.backend_pdf import PdfPages
-    with PdfPages("gene_conversion_candidates_af.pdf") as pdf:
-        count = 0
-        try:
-            del fig
-        except:
-            pass
-        for row in snpsfilt.itertuples(index=False):
-            if count % 10 == 0:
-                try:
-                    plt.tight_layout()
-                    pdf.savefig(fig)
-                    plt.close()
-                    # break
-                except NameError:
-                    pass
-                count = 0
-                fig = plt.figure(figsize=[10, 14])
-            count += 1
-            ax = fig.add_subplot(10, 1, count)
-            ax.set_ylim([0, 1])
-            ax.set_xlim([0, 7])
-            ax.spines['right'].set_visible(False)
-            ax.spines['top'].set_visible(False)
-            ax.plot(list(range(8)), [row[i] for i in range(5, 21, 2)], linewidth=2)
-            ax.set_xticklabels(SAMPLES)
-            ax.set_title(f'{row[0]}:{row[1]}-{row[2]}')
-            ax.minorticks_on()
-            ax.grid(which='both', axis='y')
-        plt.tight_layout()
-        pdf.savefig(fig)
-        plt.close()
-        ## Cannot find any good gene conversion candidates
+    snpsfilt = snpsfilt.loc[(snpsfilt['l1_rc'] >= S_COV['l1'][0]) &
+                            (snpsfilt['l2_rc'] >= S_COV['l2'][0]) &
+                            (snpsfilt['l3_rc'] >= S_COV['l3'][0])].copy()
 
 
+    def d(rs):
+        '''
+        This function calculates distance of a point from a line. Here, using it to calculate distance of gene conv candidates from the 3D-diagonal
 
+        Original answer: https://stackoverflow.com/a/50728570
+        '''
+        p = np.array([0, 0, 0])
+        q = np.array([1, 1, 1])
+        x = p-q
+        return np.linalg.norm(
+            np.outer(np.dot(rs-q, x)/np.dot(x, x), x)+q-rs,
+            axis=1)
+    rs = np.array([[row[5], row[7], row[9]] for row in snpsfilt.itertuples(index=False)])
+    dist_diag = d(rs)
 
     # Select positions for which reads support different haplotypes. Positions for which atleast 5 reads have mismatched haplotypes were selected. Only high quality syri SNP positions are being used
 

@@ -263,3 +263,21 @@ for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
         samtools mpileup -f $refora -q 40 -E -Q 0 -O --output-QNAME geneconv.reads.ora.sorted.bam > geneconv.reads.ora.pileup
     "
 done
+
+####################################################################
+############ Step 5: Candidate gene check
+####################################################################
+# Get orthogroups for the flowering time genes
+CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/
+cd $CWD
+grep -Ff /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/misc/arabidopsis_flower_gene_list.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology/cur_athal/OrthoFinder/Results_Sep29/Orthogroups/Orthogroups.txt > flower_gene.ortho.txt
+grep -o  'mRNA[^ ]*' flower_gene.ortho.txt \
+| awk -F '.' '{print $1"."$2}' \
+| sed 's/mRNA/Gene/g' \
+| sort \
+| uniq \
+> rp_flogen.txt
+grep -w -Ff rp_flogen.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/function/gene_annotations.txt > rp_flogen.annotations.txt
+
+# Merge the Arabidopsis and Cur data
+# Code in get_candidate_for_mutant_phenotype.py

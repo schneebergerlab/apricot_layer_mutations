@@ -798,9 +798,6 @@ plot_selected_pos(wt17_2, "tmp_igv.bat", "tmp/wt17_2/", M=75, HEIGHT=200)
 ###### Could not find any good mutation shared between the wildtype samples
 
 
-
-
-
 ################################################################################
 ######################### Indel Identification #################################
 ################################################################################
@@ -1142,7 +1139,7 @@ for s in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
             cnts[sp] += 1
     spcnt[s] = cnts
 
-allsp = set(list(spcnt['WT_1'])+list(spcnt['WT_19'])+list(spcnt['MUT_11_1'])+list(spcnt['MUT_15'])
+allsp = set(list(spcnt['WT_1'])+list(spcnt['WT_19'])+list(spcnt['MUT_11_1'])+list(spcnt['MUT_15']))
 allspcnt = {s:[spcnt[p][s] for p in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')] for s in allsp}
 varsp = {s:allspcnt[s] for s in allsp if allspcnt[s][0]+allspcnt[s][1] < 0.5*(allspcnt[s][2]+allspcnt[s][3]) or allspcnt[s][0]+allspcnt[s][1] > 2*(allspcnt[s][2]+allspcnt[s][3])}
 varsphigh = {k:v for k,v in varsp.items() if any([True if i > 10 else False for i in v])}
@@ -1152,3 +1149,71 @@ varsphigh = {k:v for k,v in varsp.items() if any([True if i > 10 else False for 
 ###  'Pontederia_cordata': [7, 13, 5, 4],
 ###  'Maranta_leuconeura': [8, 13, 4, 6],
 ###  'Homo_sapiens': [9, 14, 5, 5]}
+
+################################################################################
+# Checking the mutations in the context of genes associated with flowering time #
+################################################################################
+# Merge the /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/misc/arabidopsis_flowering_time_related_genes.sheet1.csv and /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/rp_flogen.annotations.txt table to get a linked table containing:
+# Arabidopsis gene ID loci, Currot gene ID loci, known arabidopsis function/phenotype information, predicted Currot function
+## read orthogroups
+orthos = defaultdict(deque)
+with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/flower_gene.ortho.txt", "r") as fin:
+    for line in fin:
+        line = line.strip().split()
+        if not any(['mRNA' in i for i in line[1:]]): continue
+        thal_genes = [i for i in line[1:] if 'AT' in i]
+        for i in line[1:]:
+            if 'mRNA' in i:
+                for at in thal_genes:
+                    gene = i.replace("mRNA", "Gene")
+                    gene = gene.rsplit(".", 1)[0]
+                    orthos[gene].append(at.rsplit(".", 1)[0])
+for k in orthos.keys():
+    orthos[k] = sorted(set(orthos[k]))
+## Merge Tables
+athal_anno = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/misc/arabidopsis_flowering_time_related_genes.sheet1.csv")
+athal_anno.fillna("-", inplace=True)
+cur_anno = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/rp_flogen.annotations.txt", header=None)
+cur_anno = cur_anno.loc[cur_anno[5] == 'Eggnog-mapper']
+cur_anno[2] = cur_anno[2].astype('str')
+cur_anno[3] = cur_anno[3].astype('str')
+with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/cur_athal_ortho_gene_annotations.txt", 'w') as fout:
+    for grp in cur_anno.groupby([0]):
+        gene_ortho = orthos[grp[0]]
+        athal_genes = athal_anno.loc[athal_anno['Gene number'].isin(gene_ortho)]
+        for row in athal_genes.itertuples(index=False):
+            fout.write("\t".join((grp[0], grp[1].iat[0,1], grp[1].iat[0,2], grp[1].iat[0,3], row[0], row[2], row[3], row[4], row[5], row[6])) + "\n")
+## Sort the output file based on Currot loci
+df = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/cur_athal_ortho_gene_annotations.txt", header=None)
+df.sort_values([1,2,3], inplace=True)
+df.columns = ['Currot_gene', 'chrom', 'start', 'end', "Athal_gene", "gene_name", "protein_function", "phenotype_information", "reference", "function"]
+df.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/cur_athal_ortho_gene_annotations.txt", index=False, sep='\t')
+
+# Get Genes within 1 MB of any MUT somatic mutation
+## Leaf mutations
+df = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
+df = df.loc[df[6].str.contains("mut", case=False)]
+df.columns = ['chr', 'pos', 'ref', 'alt', 'alt_rc', 'af', 'sample','Selected', 'Remark', 'Depth', 'Ploidy']
+df['Ploidy'].fillna(2, inplace=True)
+df2 = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/high_conf_layer_specific_somatic_mutations.selected.txt")
+df2.columns = ['chr','pos','ref','alt'] + list(df2.columns[4:])
+df = pd.concat([df, df2])
+df.sort_values(['chr', 'pos'], inplace=True)
+df.fillna("-", inplace=True)
+df.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutations_in_MUT_samples.txt", index=False, sep="\t")
+
+flogen = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/pheno_gene/cur_athal_ortho_gene_annotations.txt")
+mut_loc = set(zip(df['chr'], df['pos']))
+mut_gen = deque()
+for mut_pos in mut_loc:
+    genes = flogen.loc[(flogen['chrom'] == mut_pos[0]) & (flogen['end'] > mut_pos[1]-1000000) & (flogen['start'] < mut_pos[1]+1000000)].copy()
+    genes['mut_pos'] = mut_pos[1]
+    dfsample = df.loc[(df['chr']==mut_pos[0]) & (df['pos'] == mut_pos[1]), 'sample'].copy()
+    dfsample = ",".join(set(dfsample.str.replace('-', 'MUT_11_1')))
+    genes['sample'] = dfsample
+    mut_gen.append(genes)
+mut_gen = pd.concat(mut_gen)
+mut_gen.drop_duplicates(inplace=True)
+mut_gen.sort_values(['chrom','start','end'], inplace=True)
+mut_gen = mut_gen[['chrom', 'mut_pos', 'sample', 'Currot_gene'] + list(mut_gen.columns[2:-2])]
+mut_gen.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutation_1MB_genes.txt", index=False, sep="\t")
