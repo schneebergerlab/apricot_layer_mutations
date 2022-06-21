@@ -149,8 +149,6 @@ for s in l1 l2 l3 ; do
 done
 
 
-
-
 refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
 CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/
 for sample in l1 l2 l3; do

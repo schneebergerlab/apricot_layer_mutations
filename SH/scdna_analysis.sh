@@ -39,6 +39,7 @@ hometools genome_ranges cur.genome.v1.fasta
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/
 genmap index -F cur.genome.v1.fasta -I cur.genome.v1.fasta.genmap.idx
 genmap map -I cur.genome.v1.fasta.genmap.idx/ -O cur.genome.v1.fasta.genmap.E0_K51.map -E 0 -K 51 -w -bg -T 60
+genmap map -I cur.genome.v1.fasta.genmap.idx/ -O cur.genome.v1.fasta.genmap.E1_K51.map -E 1 -K 51 -w -bg -T 60
 cat cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph | awk '{if($4==1) print $0}' >cur.genome.v1.fasta.genmap.E0_K51.map.unique.bedgraph
 
 # List of contigs in the currot genome
