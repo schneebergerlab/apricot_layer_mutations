@@ -1,4 +1,6 @@
 # Functions to analyse the sequencing data from the sequencing of layer-enriched dna
+import subprocess
+
 import matplotlib.pyplot as plt
 
 def plot_snp_af():
@@ -183,6 +185,7 @@ def layer_specific_sm_calling():
     '''
     Get somatic mutations in the three layer samples.
     Filters for: 1) positions overlapping syri SNPs/indels, 2) Positions with SM in mutiple layers
+    This is the initial version set-up for MUT_11_1 only. Check layer_specific_sm_calling_all_samples for the version suitable for any sample/branch.
     '''
 
     from collections import deque, defaultdict
@@ -250,8 +253,6 @@ def layer_specific_sm_calling():
                             break
                     continue
                 # Check if the position is noisy, if not then select somatic mutation
-                if (line[0], int(line[1])) == ('CUR4G', 680602):
-                    print(line)
                 if (line[0], int(line[1])) not in noise_pos:
                     # Check read-depth at the position
                     if not S_COV[sample][0] <= int(line[3]) <= S_COV[sample][1]:
@@ -282,13 +283,9 @@ def layer_specific_sm_calling():
         sample_syri_indel[sample] = indel_alfrq
     # Remove noise positions from candidate lists
     for sample in SAMPLES:
-        print(sample, len(samples_sm[sample]))
         for p in noise_pos:
-            try:
-                samples_sm[sample].pop(p)
-            except KeyError:
-                pass
-        print(sample, len(samples_sm[sample]))
+            try: samples_sm[sample].pop(p)
+            except KeyError: pass
 
     plt.hist([v[3] for v in samples_sm['l1'].values()], bins=[i/100 for i in range(101)], histtype='step', label='L1')
     plt.hist([v[3] for v in samples_sm['l2'].values()], bins=[i/100 for i in range(101)], histtype='step', label='L2')
@@ -419,6 +416,676 @@ def layer_specific_sm_calling():
     # 34 SMs are in diploid regions, 4 in haploid regions (NOTAL/HDR regions in syri output), and 3 appear to be in duplicated regions
 #END
 layer_specific_sm_calling()
+
+
+def layer_specific_sm_calling_all_samples(cwd, bname, scov, nc=1):
+    '''
+    This is a more generalised version of the layer_specific_sm_calling() and it created so that it can be used on any branch.
+
+    Get somatic mutations in the three layer samples.
+    Filters for: 1) positions overlapping syri SNPs/indels, 2) Positions with SM in mutiple layers
+
+    Inputs:
+    1) cwd = path to folder containing different layers from a branch (e.g. /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_1)
+    2) branch name = e.g. 'wt_1'
+    3) scov = Dictionary containing optimal read-depth ranges (e.g. {'l1': (20, 150), 'l2': (20, 130), 'l3': (20, 180)} )
+
+    Run on DELL-NODES as it will not work on local computer due to memory limitations.
+
+    Coverage dicts for samples:
+    MUT_11_1 : {'l1': (20, 160), 'l2': (20, 150), 'l3': (20, 180)}
+    '''
+
+    from collections import deque, defaultdict, Counter
+    from matplotlib import pyplot as plt
+    from pandas import read_table
+    from subprocess import Popen, PIPE
+    import numpy as np
+
+    ## Read snps/indels between assemblies identified by syri
+    syri_snp_list, syri_indel_list = getsyrivarlist()
+
+    ## Conditions for selecting variants:
+    ## Only alt alleles with more than 5 reads are considered
+    ## If a position has multiple alt_alleles => noise_pos_list AND not a somatic mutation
+    ## For syri SNP/indel positions: record alt_allele_frequency AND not a somatic mutation
+    ## If not above => save candidate SNP position
+    indir = f'{cwd}/{bname}_' #/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_'
+    noise_pos = set()
+    # snp_pos = set(syri_snp_list.keys())
+    # indel_pos = set(syri_indel_list.keys())
+    samples_sm = {}
+    sample_syri_snp = {}
+    sample_syri_indel = {}
+    SAMPLES = ('l1', 'l2', 'l3')
+    for sample in SAMPLES:
+        filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
+        sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scov[sample][0], scov[sample][1], noise_pos, syri_snp_list, syri_indel_list)
+
+        noise_pos = noise_pos.union(set(sample_noise))
+        samples_sm[sample] = sm_pos
+        sample_syri_snp[sample] = snp_alfrq
+        sample_syri_indel[sample] = indel_alfrq
+
+    # Remove noise positions from candidate lists
+    for sample in SAMPLES:
+        for p in noise_pos:
+            try:
+                samples_sm[sample].pop(p)
+            except KeyError:
+                pass
+
+    # TODO: Check and save this figure
+    plt.hist([v[3] for v in samples_sm['l1'].values()], bins=[i/100 for i in range(101)], histtype='step', label='L1')
+    plt.hist([v[3] for v in samples_sm['l2'].values()], bins=[i/100 for i in range(101)], histtype='step', label='L2')
+    plt.hist([v[3] for v in samples_sm['l3'].values()], bins=[i/100 for i in range(101)], histtype='step', label='L3')
+    plt.xlabel("Allele Frequency")
+    plt.ylabel("SNP/Indel Count")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/sm_allele_frequency_layers.pdf')
+    plt.close()
+
+    # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
+    snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()) + list(samples_sm['l3'].keys()))
+    snpsdict = defaultdict(dict)
+    for snp in snpslist:
+        for sample in SAMPLES:
+            try:
+                snpsdict[snp][sample] = samples_sm[sample][snp]
+            except KeyError:
+                snpsdict[snp][sample] = (None, None, 0, 0)
+
+    # TODO: Check and save this figure
+    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) for k, v in snpsdict.items()}
+    plt.hist(afdiff.values(), bins=[i/100 for i in range(101)], alpha=0.5, label='No RC filtering')
+    afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) if max([v1[2] for v1 in v.values()]) > 10 else 0 for k, v in snpsdict.items()}
+    afcut = np.quantile(list(afdiff.values()), 0.99)
+
+    plt.hist(afdiff.values(), bins=[i/100 for i in range(101)], alpha=0.5, label='Max RC > 10')
+    plt.axvline(afcut)
+    plt.legend()
+    plt.yscale("linear")
+    plt.ylabel("# SMs")
+    plt.xlabel("Max AF difference")
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/max_allele_frequency_between_layers.pdf')
+    plt.close()
+
+    ## Remove positions that are present in het (0.3-0.65) in all samples
+    to_pop = deque()
+    for k in samples_sm['l1']:
+        if not 0.3 <= samples_sm['l1'][k][3] <= 0.65:
+            continue
+        try:
+            pop = False
+            for sample in ('l2', 'l3'):
+                if not 0.3 <= samples_sm[sample][k][3] <= 0.65:
+                    pop = False
+                    break
+                else:
+                    pop = True
+            if pop:
+                to_pop.append(k)
+        except KeyError:
+            pass
+
+    ## Remove positions where afdiff (with RC filter) <0.25
+    for k, v in afdiff.items():
+        # if v <= 0.25:
+        if v <= afcut: # Testing with a smalled afdiff cutoff
+            to_pop.append(k)
+
+    for p in to_pop:
+        try:
+            snpsdict.pop(p)
+        except KeyError:
+            pass
+
+    ## Many of the remaining positions are obvious mutations in all other branches. So, filter out positions that are present in other branches as well.
+    snppos = set(snpsdict)
+    snpchange = {}
+    for k, v in snpsdict.items():
+        for l, v1 in v.items():
+            if v1[0] is None: continue
+            snpchange[k] = (v1[0], v1[1])
+
+    # write the snppos positions in file and then get unfiltered read-count at these positions in all samples
+    with open(f"{cwd}/layer_SM_candidates.txt", 'w') as fout:
+        for p in snppos:
+            fout.write("\t".join([p[0], str(p[1]), str(p[1])]) + "\n")
+
+    # Sort the candidates
+    df = read_table(f"{cwd}/layer_SM_candidates.txt", header=None)
+    df.sort_values([0, 1, 2], inplace=True)
+    df.to_csv(f"{cwd}/layer_SM_candidates.txt", index=False, header=False, sep='\t')
+
+    # Get read counts at candidate positions in the leaf samples
+    leafdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    refgen = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+    procs = deque()
+    for leaf in ('WT_1', 'WT_19', 'MUT_15', 'MUT_11_1'):
+        command = f"/srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/python /srv/biodata/dep_mercier/grp_schneeberger/software/hometools/myUsefulFunctions.py pbamrc -n {nc} -b 0 -q 0 -w 0 -I -f {refgen} -l {cwd}layer_SM_candidates.txt {leafdir}/{leaf}/{leaf}.sorted.bt2.bam {cwd}{leaf}.sm_candidate.read_count.txt"
+        p = Popen(command.split(), stderr=PIPE, stdout=PIPE, text=True)
+        procs.append(p)
+    for leaf in ('wt7', 'wt18', 'mut4', 'mut11_2'):
+        command = f"/srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/python /srv/biodata/dep_mercier/grp_schneeberger/software/hometools/myUsefulFunctions.py pbamrc -n {nc} -b 0 -q 0 -w 0 -I -f {refgen} -l {cwd}layer_SM_candidates.txt {leafdir}/{leaf}/{leaf}.deduped.bam {cwd}{leaf}.sm_candidate.read_count.txt"
+        p = Popen(command.split(), stderr=PIPE, stdout=PIPE, text=True)
+        procs.append(p)
+    for p in procs:
+        o = p.communicate()
+        if o[1] != '': print(o)
+
+    # Read background read counts at SM candidate positions
+    sample_ids = dict(zip(('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15'), ('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15')))
+    sample_ids.pop(bname)
+    bgsnps = {}
+    # for sample in ('WT_1', 'wt7', 'wt18', 'WT_19', 'mut4', 'mut11_2', 'MUT_15'):
+    for sample in sample_ids.values():
+        with open(f"{cwd}/{sample}.sm_candidate.read_count.txt", 'r') as fin:
+            samplesnps = {}
+            for line in fin:
+                line = line.strip().split()
+                if (line[0], int(line[1])) in snppos:
+                    rc, af = 0, 0
+                    if snpchange[(line[0], int(line[1]))][1] in {'A', 'C', 'G', 'T'}:
+                        rc = int(line[BASE_DICT[snpchange[(line[0], int(line[1]))][1]]])
+                        af = round(int(line[BASE_DICT[snpchange[(line[0], int(line[1]))][1]]])/int(line[3]), 2)
+                    else:
+                        if len(line) > 9:
+                            for i in range(9, len(line), 2):
+                                if line[i] == snpchange[(line[0], int(line[1]))][1]:
+                                    rc = int(line[i+1])
+                                    af = round(int(line[i+1])/int(line[3]), 2)
+                    samplesnps[(line[0], int(line[1]))] = (rc, af)
+            bgsnps[sample] = samplesnps
+    # Filter positions supported by at least 5 reads in all samples
+    bgsnpscnt = Counter([k for v in bgsnps.values() for k, v1 in v.items() if v1[0] >= 5])
+    bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == 7])
+    snppos_bgfilt = snppos - bgsnpsuni
+    # len(snppos_bgfilt)
+
+    # Filter positions supported by at least 5 reads in the illumina libraries (this removes library specific noisy reads)
+    slist = set([v for v in sample_ids.values() if v in {'WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'}])
+    bgsnpscnt = Counter([k for s in slist for k, v1 in bgsnps[s].items() if v1[0] >= 5])
+    bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == len(slist)])
+    snppos_bgfilt = snppos_bgfilt - bgsnpsuni
+    # len(snppos_bgfilt)
+
+    # Filter positions supported by at least 5 reads in the illumina libraries (this removes library specific noisy reads)
+    slist = set([v for v in sample_ids.values() if v in {'wt7', 'wt18', 'mut4', 'mut11_2'}])
+    bgsnpscnt = Counter([k for s in slist for k, v1 in bgsnps[s].items() if v1[0] >= 5])
+    bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == len(slist)])
+    snppos_bgfilt = snppos_bgfilt - bgsnpsuni
+    # len(snppos_bgfilt)
+
+    # Select high conf candidates
+    hcsm = {}        # High conf somatic mutations
+    for p in snppos_bgfilt:
+        for k, v in snpsdict[p].items():
+            # if v[3] > 0.25 and v[2] > 20:
+            if v[3] > afcut and v[2] > 20:
+                hcsm[p] = snpsdict[p]
+                break
+    with open(f"{cwd}/high_conf_layer_specific_somatic_mutations.txt", 'w') as fout:
+        for k in sorted(hcsm):
+            v = hcsm[k]
+            if len(set([v1[1] for v1 in v.values() if v1[1] is not None])) > 1: continue
+            ref, alt = None, None
+            for l in ['l1', 'l2', 'l3']:
+                if v[l][0] is not None:
+                    ref, alt = v[l][:2]
+                    break
+            vals = deque()
+            for l in ['l1', 'l2', 'l3']:
+                vals.extend(v[l][2:])
+            fout.write("\t".join(list(map(str, list(k) + [ref, alt] + list(vals)))) + "\n")
+    # Do manual curation of the candidate somatic mutation list
+#END
+
+# wt_1
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_1/', 'wt_1', {'l1': (40, 240), 'l2': (20, 180), 'l3': (30, 240)}, nc=6)
+
+# wt_7
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_7/', 'wt_7', {'l1': (30, 180), 'l2': (30, 180), 'l3': (30, 180)}, nc=6)
+
+# wt_18
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_18/', 'wt_18', {'l1': (40, 200), 'l2': (30, 180), 'l3': (30, 180)}, nc=6)
+
+# wt_19
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_19/', 'wt_19', {'l1': (40, 220), 'l2': (40, 220), 'l3': (40, 220)}, nc=6)
+
+# mut_11_1
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1/', 'mut_11_1', {'l1': (20, 160), 'l2': (20, 150), 'l3': (20, 180)}, nc=6)
+
+# mut_11_2
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_2/', 'mut_11_2', {'l1': (30, 200), 'l2': (20, 180), 'l3': (30, 200)}, nc=6)
+
+# mut_15
+layer_specific_sm_calling_all_samples('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/', 'mut_15', {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}, nc=6)
+
+
+def layer_conserved_variants():
+    '''
+    Some layer-specific variants are conserved in multi-branches. These could not
+    be identified in the layer_specific_sm_calling_all_samples because for such
+    positions the leaf samples have ALT reads too, making them look like noise.
+
+    Here, I try to call variations that are present in a specific layer in multiple
+    branches. For this, I would skip filtering based on leaf and try to compare
+    AFs in the layers directly using t-test.
+    '''
+
+    from collections import deque, defaultdict, Counter
+    from matplotlib import pyplot as plt
+    from pandas import read_table
+    from subprocess import Popen, PIPE
+    import numpy as np
+    from scipy.stats import ttest_rel
+
+    ## Read snps/indels between assemblies identified by syri
+    syri_snp_list, syri_indel_list = getsyrivarlist()
+
+    ## Conditions for selecting variants:
+    ## Only alt alleles with more than 5 reads are considered
+    ## If a position has multiple alt_alleles => noise_pos_list AND not a somatic mutation
+    ## For syri SNP/indel positions: record alt_allele_frequency AND not a somatic mutation
+    ## If not above => save candidate SNP position
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    branches = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
+    scovs = {'wt_1':  {'l1': (40, 240), 'l2': (20, 180), 'l3': (30, 240)},
+             'wt_7':  {'l1': (30, 180), 'l2': (30, 180), 'l3': (30, 180)},
+             'wt_18': {'l1': (40, 200), 'l2': (30, 180), 'l3': (30, 180)},
+             'wt_19': {'l1': (40, 220), 'l2': (40, 220), 'l3': (40, 220)},
+             'mut_11_1': {'l1': (20, 160), 'l2': (20, 150), 'l3': (20, 180)},
+             'mut_11_2': {'l1': (30, 200), 'l2': (20, 180), 'l3': (30, 200)},
+             'mut_15': {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}}
+
+
+    branch_vars = {}
+    for bname in branches:
+        indir = f'{cwd}/{bname}/{bname}_'
+        noise_pos = set()
+        samples_sm = {}
+        sample_syri_snp = {}
+        sample_syri_indel = {}
+        SAMPLES = ('l1', 'l2', 'l3')
+        for sample in SAMPLES:
+            filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
+            sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scovs[bname][sample][0], scovs[bname][sample][1], noise_pos, syri_snp_list, syri_indel_list)
+            noise_pos = noise_pos.union(set(sample_noise))
+            samples_sm[sample] = sm_pos
+            sample_syri_snp[sample] = snp_alfrq
+            sample_syri_indel[sample] = indel_alfrq
+
+        # Remove noise positions from candidate lists
+        for sample in SAMPLES:
+            for p in noise_pos:
+                try:
+                    samples_sm[sample].pop(p)
+                except KeyError:
+                    pass
+
+        # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
+        snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()) + list(samples_sm['l3'].keys()))
+        snpsdict = defaultdict(dict)
+        for snp in snpslist:
+            for sample in SAMPLES:
+                try:
+                    snpsdict[snp][sample] = samples_sm[sample][snp]
+                except KeyError:
+                    snpsdict[snp][sample] = (None, None, 0, 0)
+
+        # # TODO: Check and save this figure
+        # # afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) for k, v in snpsdict.items()}
+        # afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) if max([v1[2] for v1 in v.values()]) > 10 else 0 for k, v in snpsdict.items()}
+        # afcut = np.quantile(list(afdiff.values()), 0.99)
+        #
+        # ## Remove positions that are present in het (0.3-0.65) in all samples
+        # to_pop = deque()
+        # for k in samples_sm['l1']:
+        #     if not 0.3 <= samples_sm['l1'][k][3] <= 0.65:
+        #         continue
+        #     try:
+        #         pop = False
+        #         for sample in ('l2', 'l3'):
+        #             if not 0.3 <= samples_sm[sample][k][3] <= 0.65:
+        #                 pop = False
+        #                 break
+        #             else:
+        #                 pop = True
+        #         if pop:
+        #             to_pop.append(k)
+        #     except KeyError:
+        #         pass
+        #
+        # ## Remove positions where afdiff (with RC filter) <0.25
+        # for k, v in afdiff.items():
+        #     if v <= afcut: # Testing with a smalled afdiff cutoff
+        #         to_pop.append(k)
+        # for p in to_pop:
+        #     try:
+        #         snpsdict.pop(p)
+        #     except KeyError:
+        #         pass
+        branch_vars[bname] = snpsdict
+
+    pos = set()
+    for k, v in branch_vars.items():
+        pos = pos.union(set(v.keys()))
+
+    posdict = dict()
+    for p in pos:
+        posdict[p] = {}
+        for bname in branches:
+            v = branch_vars[bname][p]
+            if len(v) != 0:
+                posdict[p][bname] = v
+
+    ## Filetering posdict
+    to_pop = deque()
+    ### Remove positions which are present in only 1 branch
+    for k, v in posdict.items():
+        if len(v) == 1:
+            to_pop.append(k)
+
+    ### Remove positions which are not supported by atleast 20 reads in any l1/l2
+    for k, v in tqdm(posdict.items()):
+        if any([v1['l1'][2]>20 or v1['l2'][2]>20 for v1 in v.values()]): continue
+        to_pop.append(k)
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    ### Get log2(fold-change) values
+    fc = dict()
+    for k, v in posdict.items():
+        a = np.mean([v1['l1'][3] for v1 in v.values()])
+        b = np.mean([v1['l2'][3] for v1 in v.values()])
+        if b != 0:
+            if a != 0:
+                f = np.log2(a/b)
+            else:
+                f = -10
+        else:
+            f = 10
+        fc[k] = f
+
+    plt.hist(fc.values(), bins=100)
+    plt.yscale('log')
+    plt.xlabel('Log2(FC)')
+    plt.ylabel('Positions Count')
+    plt.axvline(2, color='black')
+    plt.axvline(-2, color='black')
+    ## Select positions with log2(FC) > 2 as candidate multi-branch layer-specific variations
+    selected = [k for k, v in fc.items() if abs(v) > 2]
+
+    with open(f'{cwd}/conserved_layer_specific_candidate.tsv', 'w') as fout:
+        for s in sorted(selected):
+            fout.write(f'{s[0]}\t{s[1]}\t')
+            st = True
+            for k, v in posdict[s].items():
+                if st:
+                    fout.write(f'{k}\t')
+                    st = False
+                else:
+                    fout.write(f'\t\t{k}\t')
+                st2 = True
+                for k1, v1 in v.items():
+                    if st2:
+                        fout.write(f'{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+                        st2=False
+                    else:
+                        fout.write(f'\t\t\t{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+            fout.write('\n')
+    ## 64 positions selected as candidate mutations. Next I test them manually.
+
+
+
+
+
+
+
+    # posstd = dict()
+    # for k, v in posdict.items():
+    #     values = [v1['l1'][3] for v1 in v.values()] +  [v1['l2'][3] for v1 in v.values()]
+    #     posstd[k] = np.var(values)
+    #     break
+    # cutoff = np.quantile(list(posstd.values()), 0.99)
+    # to_pop = deque()
+    # for k, v in posstd.items():
+    #     if v < cutoff:
+    #         to_pop.append(k)
+    #
+    # for p in to_pop:
+    #     try:
+    #         posdict.pop(p)
+    #     except KeyError: pass
+    #
+    # figure = plt.figure(figsize=[8, 6])
+    # for i in range(2, 8):
+    #     pvalues = dict()
+    #     pos = [k for k, v in posdict.items() if len(v) == i]
+    #     for p in pos:
+    #         v = posdict[p]
+    #         l1s = [v1['l1'][3] for v1 in v.values()]
+    #         l2s = [v1['l2'][3] for v1 in v.values()]
+    #         pvalues[p] = ttest_rel(l1s, l2s)
+    #     a = np.array([v.pvalue for v in pvalues.values()])
+    #     np.nan_to_num(a, copy=False, nan=1)
+    #     b = p_adjust(a, 'bh')
+    #     selected = np.where(np.array(b) < 0.05)[0]
+    #     print(i, len(a), len(selected))
+    #     hc = deque()
+    #     for s in selected:
+    #         l = 'l1' if sum([v['l1'][3] for v in posdict[pos[s]].values()]) > sum([v['l2'][3] for v in posdict[pos[s]].values()]) else 'l2'
+    #         if any([v[l][2] > 20 for v in posdict[pos[s]].values()]):
+    #             # print(pos[s], posdict[pos[s]])
+    #             # break
+    #             hc.append(s)
+    #
+    #         # print(pos[s], posdict[pos[s]], sum([v['l1'][2] for v in posdict[pos[s]].values()])/i, sum([v['l2'][2] for v in posdict[pos[s]].values()])/i)
+    #         # print()
+    #     print(f'i: {i}; Count: {len(a)}; Count Selected: {len(selected)}; Count high read count: {len(hc)}')
+    # break
+
+
+
+
+        # garb = [('CUR1G', 10626876),
+        #         ('CUR1G', 2854033),
+        #         ('CUR4G', 6760960),
+        #         ('CUR1G', 34111279),
+        #         ('CUR4G', 10315321),
+        #         ('CUR5G', 10982419),
+        #         ('CUR7G', 4335333),
+        #         ('CUR3G', 16974418),
+        #         ('CUR1G', 2981550),
+        #         ('CUR5G', 16975416)]
+
+
+
+
+# END
+
+
+
+def layer_3_variant_calling(cwd, bname, scov, nc=1):
+    '''
+    Layer 3 could not be so well enriched, i.e. there are quite some L2 cells in L3
+    sample. This mean that calling variations present in only L3 is more challenging.
+    Here, try to get all variations where the variant in L3 but absent in L2 and
+    then try to call L3 specific variants from there.
+    '''
+    from collections import defaultdict, deque, Counter
+    import numpy as np
+    import pybedtools as bd
+    from subprocess import Popen, PIPE
+
+    BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+    BASE_DICT2 = {4: 'A', 5: 'C', 6: 'G', 7: 'T'}
+
+    ## Read snps/indels between assemblies identified by syri
+    syri_snp_list, syri_indel_list = getsyrivarlist()
+
+    ## Conditions for selecting variants:
+    ## Only alt alleles with more than 5 reads are considered
+    ## If a position has multiple alt_alleles => noise_pos_list AND not a somatic mutation
+    ## For syri SNP/indel positions: record alt_allele_frequency AND not a somatic mutation
+    ## If not above => save candidate SNP position
+    indir = f'{cwd}/{bname}_' #/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1/mut_11_1_'
+    noise_pos = set()
+    samples_sm = {}
+    sample_syri_snp = {}
+    sample_syri_indel = {}
+    SAMPLES = ('l1', 'l2', 'l3')
+    for sample in SAMPLES:
+        filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
+        sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scov[sample][0], scov[sample][1], noise_pos, syri_snp_list, syri_indel_list)
+        noise_pos = noise_pos.union(set(sample_noise))
+        samples_sm[sample] = sm_pos
+        sample_syri_snp[sample] = snp_alfrq
+        sample_syri_indel[sample] = indel_alfrq
+
+    # Filter out noise positions
+    for sample in SAMPLES:
+        for p in noise_pos:
+            try: samples_sm[sample].pop(p)
+            except KeyError: pass
+
+    # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
+    snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()) + list(samples_sm['l3'].keys()))
+    snpsdict = defaultdict(dict)
+    for snp in snpslist:
+        for sample in SAMPLES:
+            try: snpsdict[snp][sample] = samples_sm[sample][snp]
+            except KeyError: snpsdict[snp][sample] = (None, None, 0, 0)
+
+    to_pop = deque()
+    for k in samples_sm['l1']:
+        if not 0.3 <= samples_sm['l1'][k][3] <= 0.65:
+            continue
+        try:
+            pop = False
+            for sample in ('l2', 'l3'):
+                if not 0.3 <= samples_sm[sample][k][3] <= 0.65:
+                    pop = False
+                    break
+                else:
+                    pop = True
+            if pop:
+                to_pop.append(k)
+        except KeyError:
+            pass
+
+    for p in to_pop:
+        try:
+            snpsdict.pop(p)
+        except KeyError:
+            pass
+
+    afdiff = {k: v['l3'][3]-v['l2'][3] for k, v in snpsdict.items()}
+    afcut = np.quantile(list(afdiff.values()), 0.99)
+
+    highl3af = {k: v for k, v in snpsdict.items() if afdiff[k] > afcut and v['l3'][2]>=10 and v['l2'][2]<=1}
+
+    goodcov = bd.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1/mut_11_1_l3/l3.depth_30_300.bed')
+    highl3bed = bd.BedTool('\n'.join(['\t'.join([i[0], str(i[1]-1), str(i[1])]) for i in highl3af]), from_string=True)
+    garb = highl3bed.intersect(goodcov)
+
+    with open(f"{cwd}/layer3_SM_candidates.txt", 'w') as fout:
+        for g in garb:
+            fout.write(f'{g[0]}\t{g[2]}\t{g[2]}\n')
+
+    # Get read counts at candidate L3 positions in other branches with mapping quality 0
+    refgen = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+    procs = deque()
+    for l in ('l1', 'l2'):
+        command = f"/srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/hometools pbamrc -n {nc} -b 0 -q 0 -w 0 -I -f {refgen} -l {cwd}/layer3_SM_candidates.txt {cwd}/{bname}_{l}/{l}.deduped.bam {cwd}/{l}.for_l3.sm_candidate.read_count.txt"
+        p = Popen(command.split(), stderr=PIPE, stdout=PIPE, text=True)
+        procs.append(p)
+    for p in procs:
+        o = p.communicate()
+        if o[1] != '': print(o)
+
+    # Read background read counts at SM candidate positions
+    bgsnps = {}
+    snpchange = {}
+    for k, v in highl3af.items():
+        for l, v1 in v.items():
+            if v1[0] is None: continue
+            snpchange[k] = (v1[0], v1[1])
+
+    highl3pos = set([(g[0], int(g[2])) for g in garb])
+    for l in ('l1', 'l2'):
+        with open(f"{cwd}/{l}.for_l3.sm_candidate.read_count.txt", 'r') as fin:
+            samplesnps = {}
+            for line in fin:
+                line = line.strip().split()
+                if (line[0], int(line[1])) in highl3pos:
+                    rc, af = 0, 0
+                    if snpchange[(line[0], int(line[1]))][1] in {'A', 'C', 'G', 'T'}:
+                        rc = int(line[BASE_DICT[snpchange[(line[0], int(line[1]))][1]]])
+                        af = round(int(line[BASE_DICT[snpchange[(line[0], int(line[1]))][1]]])/int(line[3]), 2)
+                    else:
+                        if len(line) > 9:
+                            for i in range(9, len(line), 2):
+                                if line[i] == snpchange[(line[0], int(line[1]))][1]:
+                                    rc = int(line[i+1])
+                                    af = round(int(line[i+1])/int(line[3]), 2)
+                    samplesnps[(line[0], int(line[1]))] = (rc, af)
+            bgsnps[l] = samplesnps
+
+    # Filter positions supported by at least 5 reads in both l1 and l2 samples
+    bgsnpscnt = Counter([k for v in bgsnps.values() for k, v1 in v.items() if v1[0] > 1])
+    bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v==2])
+    highl3pos_bgfilt = highl3pos - bgsnpsuni
+    # len(highl3pos_bgfilt)
+
+    # print(bname, len(highl3pos_bgfilt), highl3pos_bgfilt)
+    with open(f"{cwd}/l3_specific_somatic_mutations.txt", 'w') as fout:
+        for k in sorted(highl3pos_bgfilt):
+            v = highl3af[k]
+            if len(set([v1[1] for v1 in v.values() if v1[1] is not None])) > 1: continue
+            ref, alt = None, None
+            for l in ['l1', 'l2', 'l3']:
+                if v[l][0] is not None:
+                    ref, alt = v[l][:2]
+                    break
+            vals = deque()
+            for l in ['l1', 'l2', 'l3']:
+                vals.extend(v[l][2:])
+            fout.write("\t".join(list(map(str, list(k) + [ref, alt] + list(vals)))) + "\n")
+
+    '''
+    # I checked these candidates in all samples manually. Other than 1 position in MUT_11_1, none of the candidates could be considered as L3 specific mutation. Possible reasons: 
+    1) There is not much enrichment in L3 DNA, i.e. there are many L2 reads in L3 sample as a result we cannot get L3 specific variants that have enough reads/allele-frequency to be easily called. We know that L3 layer is very thin in fruit, so this is quite possible
+    2) There are not many mutations happening in L3 (but this is very risky to say)
+    '''
+# END
+# wt_1
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_1/', 'wt_1', {'l1': (40, 240), 'l2': (20, 180), 'l3': (30, 240)}, nc=6)
+
+# wt_7
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_7/', 'wt_7', {'l1': (30, 180), 'l2': (30, 180), 'l3': (30, 180)}, nc=6)
+
+# wt_18
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_18/', 'wt_18', {'l1': (40, 200), 'l2': (30, 180), 'l3': (30, 180)}, nc=6)
+
+# wt_19
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_19/', 'wt_19', {'l1': (40, 220), 'l2': (40, 220), 'l3': (40, 220)}, nc=6)
+
+# mut_11_1
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1/', 'mut_11_1', {'l1': (20, 160), 'l2': (20, 150), 'l3': (20, 180)}, nc=6)
+
+# mut_11_2
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_2/', 'mut_11_2', {'l1': (30, 200), 'l2': (20, 180), 'l3': (30, 200)}, nc=6)
+
+# mut_15
+layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/', 'mut_15', {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}, nc=6)
+
 
 def layer_specific_gene_conversion():
     import numpy as np
@@ -916,137 +1583,240 @@ def layer_specific_gene_conversion():
 layer_specific_gene_conversion()
 
 
-def test_allele_frequency_variation():
+def test_allele_frequency_variation(cwd, bname, leafrc, step):
     '''
     Layer 3 sequencing has abnormal coverage distribution, suggesting dna degradation.
     Here, I compare the allele frequency at SNP positions in the MUT_11 leaf, layer 1, layer 2, and layer 3.
     If SNPs in L3 have similar allele frequency as other samples, then it would mean that the absurdities in
     coverage are not affecting allele frequencies and that this data can be used for mutation calling.
     '''
+    print(cwd, bname, leafrc, step)
+    # return
     from tqdm import tqdm
     from collections import deque
     from matplotlib import pyplot as plt
     import numpy as np
     import sys
-    sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
-    from myUsefulFunctions import density_scatter
+    import pickle
     plt.interactive(False)
+    sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
+    from myUsefulFunctions import density_scatter, mylogger
+    plt.interactive(False)
+    logger = mylogger('afplot')
 
-    ## Read snps between assemblies identified by syri
+    if step == 1:
+        ## Read snps between assemblies identified by syri
+        syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
+        syri_snp_list = {}
+        with open(syriout, 'r') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if line[10] == 'SNP':
+                    if line[3] == 'N' or line[4] == 'N': continue
+                    syri_snp_list[(line[0], int(line[1]))] = (line[3], line[4])
+        snp_pos = set(syri_snp_list.keys())
+        BD = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+
+        # Instead of re-calculating, use the pickled AFs
+        leaf_af = {}
+        with open(leafrc, 'r') as fin:
+            for line in tqdm(fin):
+                line = line.strip().split()
+                if (line[0], int(line[1])) in snp_pos:
+                    leaf_af[(line[0], int(line[1]))] = (int(line[3]), int(line[BD[syri_snp_list[(line[0], int(line[1]))][1]]]))
+        layer_af = deque()
+        for l in ("l1", "l2", "l3"):
+            ldict = {}
+            with open(f"{cwd}/{bname}_{l}/bam_read_counts_b30_q10.bt2.txt", "r") as fin:
+                for line in tqdm(fin):
+                    line = line.strip().split()
+                    if (line[0], int(line[1])) in snp_pos:
+                        ldict[(line[0], int(line[1]))] = (int(line[3]), int(line[BD[syri_snp_list[(line[0], int(line[1]))][1]]]))
+            layer_af.append(ldict)
+        with open(f"{cwd}/pickled_snp_af", "wb") as f:
+            pickle.dump([leaf_af, layer_af], f)
+        return
+
+    elif step == 2:
+        with open(f"{cwd}/pickled_snp_af", "rb") as f:
+            garb = pickle.load(f)
+            leaf_af = garb[0]
+            layer_af = garb[1]
+        snps_in_all = set(leaf_af.keys()).intersection(set(layer_af[0].keys())).intersection(set(layer_af[1].keys())).intersection(set(layer_af[2].keys()))
+        fig = plt.figure(figsize=[12, 12])
+        fig.suptitle(bname)
+        # plot Leaf vs L3
+        ax1 = fig.add_subplot(3, 3, 1)
+        ax1.set_xlim([-0.02, 1.02])
+        ax1.set_ylim([-0.02, 1.02])
+        x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax1 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax1, fig=fig, s=0.5)
+        ax1.set_xlabel("leaf")
+        ax1.set_ylabel("L3")
+        ax1.set_title(f"Correlation: {round(np.corrcoef(x, y)[0, 1], 4)}")
+
+        # plot Leaf vs L2
+        ax2 = fig.add_subplot(3, 3, 4)
+        ax2.set_xlim([-0.02, 1.02])
+        ax2.set_ylim([-0.02, 1.02])
+        x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax2 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax2, fig=fig, s=0.5)
+        ax2.set_xlabel("leaf")
+        ax2.set_ylabel("L2")
+        ax2.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
+
+        # plot Leaf vs L1
+        ax3 = fig.add_subplot(3, 3, 7)
+        ax3.set_xlim([-0.02, 1.02])
+        ax3.set_ylim([-0.02, 1.02])
+        x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax3 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax3, fig=fig, s=0.5)
+        ax3.set_xlabel("leaf")
+        ax3.set_ylabel("L1")
+        ax3.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
+
+        # plot L1 vs L3
+        ax4 = fig.add_subplot(3, 3, 2)
+        ax4.set_xlim([-0.02, 1.02])
+        ax4.set_ylim([-0.02, 1.02])
+        x = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax4 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax4, fig=fig, s=0.5)
+        ax4.set_xlabel("L1")
+        ax4.set_ylabel("L3")
+        ax4.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
+
+        # plot L1 vs L2
+        ax5 = fig.add_subplot(3, 3, 5)
+        ax5.set_xlim([-0.02, 1.02])
+        ax5.set_ylim([-0.02, 1.02])
+        x = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax5 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax5, fig=fig, s=0.5)
+        ax5.set_xlabel("L1")
+        ax5.set_ylabel("L2")
+        ax5.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
+
+        # plot L2 vs L3
+        ax6 = fig.add_subplot(3, 3, 3)
+        ax6.set_xlim([-0.02, 1.02])
+        ax6.set_ylim([-0.02, 1.02])
+        x = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
+        y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
+        print(round(np.corrcoef(x, y)[0, 1], 4))
+        ax6 = density_scatter(x, y, bins=[[i/100 for i in range(0, 104, 4)], [i/100 for i in range(0, 104, 4)]], ax=ax6, fig=fig, s=0.5)
+        ax6.set_xlabel("L2")
+        ax6.set_ylabel("L3")
+        ax6.set_title(f"Correlation: {round(np.corrcoef(x, y)[0, 1], 4)}")
+        plt.tight_layout()
+        plt.savefig(f"{cwd}/SNP_AF_correlation.png", dpi=300)
+
+    else:
+        logger.error("Incorrect value for step. Required values: 1 or 2.")
+# END
+import os
+from multiprocessing import Pool
+from functools import partial
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+samples = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
+cwds = [cwd + 'layer_samples/' + s + os.sep for s in samples]
+leafrcs = ['WT_1/bam_read_counts_b30_q10.bt2.txt',
+           'wt7/bam_read_counts_b30_q10.bt2.txt',
+           'wt18/bam_read_counts_b30_q10.bt2.txt',
+           'WT_19/bam_read_counts_b30_q10.bt2.txt',
+           'MUT_11_1/bam_read_counts_b30_q10.bt2.txt',
+           'mut11_2/bam_read_counts_b30_q10.bt2.txt',
+           'MUT_15/bam_read_counts_b30_q10.bt2.txt']
+leafrcs = [cwd+s for s in leafrcs]
+params = list(zip(cwds, samples, leafrcs))
+with Pool(processes=8) as pool:
+    pool.starmap(partial(test_allele_frequency_variation, step=1), params)
+with Pool(processes=8) as pool:
+    pool.starmap(partial(test_allele_frequency_variation, step=2), params)
+
+
+############################# Sub-functions ####################################
+
+def getsyrivarlist():
     syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
     syri_snp_list = {}
+    syri_indel_list = {}
     with open(syriout, 'r') as fin:
+        # types = {'SNP', 'INS', 'DEL'}
         for line in fin:
             line = line.strip().split()
             if line[10] == 'SNP':
                 if line[3] == 'N' or line[4] == 'N': continue
                 syri_snp_list[(line[0], int(line[1]))] = (line[3], line[4])
-    snp_pos = set(syri_snp_list.keys())
-    BD = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-
-    # Instead of re-calculating, use the pickled AFs
-    # leaf_af = {}
-    # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/MUT_11_1/bam_read_counts_b30_q10.bt2.txt", 'r') as fin:
-    #     for line in tqdm(fin):
-    #         line = line.strip().split()
-    #         if (line[0], int(line[1])) in snp_pos:
-    #             leaf_af[(line[0], int(line[1]))] = (int(line[3]) ,int(line[BD[syri_snp_list[(line[0], int(line[1]))][1]]]))
-    # layer_af = deque()
-    # for l in ("l1", "l2", "l3"):
-    # # for l in ("l1"):
-    #     ldict = {}
-    #     with open(f"/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{l}/bam_read_counts_b30_q10.bt2.txt", "r") as fin:
-    #         for line in tqdm(fin):
-    #             line = line.strip().split()
-    #             if (line[0], int(line[1])) in snp_pos:
-    #                 ldict[(line[0], int(line[1]))] = (int(line[3]) ,int(line[BD[syri_snp_list[(line[0], int(line[1]))][1]]]))
-    #     layer_af.append(ldict)
-
-
-    import pickle
-    # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/pickled_snp_af", "wb") as f:
-    #     pickle.dump([leaf_af, layer_af], f)
-    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/pickled_snp_af", "rb") as f:
-        garb = pickle.load(f)
-        leaf_af = garb[0]
-        layer_af = garb[1]
-    snps_in_all = set(leaf_af.keys()).intersection(set(layer_af[0].keys())).intersection(set(layer_af[1].keys())).intersection(set(layer_af[2].keys()))
-    fig = plt.figure(figsize=[12,12])
-    # plot Leaf vs L3
-    ax1 = fig.add_subplot(3,3,1)
-    ax1.set_xlim([-0.02, 1.02])
-    ax1.set_ylim([-0.02, 1.02])
-    x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax1 = density_scatter( x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax1, fig=fig, s=0.5)
-    ax1.set_xlabel("leaf")
-    ax1.set_ylabel("L3")
-    ax1.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-
-    # plot Leaf vs L2
-    ax2 = fig.add_subplot(3,3,4)
-    ax2.set_xlim([-0.02, 1.02])
-    ax2.set_ylim([-0.02, 1.02])
-    x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax2 = density_scatter(x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax2, fig=fig, s=0.5)
-    ax2.set_xlabel("leaf")
-    ax2.set_ylabel("L2")
-    ax2.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-
-    # plot Leaf vs L1
-    ax3 = fig.add_subplot(3,3,7)
-    ax3.set_xlim([-0.02, 1.02])
-    ax3.set_ylim([-0.02, 1.02])
-    x = np.array([0 if leaf_af[p][0] == 0 else leaf_af[p][1]/leaf_af[p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax3 = density_scatter(x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax3, fig=fig, s=0.5)
-    ax3.set_xlabel("leaf")
-    ax3.set_ylabel("L1")
-    ax3.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-
-    # plot L1 vs L3
-    ax4 = fig.add_subplot(3, 3, 2)
-    ax4.set_xlim([-0.02, 1.02])
-    ax4.set_ylim([-0.02, 1.02])
-    x = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax4 = density_scatter(x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax4, fig=fig, s=0.5)
-    ax4.set_xlabel("L1")
-    ax4.set_ylabel("L3")
-    ax4.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-
-    # plot L1 vs L2
-    ax5 = fig.add_subplot(3,3,5)
-    ax5.set_xlim([-0.02, 1.02])
-    ax5.set_ylim([-0.02, 1.02])
-    x = np.array([0 if layer_af[0][p][0] == 0 else layer_af[0][p][1]/layer_af[0][p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax5 = density_scatter(x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax5, fig=fig, s=0.5)
-    ax5.set_xlabel("L1")
-    ax5.set_ylabel("L2")
-    ax5.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-
-    # plot L2 vs L3
-    ax6 = fig.add_subplot(3, 3,3)
-    ax6.set_xlim([-0.02, 1.02])
-    ax6.set_ylim([-0.02, 1.02])
-    x = np.array([0 if layer_af[1][p][0] == 0 else layer_af[1][p][1]/layer_af[1][p][0] for p in snps_in_all])
-    y = np.array([0 if layer_af[2][p][0] == 0 else layer_af[2][p][1]/layer_af[2][p][0] for p in snps_in_all])
-    print(round(np.corrcoef(x, y)[0,1], 4))
-    ax6 = density_scatter(x, y, bins = [[i/100 for i in range(0,104,4)], [i/100 for i in range(0,104,4)]], ax=ax6, fig=fig, s=0.5)
-    ax6.set_xlabel("2")
-    ax6.set_ylabel("L3")
-    ax6.set_title(f"Correlation: {round(np.corrcoef(x, y)[0,1], 4)}")
-    plt.tight_layout()
-    plt.savefig("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/SNP_AF_correlation.png", dpi=300)
+            elif line[10] == 'INS':
+                syri_indel_list[(line[0], int(line[1]))] = ('+', line[4][1:])
+            elif line[10] == 'DEL':
+                syri_indel_list[(line[0], int(line[1])+1)] = ('-', line[3][1:])
+    return syri_snp_list, syri_indel_list
 # END
-test_allele_frequency_variation()
 
 
+def readfilteredbamreadcount(filename, scov_min, scov_max, noise_pos, syri_snp_list, syri_indel_list):
+    from collections import deque
+    from tqdm import tqdm
 
+    sample_noise = deque()
+    snp_alfrq = {}
+    indel_alfrq = {}
+    sm_pos = {}
+    snp_pos = set(syri_snp_list.keys())
+    indel_pos = set(syri_indel_list.keys())
+    base_dict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+    base_dict2 = {4: 'A', 5: 'C', 6: 'G', 7: 'T'}
+
+    with open(filename, 'r') as fin:
+        for line in tqdm(fin):
+            line = line.strip().split()
+            # Get allele frequency if position is in syri_snp
+            if (line[0], int(line[1])) in snp_pos:
+                p = (line[0], int(line[1]))
+                snp_alfrq[p] = (round(int(line[base_dict[syri_snp_list[p][1]]])/int(line[3]), 3), int(line[3]))
+                continue
+            # Get allele frequency if position is in syri_indel
+            if (line[0], int(line[1])) in indel_pos:
+                p = (line[0], int(line[1]))
+                v = syri_indel_list[p][0] + syri_indel_list[p][1]
+                for j in range(9, len(line), 2):
+                    if line[j] == v:
+                        indel_alfrq[p] = (round(int(line[j+1])/int(line[3]), 3), int(line[3]))
+                        break
+                continue
+            # Check if the position is noisy, if not then select somatic mutation
+            if (line[0], int(line[1])) not in noise_pos:
+                # Check read-depth at the position
+                if not scov_min <= int(line[3]) <= scov_max:
+                    sample_noise.append((line[0], int(line[1])))
+                    continue
+                ind = [4, 5, 6, 7] + list(range(10, len(line), 2))
+                # for i in ind:
+                rc = 0
+                ar = 0
+                alt = ''
+                for i in ind:
+                    if int(line[i]) >= 5:
+                        if base_dict[line[2]] != i:
+                            if int(line[i]) <= rc:
+                                continue
+                            rc = int(line[i])
+                            ar = round(int(line[i])/int(line[3]), 3)
+                            try:
+                                alt = base_dict2[i]
+                            except KeyError:
+                                alt = line[i-1]
+                if rc >= 5:
+                    sm_pos[(line[0], int(line[1]))] = (line[2], alt, rc, ar)
+    return sample_noise, snp_alfrq, indel_alfrq, sm_pos
+# END

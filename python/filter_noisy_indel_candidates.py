@@ -80,7 +80,7 @@ def readcount(sample, CWD):
         with open('all_good_readcount_indels.b0.q0.txt', 'w') as fout:
             for line in fin:
                 line = line.strip().split()
-                fout.write("\t".join(line[:4] + [i.split(':')[1] for i in line[5:10]] + [j for i in line[10:] for j in i.split(':')[:2] ]) + "\n")
+                fout.write("\t".join(line[:4] + [i.split(':')[1] for i in line[5:10]] + [j for i in line[10:] for j in i.split(':')[:2]]) + "\n")
 
     f = open("TMP.txt", 'w')
     run("bam-readcount -w 0 -b 30 -q 40 -l ../indel_loci_for_readcount.txt -f /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta {}.sorted.bt2.bam ".format(sample).split(), stdout=f)

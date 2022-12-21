@@ -13,7 +13,7 @@ if __name__ == '__main__':
     Contig_ID   POS REF_Allele  READ_count  A_count C_count G_Count T_count N_Count  [INDEL_counts] [INDEL_counts]  [INDEL_counts]  
     """
 
-    parser = argparse.ArgumentParser("Select positions which have more than three reads with non-reference alleles")
+    parser = argparse.ArgumentParser("Select positions which have more than three reads with non-reference alleles", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('f', help='path to bam_readcount output', type=argparse.FileType('r'))
     parser.add_argument('-n', dest='n', help='minimum number of non-reference reads', type=int, default=3)
     parser.add_argument('-p', dest='p', help='prefix for output file', type=str, default='filtered_low_ref_al_')
