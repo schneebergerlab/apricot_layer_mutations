@@ -682,6 +682,7 @@ def layer_conserved_variants():
     from subprocess import Popen, PIPE
     import numpy as np
     from scipy.stats import ttest_rel
+    from tqdm import tqdm
 
     ## Read snps/indels between assemblies identified by syri
     syri_snp_list, syri_indel_list = getsyrivarlist()
@@ -820,10 +821,35 @@ def layer_conserved_variants():
     plt.axvline(2, color='black')
     plt.axvline(-2, color='black')
     ## Select positions with log2(FC) > 2 as candidate multi-branch layer-specific variations
-    selected = [k for k, v in fc.items() if abs(v) > 2]
+    selected = [k for k, v in fc.items() if v > 2 or v < -2]
 
     with open(f'{cwd}/conserved_layer_specific_candidate.tsv', 'w') as fout:
         for s in sorted(selected):
+            fout.write(f'{s[0]}\t{s[1]}\t')
+            st = True
+            for k, v in posdict[s].items():
+                if st:
+                    fout.write(f'{k}\t')
+                    st = False
+                else:
+                    fout.write(f'\t\t{k}\t')
+                st2 = True
+                for k1, v1 in v.items():
+                    if st2:
+                        fout.write(f'{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+                        st2=False
+                    else:
+                        fout.write(f'\t\t\t{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+            fout.write('\n')
+    ## 64 positions selected as candidate mutations. Next I test them manually.
+
+    ## Because L2 is most enriched (most pure), the above strategy favors L1 SM
+    ## identification ( L1/L2 is higher because L2 is less noisy). To call L2 SM
+    ## better, I increase the sensitivity for candidates with higher AL in L2.
+    selected2 = [k for k, v in fc.items() if v < -1]
+    with open(f'{cwd}/conserved_layer_specific_candidate.l2_sensitive.tsv', 'w') as fout:
+        for s in sorted(selected2):
+            if s in selected: continue
             fout.write(f'{s[0]}\t{s[1]}\t')
             st = True
             for k, v in posdict[s].items():
@@ -848,7 +874,7 @@ def layer_conserved_variants():
 
 
 
-    # posstd = dict()
+# posstd = dict()
     # for k, v in posdict.items():
     #     values = [v1['l1'][3] for v1 in v.values()] +  [v1['l2'][3] for v1 in v.values()]
     #     posstd[k] = np.var(values)
