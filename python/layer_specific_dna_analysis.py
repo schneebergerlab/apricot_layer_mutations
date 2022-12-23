@@ -678,10 +678,7 @@ def layer_conserved_variants():
 
     from collections import deque, defaultdict, Counter
     from matplotlib import pyplot as plt
-    from pandas import read_table
-    from subprocess import Popen, PIPE
     import numpy as np
-    from scipy.stats import ttest_rel
     from tqdm import tqdm
 
     ## Read snps/indels between assemblies identified by syri
@@ -704,6 +701,7 @@ def layer_conserved_variants():
 
 
     branch_vars = {}
+    posdict = defaultdict(dict)
     for bname in branches:
         indir = f'{cwd}/{bname}/{bname}_'
         noise_pos = set()
@@ -729,59 +727,30 @@ def layer_conserved_variants():
 
         # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
         snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()) + list(samples_sm['l3'].keys()))
-        snpsdict = defaultdict(dict)
+        # snpsdict = defaultdict(dict)
         for snp in snpslist:
-            for sample in SAMPLES:
-                try:
-                    snpsdict[snp][sample] = samples_sm[sample][snp]
-                except KeyError:
-                    snpsdict[snp][sample] = (None, None, 0, 0)
+            posdict[snp][bname] = {s: samples_sm[s][snp] if snp in samples_sm[s] else (None, None, 0, 0) for s in SAMPLES}
 
-        # # TODO: Check and save this figure
-        # # afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) for k, v in snpsdict.items()}
-        # afdiff = {k: max([v1[3] for v1 in v.values()]) - min([v1[3] for v1 in v.values()]) if max([v1[2] for v1 in v.values()]) > 10 else 0 for k, v in snpsdict.items()}
-        # afcut = np.quantile(list(afdiff.values()), 0.99)
-        #
-        # ## Remove positions that are present in het (0.3-0.65) in all samples
-        # to_pop = deque()
-        # for k in samples_sm['l1']:
-        #     if not 0.3 <= samples_sm['l1'][k][3] <= 0.65:
-        #         continue
-        #     try:
-        #         pop = False
-        #         for sample in ('l2', 'l3'):
-        #             if not 0.3 <= samples_sm[sample][k][3] <= 0.65:
-        #                 pop = False
-        #                 break
-        #             else:
-        #                 pop = True
-        #         if pop:
-        #             to_pop.append(k)
-        #     except KeyError:
-        #         pass
-        #
-        # ## Remove positions where afdiff (with RC filter) <0.25
-        # for k, v in afdiff.items():
-        #     if v <= afcut: # Testing with a smalled afdiff cutoff
-        #         to_pop.append(k)
-        # for p in to_pop:
-        #     try:
-        #         snpsdict.pop(p)
-        #     except KeyError:
-        #         pass
-        branch_vars[bname] = snpsdict
 
-    pos = set()
-    for k, v in branch_vars.items():
-        pos = pos.union(set(v.keys()))
+    # for snp in snpslist:
+    #         for sample in SAMPLES:
+    #             try:
+    #                 snpsdict[snp][sample] = samples_sm[sample][snp]
+    #             except KeyError:
+    #                 snpsdict[snp][sample] = (None, None, 0, 0)
+    #     branch_vars[bname] = snpsdict
 
-    posdict = dict()
-    for p in pos:
-        posdict[p] = {}
-        for bname in branches:
-            v = branch_vars[bname][p]
-            if len(v) != 0:
-                posdict[p][bname] = v
+    # pos = set()
+    # for k, v in branch_vars.items():
+    #     pos = pos.union(set(v.keys()))
+    #
+    # posdict = dict()
+    # for p in pos:
+    #     posdict[p] = {}
+    #     for bname in branches:
+    #         v = branch_vars[bname][p]
+    #         if len(v) != 0:
+    #             posdict[p][bname] = v
 
     ## Filetering posdict
     to_pop = deque()
@@ -866,76 +835,149 @@ def layer_conserved_variants():
                     else:
                         fout.write(f'\t\t\t{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
             fout.write('\n')
-    ## 64 positions selected as candidate mutations. Next I test them manually.
-
-
-
-
-
-
-
-# posstd = dict()
-    # for k, v in posdict.items():
-    #     values = [v1['l1'][3] for v1 in v.values()] +  [v1['l2'][3] for v1 in v.values()]
-    #     posstd[k] = np.var(values)
-    #     break
-    # cutoff = np.quantile(list(posstd.values()), 0.99)
-    # to_pop = deque()
-    # for k, v in posstd.items():
-    #     if v < cutoff:
-    #         to_pop.append(k)
-    #
-    # for p in to_pop:
-    #     try:
-    #         posdict.pop(p)
-    #     except KeyError: pass
-    #
-    # figure = plt.figure(figsize=[8, 6])
-    # for i in range(2, 8):
-    #     pvalues = dict()
-    #     pos = [k for k, v in posdict.items() if len(v) == i]
-    #     for p in pos:
-    #         v = posdict[p]
-    #         l1s = [v1['l1'][3] for v1 in v.values()]
-    #         l2s = [v1['l2'][3] for v1 in v.values()]
-    #         pvalues[p] = ttest_rel(l1s, l2s)
-    #     a = np.array([v.pvalue for v in pvalues.values()])
-    #     np.nan_to_num(a, copy=False, nan=1)
-    #     b = p_adjust(a, 'bh')
-    #     selected = np.where(np.array(b) < 0.05)[0]
-    #     print(i, len(a), len(selected))
-    #     hc = deque()
-    #     for s in selected:
-    #         l = 'l1' if sum([v['l1'][3] for v in posdict[pos[s]].values()]) > sum([v['l2'][3] for v in posdict[pos[s]].values()]) else 'l2'
-    #         if any([v[l][2] > 20 for v in posdict[pos[s]].values()]):
-    #             # print(pos[s], posdict[pos[s]])
-    #             # break
-    #             hc.append(s)
-    #
-    #         # print(pos[s], posdict[pos[s]], sum([v['l1'][2] for v in posdict[pos[s]].values()])/i, sum([v['l2'][2] for v in posdict[pos[s]].values()])/i)
-    #         # print()
-    #     print(f'i: {i}; Count: {len(a)}; Count Selected: {len(selected)}; Count high read count: {len(hc)}')
-    # break
-
-
-
-
-        # garb = [('CUR1G', 10626876),
-        #         ('CUR1G', 2854033),
-        #         ('CUR4G', 6760960),
-        #         ('CUR1G', 34111279),
-        #         ('CUR4G', 10315321),
-        #         ('CUR5G', 10982419),
-        #         ('CUR7G', 4335333),
-        #         ('CUR3G', 16974418),
-        #         ('CUR1G', 2981550),
-        #         ('CUR5G', 16975416)]
-
-
-
-
+    ## 77 positions selected as candidate mutations. Next I test them manually.
 # END
 
+def layer_specific_fc_check():
+    '''
+    In layer_conserved_variants, I found that there might still be some single
+    branch layer_specific SMs. These are probably those that could not be identified
+    in layer_specific_sm_calling_all_samples() because the positions overlapped
+    with noisy positions in the leaf data.
+    Here, I try to get them by using only the FC cutoff.
+    '''
+
+    from collections import deque, defaultdict, Counter
+    from matplotlib import pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from tqdm import tqdm
+
+    ## Read snps/indels between assemblies identified by syri
+    syri_snp_list, syri_indel_list = getsyrivarlist()
+
+    ## Conditions for selecting variants:
+    ## Only alt alleles with more than 5 reads are considered
+    ## If a position has multiple alt_alleles => noise_pos_list AND not a somatic mutation
+    ## For syri SNP/indel positions: record alt_allele_frequency AND not a somatic mutation
+    ## If not above => save candidate SNP position
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    branches = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
+    scovs = {'wt_1':  {'l1': (40, 240), 'l2': (20, 180), 'l3': (30, 240)},
+             'wt_7':  {'l1': (30, 180), 'l2': (30, 180), 'l3': (30, 180)},
+             'wt_18': {'l1': (40, 200), 'l2': (30, 180), 'l3': (30, 180)},
+             'wt_19': {'l1': (40, 220), 'l2': (40, 220), 'l3': (40, 220)},
+             'mut_11_1': {'l1': (20, 160), 'l2': (20, 150), 'l3': (20, 180)},
+             'mut_11_2': {'l1': (30, 200), 'l2': (20, 180), 'l3': (30, 200)},
+             'mut_15': {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}}
+
+
+    posdict = defaultdict(dict)
+    for bname in branches:
+        indir = f'{cwd}/{bname}/{bname}_'
+        noise_pos = set()
+        samples_sm = {}
+        sample_syri_snp = {}
+        sample_syri_indel = {}
+        SAMPLES = ('l1', 'l2', 'l3')
+        for sample in SAMPLES:
+            filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
+            sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scovs[bname][sample][0], scovs[bname][sample][1], noise_pos, syri_snp_list, syri_indel_list)
+            noise_pos = noise_pos.union(set(sample_noise))
+            samples_sm[sample] = sm_pos
+            sample_syri_snp[sample] = snp_alfrq
+            sample_syri_indel[sample] = indel_alfrq
+
+        # Remove noise positions from candidate lists
+        for sample in SAMPLES:
+            for p in noise_pos:
+                try:
+                    samples_sm[sample].pop(p)
+                except KeyError:
+                    pass
+
+        # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
+        snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()) + list(samples_sm['l3'].keys()))
+        # snpsdict = defaultdict(dict)
+        for snp in snpslist:
+            posdict[snp][bname] = {s: samples_sm[s][snp] if snp in samples_sm[s] else (None, None, 0, 0) for s in SAMPLES}
+
+    ## Filetering posdict
+    to_pop = deque()
+    ### Select positions which are present in only 1 branch
+    for k, v in posdict.items():
+        if len(v) != 1:
+            to_pop.append(k)
+
+    ### Remove positions which are not supported by atleast 20 reads in any l1/l2
+    for k, v in tqdm(posdict.items()):
+        if any([v1['l1'][2]>20 or v1['l2'][2]>20 for v1 in v.values()]): continue
+        to_pop.append(k)
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+
+    ### Get log2(fold-change) values
+    fc = dict()
+    for k, v in posdict.items():
+        a = np.mean([v1['l1'][3] for v1 in v.values()])
+        b = np.mean([v1['l2'][3] for v1 in v.values()])
+        if b != 0:
+            if a != 0:
+                f = np.log2(a/b)
+            else:
+                f = -10
+        else:
+            f = 10
+        fc[k] = f
+
+    plt.hist(fc.values(), bins=100)
+    plt.yscale('log')
+    plt.xlabel('Log2(FC)')
+    plt.ylabel('Positions Count')
+    plt.axvline(2, color='black')
+    plt.axvline(-2, color='black')
+    ## Select positions with log2(FC) > 2 as candidate multi-branch layer-specific variations
+    selected = [k for k, v in fc.items() if v > 2 or v < -1]    # Different cutoffs to allow better selection of SMs in L2
+
+    # Filter out positions that are already selected in the corresponding
+    ## Read selected positions
+    selectedSM = pd.DataFrame()
+    for bname in branches:
+        df = pd.read_table(f'{cwd}/{bname}/high_conf_layer_specific_somatic_mutations.selected.tsv')
+        df['Sample'] = bname
+        selectedSM = pd.concat([selectedSM, df])
+    selectedSM = selectedSM.loc[selectedSM['Selected']=='Y']
+
+    newselected = deque()
+    for s in selected:
+        bname = list(posdict[s].keys())[0]
+        if selectedSM.loc[(selectedSM['Sample'] == bname) & (selectedSM['Unnamed: 0'] == s[0]) & (selectedSM['Unnamed: 1'] == s[1])].shape[0] == 0:
+            newselected.append(s)
+
+    with open(f'{cwd}/layer_specific_candidate.fc_only.tsv', 'w') as fout:
+        for s in sorted(newselected):
+            fout.write(f'{s[0]}\t{s[1]}\t')
+            st = True
+            for k, v in posdict[s].items():
+                if st:
+                    fout.write(f'{k}\t')
+                    st = False
+                else:
+                    fout.write(f'\t\t{k}\t')
+                st2 = True
+                for k1, v1 in v.items():
+                    if st2:
+                        fout.write(f'{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+                        st2=False
+                    else:
+                        fout.write(f'\t\t\t{k1}\t{v1[0]}\t{v1[1]}\t{v1[2]}\t{v1[3]}\n')
+            fout.write('\n')
+    ## 77 positions selected as candidate mutations. Next I test them manually.
+# END
 
 
 def layer_3_variant_calling(cwd, bname, scov, nc=1):
