@@ -7,7 +7,7 @@ ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/pro
 ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4954/4954_A_run545_CCS.bam MUT_15.iso_seq.ccs.bam
 
 ################################################################################
-############ Clusgter Iso-seq reads into individual barcodes ###################
+############ Cluster Iso-seq reads into individual barcodes ###################
 ################################################################################
 
 ## Select reads having good primer orientation
@@ -134,34 +134,58 @@ done
 ## Get readcount at candidate-indel positions
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.bed'
-for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    cd $CWD; cd $s
+
+# The loop below was with old list of mutations.
+#muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.bed'
+#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+#    cd $CWD; cd $s
+#    clstrs=$(ls clstrs*bam)
+#    for cls in ${clstrs[@]}; do
+#        c=$(echo $cls | sed 's/bam/rc.txt/g')
+#
+#        bam-readcount -b 0 -q 0 -w 0 -l $muts -f $refcur $cls \
+#        | awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > $c &
+##        hometools pbamrc \
+##        -l $muts \
+##        -f $refcur \
+##        -w 0 \
+##        -n 1 \
+##        $cls \
+##        $c \
+##        &
+#    done
+#done
+
+
+# All sample leaf somatic mutations
+muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.unique.regions'
+for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
+    cd $CWD; cd $sample
     clstrs=$(ls clstrs*bam)
     for cls in ${clstrs[@]}; do
-        c=$(echo $cls | sed 's/bam/rc.txt/g')
-
-        bam-readcount -b 0 -q 0 -w 0 -l $muts -f $refcur $cls \
-        | awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > $c &
-#        hometools pbamrc \
-#        -l $muts \
-#        -f $refcur \
-#        -w 0 \
-#        -n 1 \
-#        $cls \
-#        $c \
-#        &
+        c=$(echo $cls | sed 's/bam/leaf.rc.txt/g')
+        hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts $cls $c &
     done
 done
 
-
-
-for sample in ${SAMPLES[@]}; do
-    cd  $CWD; cd $sample
-    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.filtered.bam \
-| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.b30_q60.readcount &
-    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.removed.bam \
-| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.removed.b30_q60.readcount &
+# All sample layer somatic mutations
+muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.positions'
+for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
+    cd $CWD; cd $sample
+    clstrs=$(ls clstrs*bam)
+    for cls in ${clstrs[@]}; do
+        c=$(echo $cls | sed 's/bam/layer.rc.txt/g')
+        hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts $cls $c &
+    done
 done
 
-
+# This is probably not useful
+#for sample in ${SAMPLES[@]}; do
+#    cd  $CWD; cd $sample
+#    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.filtered.bam \
+#| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.b30_q60.readcount &
+#    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.removed.bam \
+#| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.removed.b30_q60.readcount &
+#done
+#
+#

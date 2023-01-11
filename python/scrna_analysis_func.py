@@ -52,7 +52,7 @@ def getcellplots(pltname='scrna_bc_stats.pdf'):
 
             fig = plt.figure(figsize=[12, 8])
             ax = fig.add_subplot(4, 2, 1)
-            ax.hist([i if i<10000 else 10000 for i in bcrc.values()], bins=100, alpha=0.7)
+            ax.hist([i if i < 10000 else 10000 for i in bcrc.values()], bins=100, alpha=0.7)
             ax.set_ylabel('#BCs')
             ax.set_xlabel('Number of reads')
             ax.set_ylabel('#BCs')
@@ -174,7 +174,7 @@ plt.ylabel("Frequency")
 plt.legend()
 
 # Select SAMPLE specific cutoff for minimum UMI
-scut = {'WT_1':1300, 'WT_19':1600, 'MUT_11_1':1200, 'MUT_15':800}
+scut = {'WT_1': 1300, 'WT_19': 1600, 'MUT_11_1': 1200, 'MUT_15': 800}
 bcslist4 = {}
 for sample in SAMPLES:
     badbcs = set([b[0] for b in sampleout[sample] if b[2] < scut[sample]])

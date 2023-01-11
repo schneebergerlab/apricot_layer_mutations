@@ -523,9 +523,46 @@ def mutation_spectra():
     plt.close()
 
     # Distribution of SMs over the genome
-
+    chrsize = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai', header=None)
+    chrsize = chrsize.iloc[:8]
+    pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
+    samplecnt = {grp[0]: grp[1].shape[0] for grp in datafilter.groupby(['chromosome', 'position', 'alt_allele'])}
+    pos['n_branch'] = [samplecnt[row.chromosome, row.position, row.alt_allele] for row in pos.itertuples(index=False)]
+    pos = pos.loc[['CUR' in c for c in pos.chromosome]]
+    chroms = pd.factorize(pos.chromosome)[1]
+    pos.chromosome = 7 - pd.factorize(pos.chromosome)[0]
+    # pos.loc[['mut' in b for b in pos.branch], 'chromosome'] += 0.1
+    # pos.loc[['mut' not in b for b in pos.branch], 'chromosome'] -= 0.1
+    pos.loc[pos.Layer == 'L1', 'chromosome'] += 0.2
+    pos.loc[pos.Layer == 'L3', 'chromosome'] -= 0.2
+    pos['branch_type'] = ['wt' if 'wt' in b else 'mut' for b in pos.branch]
+    sns.set(rc={"figure.figsize": (8, 6)})
+    sns.set_style(style='white')
+    ax = sns.scatterplot(pos, x='position', y='chromosome', hue='type', style='branch_type', zorder=1, size='n_branch', alpha=0.8)
+    ax.set_yticklabels([''] + list(chroms)[::-1])
+    ax.set_xlim([-1000000, max(chrsize[[1]].values)[0] + 1000000])
+    lab = True
+    for i in range(8):
+        if lab:
+            for j, (l, c) in enumerate({'L1': 'turquoise', 'L2': 'salmon', 'L3': 'olivedrab'}.items()):
+                ax.axhline(i+0.2-(j*0.2), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=2, zorder=0, alpha=0.5, color=c, label=l)
+            lab = False
+            continue
+        for j, (l, c) in enumerate({'L1': 'turquoise', 'L2': 'salmon', 'L3': 'olivedrab'}.items()):
+            ax.axhline(i+0.2-(j*0.2), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=2, zorder=0, alpha=0.5, color=c)
+    ax.legend(frameon=False)
+    ax.spines[:].set_visible(False)
+    ax.tick_params(left=False)
+    ax.set_ylabel(None)
+    ax.set_xlabel('Chromosome position')
+    ax.set_title("Distribution of somatic mutations in the genome")
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/sm_dist_over_genome.pdf')
+    plt.close()
 
     # Check the presence of somatic mutations in the scRNA data
+
+    # Check the relationships between branching/branch lengths to SMs
 
 
 

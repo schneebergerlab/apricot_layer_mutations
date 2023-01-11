@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from collections import deque, Counter
+from collections import deque, Counter, defaultdict
 import sys
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
 from myUsefulFunctions import revcomp
@@ -71,22 +71,77 @@ for s in SAMPLES:
         v.close()
 
 # Plot Alt-readcount frequency
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-snps=pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions', header=None)
-snps = snps.head(39)
-snps[1] = snps[1].astype(int)
-snps.sort_values([7, 0, 1], inplace=True)
-snps['af'] = ['high' if af >0.2 else 'low' for af in snps[6]]
-BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-snprc = pd.DataFrame()
-for s in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
-    clsrc = sorted([i for i in os.listdir('{}/{}'.format(CWD, s)) if 'rc.txt' in i])
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+# snps=pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions', header=None)
+muts=pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
+sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
+basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+# snps = snps.head(39)
+# snps[1] = snps[1].astype(int)
+muts.sort_values(['branch', 'chromosome', 'position'], inplace=True)
+pos = set(zip(muts.chromosome, muts.position, muts.alt_allele))
+# snps['af'] = ['high' if af > 0.2 else 'low' for af in snps[6]]
+mutsrc = pd.DataFrame()
+# snprc = pd.DataFrame()
+
+# mutsrc = defaultdict(dict)
+for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+    clsrc = sorted([i for i in os.listdir('{}/{}'.format(cwd, bname)) if 'layer.rc.txt' in i])
+    print(clsrc)
+    bdf = pd.DataFrame()
     for cls in clsrc:
-        df = pd.read_table('{}/{}/{}'.format(CWD, s, cls), header=None)
-        df['s'] = s
-        df['cls'] = cls.split('.')[0]
-        snprc = pd.concat([snprc, df])
-snprc = snprc.loc[(snprc[0].astype(str)+snprc[1].astype(str)).isin(list(snps[0].astype(str)+snps[1].astype(str)))]
+        clsdf = defaultdict(dict)
+        clsname = cls.split(".")[0]
+        with open('{}/{}/{}'.format(cwd, bname, cls), 'r') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if len(line) == 0: continue
+                alts = deque()
+                # print(line)
+                for p in pos:
+                    if (line[0], int(line[1])) == (p[0], p[1]):
+                        alts.append(p[2])
+                # print(alts)
+
+                for alt in alts:
+                    if int(line[3]) == 0:
+                        # mutsrc[bname][line[0], int(line[1]), alt] = (0, 0, 0)
+                        continue
+                    try:
+                        clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[basedict[alt]]), 'af': round(int(line[basedict[alt]])/int(line[3]), 2)}
+                        # af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
+                    except KeyError:
+                        try:
+                            i = line.index(alt)
+                            clsdf[line[0], int(line[1]), alt] = {'rc':int(line[3]),'ac': int(line[i+1]), 'af': round(int(line[i+1])/int(line[3]), 2)}
+                            # rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
+                            # af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
+                        except ValueError:
+                            pass
+                            # mutsrc[bname][line[0], int(line[1]), alt] = (0, 0, 0)
+                            # rc[bname][line[0], int(line[1]), alt] = 0
+                            # af[bname][line[0], int(line[1]), alt] = 0
+        clsdf = pd.DataFrame(clsdf).transpose()
+        clsdf['cls'] = clsname
+        clsdf['branch'] = sdict[bname]
+        mutsrc = pd.concat([mutsrc, clsdf])
+mutsrc.reset_index(level=[0, 1, 2], inplace=True)
+mutsrc.columns = ['chromosome', 'position', 'alt_allele'] + list(mutsrc.columns[3:])
+mutmerge = mutsrc.merge(muts, on=['chromosome', 'position', 'alt_allele', 'branch'], how='left')
+mutmerge.sort_values(['chromosome', 'position', 'alt_allele'], inplace=True)
+mutmerge.reset_index(drop=True, inplace=True)
+mutmerge['p'] = mutmerge.chromosome.astype(str) + '_' + mutmerge.position.astype(str) + '_' + mutmerge.alt_allele.astype(str)
+mutmerge['c'] = mutmerge.branch.astype(str) + '_' + mutmerge.cls.astype(str)
+fig = plt.figure()
+ax = fig.add_subplot(3,1,1)
+sns.scatterplot(mutmerge, x='p', y='c', hue='rc')
+ax.set_xticklabels(ax.xaxis.get_majorticklabels(), rotation=90)
+ax = fig.add_subplot(3,1,2)
+sns.scatterplot(mutmerge, x='p', y='c', hue='ac')
+ax = fig.add_subplot(3,1,3)
+sns.scatterplot(mutmerge, x='p', y='c', hue='af')
+
+ax = sns.heatmap(rcdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
 
 snpclsrc = deque()
 snpclsac = deque()
@@ -183,25 +238,25 @@ for s in SAMPLES:
     df2 = df.loc[df.rname.str.contains('CUR')]
     rncnt = Counter(df2.rname)
 
-    ax1 = fig.add_subplot(4,5,i+1)
-    ax1 = sns.barplot(x=list(rncnt.keys()),y=list(rncnt.values()))
+    ax1 = fig.add_subplot(4, 5, i+1)
+    ax1 = sns.barplot(x=list(rncnt.keys()), y=list(rncnt.values()))
     ax1.set_ylabel("Read count")
-    ax1.set_ylim([0,200000])
-    ax1.tick_params(axis='x', labelrotation = 90)
+    ax1.set_ylim([0, 200000])
+    ax1.tick_params(axis='x', labelrotation=90)
     ax1.ticklabel_format(axis='y', style='scientific', scilimits=(0,2))
 
-    ax2 = fig.add_subplot(4,5,i+2)
-    ax2 = sns.barplot(x=list(rncnt.keys()),y=[rncnt[k]/genecnts[k] for k in rncnt.keys()])
-    ax2.set_ylim([0,30])
+    ax2 = fig.add_subplot(4, 5, i+2)
+    ax2 = sns.barplot(x=list(rncnt.keys()), y=[rncnt[k]/genecnts[k] for k in rncnt.keys()])
+    ax2.set_ylim([0, 30])
     ax2.set_ylabel("Read per gene")
-    ax2.tick_params(axis='x', labelrotation = 90)
+    ax2.tick_params(axis='x', labelrotation=90)
 
-    ax3 = fig.add_subplot(4,5,i+3)
+    ax3 = fig.add_subplot(4, 5, i+3)
     ax3 = sns.countplot(x='clstr', data=df2)
-    ax3.set_ylim([0,200000])
+    ax3.set_ylim([0, 200000])
     ax3.set_ylabel("Read count")
     ax3.set_xlabel(None)
-    ax3.tick_params(axis='x', labelrotation = 90)
+    ax3.tick_params(axis='x', labelrotation=90)
     ax3.ticklabel_format(axis='y', style='scientific', scilimits=(0,2))
 
     ax4 = fig.add_subplot(4,5,i+4)
