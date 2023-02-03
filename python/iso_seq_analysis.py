@@ -82,9 +82,7 @@ muts.sort_values(['branch', 'chromosome', 'position'], inplace=True)
 pos = set(zip(muts.chromosome, muts.position, muts.alt_allele))
 # snps['af'] = ['high' if af > 0.2 else 'low' for af in snps[6]]
 mutsrc = pd.DataFrame()
-# snprc = pd.DataFrame()
 
-# mutsrc = defaultdict(dict)
 for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
     clsrc = sorted([i for i in os.listdir('{}/{}'.format(cwd, bname)) if 'layer.rc.txt' in i])
     print(clsrc)
@@ -105,22 +103,16 @@ for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
 
                 for alt in alts:
                     if int(line[3]) == 0:
-                        # mutsrc[bname][line[0], int(line[1]), alt] = (0, 0, 0)
+                        clsdf[line[0], int(line[1]), alt] = {'rc': 0, 'ac': 0, 'af': 0}
                         continue
                     try:
                         clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[basedict[alt]]), 'af': round(int(line[basedict[alt]])/int(line[3]), 2)}
-                        # af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
                     except KeyError:
                         try:
                             i = line.index(alt)
-                            clsdf[line[0], int(line[1]), alt] = {'rc':int(line[3]),'ac': int(line[i+1]), 'af': round(int(line[i+1])/int(line[3]), 2)}
-                            # rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
-                            # af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
+                            clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[i+1]), 'af': round(int(line[i+1])/int(line[3]), 2)}
                         except ValueError:
-                            pass
-                            # mutsrc[bname][line[0], int(line[1]), alt] = (0, 0, 0)
-                            # rc[bname][line[0], int(line[1]), alt] = 0
-                            # af[bname][line[0], int(line[1]), alt] = 0
+                            clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': 0, 'af': 0}
         clsdf = pd.DataFrame(clsdf).transpose()
         clsdf['cls'] = clsname
         clsdf['branch'] = sdict[bname]
@@ -132,69 +124,117 @@ mutmerge.sort_values(['chromosome', 'position', 'alt_allele'], inplace=True)
 mutmerge.reset_index(drop=True, inplace=True)
 mutmerge['p'] = mutmerge.chromosome.astype(str) + '_' + mutmerge.position.astype(str) + '_' + mutmerge.alt_allele.astype(str)
 mutmerge['c'] = mutmerge.branch.astype(str) + '_' + mutmerge.cls.astype(str)
-fig = plt.figure()
-ax = fig.add_subplot(3,1,1)
-sns.scatterplot(mutmerge, x='p', y='c', hue='rc')
-ax.set_xticklabels(ax.xaxis.get_majorticklabels(), rotation=90)
-ax = fig.add_subplot(3,1,2)
-sns.scatterplot(mutmerge, x='p', y='c', hue='ac')
-ax = fig.add_subplot(3,1,3)
-sns.scatterplot(mutmerge, x='p', y='c', hue='af')
+nonzeropos = set(mutmerge.loc[mutmerge.rc > 0].p)
+mutmerge = mutmerge.loc[mutmerge.p.isin(nonzeropos)]
 
-ax = sns.heatmap(rcdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
 
-snpclsrc = deque()
-snpclsac = deque()
-snpclsaf = deque()
+allpos = pd.DataFrame(product(mutmerge.p.unique(), mutmerge.c.unique()))
+allpos.columns = ['p', 'c']
+allpos = allpos.merge(mutmerge, how='left', on=['p', 'c'])
+allpos.loc[allpos.rc.isna(), ['rc', 'ac', 'af']] = -1
 
-warnings.filterwarnings("error")
-for g in snprc.groupby(['s', 'cls']):
-    b=0
-    clsrc = deque()
-    clsac = deque()
-    clsaf = deque()
-    for snp in snps.itertuples(index=False):
-        snpg = g[1].loc[(g[1][0] == snp[0]) & (g[1][1] == snp[1])]
-        if snpg.shape[0] == 0:
-            clsrc.append(-1)
-            clsac.append(-1)
-            clsaf.append(0)
-            continue
-        if snpg.shape[0] != 1:
-            print("ERROR in snp and cls: {} {} {}".format(snp[0]+str(snp[1]), g[0][0], g[0][1]))
-            continue
-        if snpg.iat[0, 3] == 0:
-            clsrc.append(0)
-            clsac.append(0)
-            clsaf.append(0)
-        else:
-            clsrc.append(snpg.iat[0, 3])
-            clsac.append(snpg.iat[0, BASE_DICT[snp[4]]])
-            clsaf.append(snpg.iat[0, BASE_DICT[snp[4]]]/snpg.iat[0, 3])
-    snpclsrc.append(g[0] + tuple(clsrc))
-    snpclsac.append(g[0] + tuple(clsac))
-    snpclsaf.append(g[0] + tuple(clsaf))
 
-rcdf = pd.DataFrame(snpclsrc)
-acdf = pd.DataFrame(snpclsac)
-afdf = pd.DataFrame(snpclsaf)
-xticks = list(snps.iloc[:, 7].astype(str) + "_" + snps.iloc[:, 0].astype(str)+":"+snps.iloc[:, 1].astype(str) + "_" + snps['af'])
-yticks = list(rcdf.iloc[:, 0].astype(str) + "_" + rcdf.iloc[:, 1].astype(str))
-fig = plt.figure(figsize=[10, 14])
-plt.rcParams.update({'font.size': 8})
+L1pos = muts.loc[(muts.Layer=='L1') & (muts.branch.isin(['mut_11_1', 'mut_15', 'wt_1', 'wt_19']))]
+L1pos = set(L1pos.chromosome.astype(str) + '_' + L1pos.position.astype(str) + '_' + L1pos.alt_allele.astype(str))
+L2pos = muts.loc[(muts.Layer=='L2') & (muts.branch.isin(['mut_11_1', 'mut_15', 'wt_1', 'wt_19']))]
+L2pos = set(L2pos.chromosome.astype(str) + '_' + L2pos.position.astype(str) + '_' + L2pos.alt_allele.astype(str))
+
+cmap = [(1, 1, 1, 1) for i in np.linspace(0.1, 0, 10)] + [(1, 1-i, 1-i, 1) for i in np.linspace(0, 1, 110)]
+cmap=mcolors.ListedColormap(cmap) # make color map
+
+fig = plt.figure(figsize=[8, 14])
 ax = fig.add_subplot(3, 1, 1)
-ax = sns.heatmap(rcdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
-ax.set_title("Read coverage")
+# Normalise values of rc, ac, af to be in range
+rchm = allpos.pivot(index='c', columns='p')['rc']
+rchm = pd.concat([rchm.loc[:, [c for c in rchm.columns if c in L1pos]], rchm.loc[:, [c for c in rchm.columns if c in L2pos]]], axis=1)
+rchm = rchm*10/rchm.values.max()
+rchm[rchm < 0] = -1
+sns.heatmap(rchm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=False, yticklabels=rchm.index, cbar_kws={'label': 'Normalized read count', 'fraction': 0.05}, ax=ax, vmin=-1)
+ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
+ax.vlines([len([c for c in rchm.columns if c in L1pos])], *ax.get_ylim(), color='k')
+ax.set_ylabel('')
+ax.set_xlabel('')
+ax.set_title('Normalized read count')
+
 ax = fig.add_subplot(3, 1, 2)
-ax = sns.heatmap(acdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
-ax.set_title("Alt allele read count")
+achm = allpos.pivot(index='c', columns='p')['ac']
+achm = pd.concat([achm.loc[:, [c for c in achm.columns if c in L1pos]], achm.loc[:, [c for c in achm.columns if c in L2pos]]], axis=1)
+achm = achm*10/achm.values.max()
+achm[achm < 0] = -1
+sns.heatmap(achm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=False, yticklabels=achm.index, cbar_kws={'label': 'Normalized allele count', 'fraction': 0.05}, ax=ax, vmin=-1)
+ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
+ax.vlines([len([c for c in achm.columns if c in L1pos])], *ax.get_ylim(), color='k')
+ax.set_ylabel('')
+ax.set_xlabel('')
+ax.set_title('Normalized allele count')
+
 ax = fig.add_subplot(3, 1, 3)
-ax = sns.heatmap(afdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=xticks, yticklabels=yticks, cbar_kws={'fraction': 0.05})
-ax.set_title("Alt allele frequency")
+afhm = allpos.pivot(index=['c'], columns='p')['af']
+afhm = pd.concat([afhm.loc[:, [c for c in afhm.columns if c in L1pos]], afhm.loc[:, [c for c in afhm.columns if c in L2pos]]], axis=1)
+afhm = afhm*10/afhm.values.max()
+afhm[afhm < 0] = -1
+sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, norm=norm, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
+ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
+ax.vlines([len([c for c in afhm.columns if c in L1pos])], *ax.get_ylim(), color='k')
+ax.set_xlabel('')
+ax.set_ylabel('')
+ax.set_title('Normalized allele frequency')
 plt.tight_layout()
-plt.savefig(CWD+"mut_rc_iso_seq.pdf")
-plt.savefig(CWD+"mut_rc_iso_seq.png")
+plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/var_af_in_iso_seq_clusters.pdf')
 plt.close()
+
+# snpclsrc = deque()
+# snpclsac = deque()
+# snpclsaf = deque()
+#
+# warnings.filterwarnings("error")
+# for g in snprc.groupby(['s', 'cls']):
+#     b=0
+#     clsrc = deque()
+#     clsac = deque()
+#     clsaf = deque()
+#     for snp in snps.itertuples(index=False):
+#         snpg = g[1].loc[(g[1][0] == snp[0]) & (g[1][1] == snp[1])]
+#         if snpg.shape[0] == 0:
+#             clsrc.append(-1)
+#             clsac.append(-1)
+#             clsaf.append(0)
+#             continue
+#         if snpg.shape[0] != 1:
+#             print("ERROR in snp and cls: {} {} {}".format(snp[0]+str(snp[1]), g[0][0], g[0][1]))
+#             continue
+#         if snpg.iat[0, 3] == 0:
+#             clsrc.append(0)
+#             clsac.append(0)
+#             clsaf.append(0)
+#         else:
+#             clsrc.append(snpg.iat[0, 3])
+#             clsac.append(snpg.iat[0, BASE_DICT[snp[4]]])
+#             clsaf.append(snpg.iat[0, BASE_DICT[snp[4]]]/snpg.iat[0, 3])
+#     snpclsrc.append(g[0] + tuple(clsrc))
+#     snpclsac.append(g[0] + tuple(clsac))
+#     snpclsaf.append(g[0] + tuple(clsaf))
+#
+# rcdf = pd.DataFrame(snpclsrc)
+# acdf = pd.DataFrame(snpclsac)
+# afdf = pd.DataFrame(snpclsaf)
+# xticks = list(snps.iloc[:, 7].astype(str) + "_" + snps.iloc[:, 0].astype(str)+":"+snps.iloc[:, 1].astype(str) + "_" + snps['af'])
+# yticks = list(rcdf.iloc[:, 0].astype(str) + "_" + rcdf.iloc[:, 1].astype(str))
+# fig = plt.figure(figsize=[10, 14])
+# plt.rcParams.update({'font.size': 8})
+# ax = fig.add_subplot(3, 1, 1)
+# ax = sns.heatmap(rcdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
+# ax.set_title("Read coverage")
+# ax = fig.add_subplot(3, 1, 2)
+# ax = sns.heatmap(acdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=False, yticklabels=yticks, cbar_kws={'fraction': 0.05})
+# ax.set_title("Alt allele read count")
+# ax = fig.add_subplot(3, 1, 3)
+# ax = sns.heatmap(afdf.iloc[:, 2:], linewidths=0.2, linecolor='k', center=0, cmap='seismic', xticklabels=xticks, yticklabels=yticks, cbar_kws={'fraction': 0.05})
+# ax.set_title("Alt allele frequency")
+# plt.tight_layout()
+# plt.savefig(CWD+"mut_rc_iso_seq.pdf")
+# plt.savefig(CWD+"mut_rc_iso_seq.png")
+# plt.close()
 
 # Get cluster-specific read stats
 s_cls_rc = {}

@@ -307,3 +307,83 @@ seq = deque()
 for row in SNPs.itertuples(index=False):
     seq.append((ref[row[0]][row[1]-2: row[1]], ref[row[0]][row[1]-1: row[1]+1]))
 
+################################################################################
+################################################################################
+################################################################################
+
+## ReDo analysis with the mutations from all leaves and layer data (30.01.2023)
+## Read somatic mutation list
+sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
+refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+
+leafsm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
+layersm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt")
+leafsm = leafsm[[0, 1, 2, 3, 6]]
+leafsm.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele', 'branch']
+leafsm['Layer'] = '-'
+layersm = layersm[['chromosome', 'position', 'ref_allele', 'alt_allele', 'branch', 'Layer']]
+leafsm['branch'] = [sdict[b] for b in leafsm['branch']]
+
+smpos = pd.concat([leafsm, layersm])
+smpos.sort_values(['chromosome', 'position'], inplace=True)
+smpos.reset_index(drop=True, inplace=True)
+f ='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/somatic_mutations.vcf'
+df2vcf(smpos, f, refcur)
+
+def df2vcf(df, f, ref):
+    from datetime import date
+    from hometools.hometools import readfasta
+    df = df.drop_duplicates(['chromosome', 'position', 'ref_allele', 'alt_allele'])
+    with open(f, 'w') as fout:
+        fout.write('##fileformat=VCFv4.3\n')
+        fout.write('##fileDate=' + str(date.today()).replace('-', '') + '\n')
+        fout.write('##source=syri\n')
+        fout.write('\t'.join(['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']) + '\n')
+        ref=readfasta(ref)
+        print(df.shape)
+        for row in df.itertuples(index=False):
+            if '-' in row[3]:
+                pos = row[1]-1
+                r = ref[row[0]][row[1] - 2] + row[3][1:]
+                a = ref[row[0]][row[1] - 2]
+            elif '+' in row[3]:
+                pos = row[1]
+                r = row[2]
+                a = row[2] + row[3][1:]
+            else:
+                pos = row[1]
+                r = row[2]
+                a = row[3]
+            fout.write('\t'.join(list(map(str, [row[0], pos, '.', r, a, '.', 'PASS', '.'])))+"\n")
+#END
+## Run snpeff with command:
+## java -jar /srv/netscratch/dep_mercier/grp_schneeberger/bin/snpEff/snpEff5.1d/snpEff.jar currot.v1 somatic_mutations.vcf > somatic_mutations.ann.vcf
+
+# Get SMs in mutant branches
+smmut = smpos.loc[smpos.branch.isin(['mut_11_1', 'mut_11_2', 'mut_15'])]
+samplecnt = {grp[0]: grp[1].shape[0] for grp in smmut.groupby(['chromosome', 'position', 'alt_allele'])}
+smmut.drop_duplicates(['chromosome', 'position', 'ref_allele', 'alt_allele'], inplace=True)
+# Read snpeff output VCF and select mutant SMs
+# pos = set(zip(smmut.chromosome, smmut.position))
+pos = set([(k[0], k[1]) for k, v in samplecnt.items() if v == 3])
+posann = deque()
+with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/snpeff_run/somatic_mutations.ann.vcf', 'r') as fin:
+    for line in fin:
+        if line[0] == '#': continue
+        line = line.strip().split()
+        if (line[0], int(line[1])) in pos:
+            posann.append(line)
+# Get list of affected/nearby genes
+genesann = deque()
+for p in posann:
+    a = p[7].split('=')[1].split(',')
+    for a1 in a:
+        b = a1.split('|')[3]
+        if b == '': continue
+        if '-' in b:
+            genesann.extend(b.split('-'))
+        else:
+            genesann.append(b)
+genesann = set(genesann)
+with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/snpeff_run/somatic_mutations.affected_genes.txt', 'w') as fout:
+    fout.write('\n'.join(genesann))

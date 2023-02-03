@@ -177,6 +177,7 @@ def mutation_spectra():
 
 
     cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    bnames = ['mut_11_1', 'mut_11_2', 'wt_19', 'wt_1', 'mut_15', 'wt_18', 'wt_7']
     # Get mutation spectra (transitions vs transversions) for L1 and L2
     data = pd.read_table(f'{cwd}all_layer_somatic_variants.txt')
     ## Because reads L3 are not enriched for L3 and are mostly L2, removing them
@@ -224,21 +225,22 @@ def mutation_spectra():
     df = df.melt(id_vars=['var'])
     df.columns = ['SNP type', 'Layer', 'Percentage of variants']
 
-    plt.rc('font', size=29.5)
-    fig = plt.figure(figsize=[28, 8])
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=[8, 3.5])
     ax = fig.add_subplot()
     sns.barplot(data=df, x='SNP type', y='Percentage of variants', hue='Layer', order=['A>G', 'T>C', 'G>A', 'C>T', 'A>C', 'T>G', 'A>T', 'T>A', 'G>T', 'C>A', 'G>C', 'C>G'], ax=ax)
     ax.legend(frameon=False, title='Layer')
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
+    ax.tick_params(axis='x', rotation=45)
     plt.tight_layout(pad=0)
-    plt.savefig(f'{cwd}/snps_mutation_spectra.svg', dpi=600)
+    plt.savefig(f'{cwd}/snps_mutation_spectra.png', dpi=600)
     subprocess.call(f'inkscape {cwd}/snps_mutation_spectra.svg -M {cwd}/snps_mutation_spectra.emf', shell=True)
     plt.close()
 
     # Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2
     ## Get readcounts from the leaf BAM files, using code in layer_specific_dna_analysis_all_samples.sh
-    datafilter = data.loc[:, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Layer', 'type']].drop_duplicates()    # Filtered dataframe to be used for generating statistics
+    datafilter = data.loc[:, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Layer', 'type']].drop_duplicates(subset=['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer', 'type'])    # Filtered dataframe to be used for generating statistics
     datafilter.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt', index=False, header=True, sep='\t')
     pos = set(zip(datafilter.chromosome, datafilter.position, datafilter.alt_allele))
     rc = dict()
@@ -306,10 +308,10 @@ def mutation_spectra():
     afvalues = pd.DataFrame(af)
     rcvalues['var_type'] = [datafilter.loc[(datafilter.chromosome==k[0]) & (datafilter.position==k[1]) & (datafilter.alt_allele==k[2])].iloc[0].type for k in rcvalues.index.values]
     rcvalues['var_tissue'] = [datafilter.loc[(datafilter.chromosome==k[0]) & (datafilter.position==k[1]) & (datafilter.alt_allele==k[2])].iloc[0].Layer for k in rcvalues.index.values]
-    rcvalues.sort_values(['var_type', 'var_tissue'], inplace=True)
+    rcvalues.sort_values(['var_type', 'var_tissue'], inplace=True, ascending=False)
     afvalues['var_type'] = [datafilter.loc[(datafilter.chromosome==k[0]) & (datafilter.position==k[1]) & (datafilter.alt_allele==k[2])].iloc[0].type for k in afvalues.index.values]
     afvalues['var_tissue'] = [datafilter.loc[(datafilter.chromosome==k[0]) & (datafilter.position==k[1]) & (datafilter.alt_allele==k[2])].iloc[0].Layer for k in afvalues.index.values]
-    afvalues.sort_values(['var_type', 'var_tissue'], inplace=True)
+    afvalues.sort_values(['var_type', 'var_tissue'], inplace=True, ascending=False)
 
     annocol = pd.DataFrame({
         'branch': list(rcvalues.columns[:8]) + [c.rsplit('_', maxsplit=1)[0] for c in rcvalues.columns[8:29]],
@@ -338,7 +340,6 @@ def mutation_spectra():
     # ax.set_ylabel('Somatic Mutations')
     # fig.savefig(f"{cwd}/all_layer_somatic_variants.allele_freq.png", dpi=600)
     # plt.close()
-    subprocess.call(f'inkscape {cwd}/snps_mutation_spectra.svg -M {cwd}/snps_mutation_spectra.emf', shell=True)
     subprocess.call(f'inkscape {cwd}/all_layer_somatic_variants.allele_freq.pdf -M {cwd}/all_layer_somatic_variants.allele_freq.emf', shell=True)
 
     # SMs overlapping genes, TEs, and intergenic, annotations
@@ -390,8 +391,8 @@ def mutation_spectra():
 
     bar_width = 0.40
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
-    plt.rc('font', size=14)
-    fig = plt.figure(figsize=[14, 4])
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=[12, 3])
 
     ax = fig.add_subplot(1, 2, 1)
     y_bottom = [0]*5
@@ -440,15 +441,49 @@ def mutation_spectra():
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     plt.tight_layout(pad=0)
-    plt.savefig(f'{cwd}/all_layer_somatic_variants.annotation_overlap.svg', dpi=600)
+    plt.savefig(f'{cwd}/all_layer_somatic_variants.annotation_overlap.png', dpi=600)
     plt.close()
     subprocess.call(f'inkscape {cwd}/all_layer_somatic_variants.annotation_overlap.svg -M {cwd}/all_layer_somatic_variants.annotation_overlap.emf', shell=True)
+
+    # Plot for number of SMs per branch
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    branchsmcnt = {g[0]: g[1].branch.value_counts() for g in datafilter.groupby('type')}
+    plt.rc('font', size=15)
+    fig, ax = plt.subplots(figsize=[5, 3])
+    bottom = [0]*7
+    for t in ['SNP', 'Indel']:
+        h = [branchsmcnt[t][b] for b in branches]
+        ax.bar(branches, h, bottom=bottom, label=t)
+        bottom = h
+    ax.legend(frameon=False, loc='lower left', bbox_to_anchor=(0.85, 0.75))
+    # ax.tick_params(rotation=45)
+    ax.set_xlabel("Branch")
+    ax.set_ylabel("Number of SMs")
+    ax.set_xticklabels(['w1', 'w2', 'w3', 'w4', 'm1', 'm2', 'm3'])
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/sm_counts_in_branches.png', dpi=600)
+    plt.close()
+
 
     # Indel size distribution
     inddf = datafilter.loc[datafilter['type']=='Indel'].copy()
     inddf.drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele'], inplace=True)
     inddf['size'] = [len(a)-1 if '+' in a else 1-len(a) for a in inddf.alt_allele]
-    plt.hist(inddf['size'], bins=29)
+    fig = plt.figure(figsize=[5, 3])
+    ax = fig.add_subplot()
+    ax.hist(inddf.loc[inddf['size'] < 0, 'size'], bins=np.linspace(-17, 0, 18), label='deletions')
+    ax.hist(inddf.loc[inddf['size'] > 0, 'size'], bins=np.linspace(0, 12, 13), label='insertions')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_xlabel("Indel size")
+    ax.set_ylabel("Number of indels")
+    ax.legend(frameon=False)
+    plt.tight_layout(pad=0)
+    plt.savefig(f'{cwd}/indel_size_distribution.png', dpi=600)
+    plt.close()
+
 
     # Get maximum spanning tree and hierarchical clustering between branches (this would show
     # whether the SMs fit the morphology of the tree)
@@ -458,7 +493,8 @@ def mutation_spectra():
     pos = pos.groupby(['chromosome', 'position', 'ref_allele', 'alt_allele']).filter(lambda x: len(x)<7)
     branchpos = {grp[0]: {tuple(r) for r in grp[1].itertuples(index=False)} for grp in pos.groupby(level=0)}
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
-    fig = plt.figure()
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=[7, 5])
     ax = fig.add_subplot(1, 2, 1)
 
     ## Get distances for hierarchical clustering
@@ -470,12 +506,12 @@ def mutation_spectra():
             AM.append(30 - len(branchpos[s].intersection(branchpos[e])))
     AM = list(AM)
     Z = linkage(AM, method='ward')
-    dendrogram(optimal_leaf_ordering(Z, AM), ax=ax)
+    dendrogram(optimal_leaf_ordering(Z, AM), ax=ax, leaf_font_size=15)
     # ax = plt.gca()
     ax.spines[:].set_visible(False)
     ax.tick_params(left=False, labelleft=False)
     ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=plt.xticks()[0], rotation=90)
-    ax.set_title("Clustering of branches based on SMs")
+    # ax.set_title("Clustering of branches based on SMs")
     plt.tight_layout(pad=1)
 
     ## Get adjacency matrix for minimum spanning tree
@@ -489,11 +525,11 @@ def mutation_spectra():
 
     ax = fig.add_subplot(2, 2, 2)
     ig.plot(g, target=ax, layout='davidson_harel', vertex_label=g.vs["name"], edge_width=np.log1p(g.es['weight']), vertex_size=0.2)
-    ax.set_title('Shared SMs between branches')
+    ax.set_xlabel('branch connectivity')
     ax = fig.add_subplot(2, 2, 4)
     ig.plot(T, target=ax, layout='davidson_harel', vertex_label=T.vs["name"], edge_width=np.log1p(T.es['weight']), vertex_size=0.2)
-    ax.set_title('Maximum spanning tree')
-    plt.tight_layout(pad=2)
+    ax.set_xlabel('Maximum spanning tree')
+    plt.tight_layout(h_pad=2, w_pad=0)
 
     # Get AF plots of layer mutations in leaves (this would demonstrate that the
     # layer 1 mutations could not be identified in leaves, further support that
@@ -527,42 +563,138 @@ def mutation_spectra():
     chrsize = chrsize.iloc[:8]
     pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
     samplecnt = {grp[0]: grp[1].shape[0] for grp in datafilter.groupby(['chromosome', 'position', 'alt_allele'])}
-    pos['n_branch'] = [samplecnt[row.chromosome, row.position, row.alt_allele] for row in pos.itertuples(index=False)]
+    pos['Branch Count'] = [samplecnt[row.chromosome, row.position, row.alt_allele] for row in pos.itertuples(index=False)]
     pos = pos.loc[['CUR' in c for c in pos.chromosome]]
     chroms = pd.factorize(pos.chromosome)[1]
     pos.chromosome = 7 - pd.factorize(pos.chromosome)[0]
     # pos.loc[['mut' in b for b in pos.branch], 'chromosome'] += 0.1
     # pos.loc[['mut' not in b for b in pos.branch], 'chromosome'] -= 0.1
-    pos.loc[pos.Layer == 'L1', 'chromosome'] += 0.2
+    margin = 0.2    # Change to adjust space between L1 and L2 tracks
+    pos.loc[pos.Layer == 'L1', 'chromosome'] += margin
+    pos.loc[pos.Layer == 'L2', 'chromosome'] -= margin
     pos.loc[pos.Layer == 'L3', 'chromosome'] -= 0.2
     pos['branch_type'] = ['wt' if 'wt' in b else 'mut' for b in pos.branch]
-    sns.set(rc={"figure.figsize": (8, 6)})
+
+    sns.set(rc={"figure.figsize": (4, 6)}, font_scale=1.2)
     sns.set_style(style='white')
-    ax = sns.scatterplot(pos, x='position', y='chromosome', hue='type', style='branch_type', zorder=1, size='n_branch', alpha=0.8)
+    # ax = sns.scatterplot(pos, x='position', y='chromosome', hue='type', style='branch_type', zorder=1, size='n_branch', alpha=0.8)
+    # ax = sns.scatterplot(pos[pos.Layer != 'L3'], x='position', y='chromosome', hue='type', style='type', zorder=1, size='Branch Count', sizes=(40, 100), alpha=0.8)
+    ax = sns.scatterplot(pos[pos.Layer != 'L3'], x='position', y='chromosome', hue='type', style='type', zorder=1, s=60, alpha=0.8)
     ax.set_yticklabels([''] + list(chroms)[::-1])
     ax.set_xlim([-1000000, max(chrsize[[1]].values)[0] + 1000000])
     lab = True
+    ldict = {'L1': 'turquoise', 'L2': 'olivedrab', 'L3': 'salmon'}
+    ldict = {'L1': 'turquoise', 'L2': 'olivedrab'}
     for i in range(8):
         if lab:
-            for j, (l, c) in enumerate({'L1': 'turquoise', 'L2': 'salmon', 'L3': 'olivedrab'}.items()):
-                ax.axhline(i+0.2-(j*0.2), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=2, zorder=0, alpha=0.5, color=c, label=l)
+            for j, (l, c) in enumerate(ldict.items()):
+                ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=c, label=l)
             lab = False
             continue
-        for j, (l, c) in enumerate({'L1': 'turquoise', 'L2': 'salmon', 'L3': 'olivedrab'}.items()):
-            ax.axhline(i+0.2-(j*0.2), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=2, zorder=0, alpha=0.5, color=c)
+        for j, (l, c) in enumerate(ldict.items()):
+            ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=c)
+    # garb = ax.get_legend_handles_labels()
+    # ax.legend([garb[0][i] for i in [0, 1, 2, 11, 12, 3, 4, 6, 8, 10]], [garb[1][i] for i in [0, 1, 2, 11, 12, 3, 4, 6, 8, 10]], ncols=2, frameon=False)
+    # ax.legend([garb[0][i] for i in [1, 2, 11, 12, 3, 4, 6, 8, 10]], [garb[1][i] for i in [1, 2, 11, 12, 3, 4, 6, 8, 10]], ncols=1, frameon=False)
     ax.legend(frameon=False)
+    # ax.legend(frameon=False, ncols=2)
     ax.spines[:].set_visible(False)
     ax.tick_params(left=False)
     ax.set_ylabel(None)
-    ax.set_xlabel('Chromosome position')
-    ax.set_title("Distribution of somatic mutations in the genome")
-    plt.tight_layout()
-    plt.savefig(f'{cwd}/sm_dist_over_genome.pdf')
+    ax.set_xlabel('Position (in 10Mb)')
+    ax.set_ylabel('Chromosome')
+    ax.set_title("Distribution of somatic mutations\n in the genome")
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/sm_dist_over_genome.png', dpi=600)
+    plt.close()
+
+    n_branch = Counter(pos['Branch Count'])
+    plt.rc('font', size=15)
+    fig, ax = plt.subplots(figsize=[4, 3])
+    plt.bar(range(1, 8), [n_branch[i] for i in range(1, 8)])
+    plt.xlabel("Number of branches")
+    plt.ylabel("Number of SMs")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_xticks(list(range(1, 8)), list(range(1, 8)))
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/number_sm_per_branch.png', dpi=600)
     plt.close()
 
     # Check the presence of somatic mutations in the scRNA data
+    ## Done in iso_seq_analysis.py
+
+    # Example plot showing mutations having higher AF in L1 in all branches
+    pos = ('CUR1G', 34111279, '+AT')
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+
+    readcnt = defaultdict(dict)
+    for bname in branches:
+        for l in ('l1', 'l2', 'l3'):
+            with open(f'{cwd}/{bname}/{bname}_{l}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt', 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    if line[0] == pos[0]:
+                        if int(line[1]) == pos[1]:
+                            try:
+                               index = line.index(pos[2])
+                            except ValueError:
+                                readcnt[bname][l] = 0
+                                break
+                            readcnt[bname][l] = int(line[index+1])
+                            break
+                    else:
+                        readcnt[bname][l] = 0
+                        break
+    pltdf = pd.DataFrame(readcnt).T
+    fig = plt.figure(figsize=[8, 5])
+    ax = fig.add_subplot()
+    plt.rc('font', size=15)
+    ax = garb.plot.bar(ax=ax)
+    ax.set_ylabel("Allele Frequency")
+    ax.set_title("Layer specific somatic mutation present in all branches")
+    ax.legend(frameon=False)
+    ax.tick_params(axis='x', rotation=45)
+    ax.tick_params(axis='y', rotation=0)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    plt.tight_layout(pad=0)
+    plt.savefig(f"{cwd}/layer_conserved_somatic_mutation_allele_frequency.png", dpi=600)
+    plt.close()
+
+
+    # Plot the distribution of somatic mutations with respect to genomic
+    # structure (syntenic vs SR)
 
     # Check the relationships between branching/branch lengths to SMs
+    datafilter = pd.read_table(f'{cwd}/all_layer_somatic_variants.filtered.txt')
+    df = datafilter.copy()
+    df.branch = pd.Categorical(df.branch)
+    hassm = dict()
+    for grp in datafilter.groupby(['chromosome', 'position', 'alt_allele']):
+        hassm[grp[0]] = dict(grp[1].branch.value_counts())
+    hassm = pd.DataFrame(hassm).T.reset_index(level=[0, 1, 2])
+    hassm.fillna(0, inplace=True)
+    ##  Get number of SM differences between different branch points
+    ### mut11.1 vs mut11.2
+    sum(abs(hassm.mut_11_1 - hassm.mut_11_2)) ## 33 SMs
+    ### (mut11.1 & mut11.2) vs mut15
+    sum(abs((hassm.mut_11_1 * hassm.mut_11_2) - hassm.mut_15)) ## 29 SMs
+    ### wt1 vs wt7
+    sum(abs(hassm.wt_1 - hassm.wt_7)) ## 36 SMs
+    ### (wt1 & wt7) vs wt18
+    sum(abs((hassm.wt_1 * hassm.wt_7) - hassm.wt_18)) ## 7 SMs
+    ### (wt1 & wt7 & wt18) vs wt19
+    sum(abs((hassm.wt_1 * hassm.wt_7 * hassm.wt_18) - hassm.wt_19)) ## 48 SMs
+    ### (mut11.1 & mut11.2 & mut15) vs wt19
+    sum(abs((hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15) - hassm.wt_19)) ## 44 SMs
+
+    # Estimate mutation-rate (?): Might not work as the SM we have calculated are
+    # probably biased against L2 mutations
+
+
+# END
 
 
 
