@@ -1,12 +1,13 @@
 #!/bin/bash -l
 #SBATCH -J AF2-MS_${1}
+#SBATCH --partition general
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=userid@example.mpg.de
 #SBATCH --time=12:00:00
-#SBATCH --array=0-$(($(cat $1.txt | wc -l)-1))
+#SBATCH --array=1-10
 #SBATCH --output=output_%A_%a.txt  # Set the output file name
 #SBATCH --error=error_%A_%a.txt  # Set the error file name
 
@@ -25,7 +26,7 @@ module load alphafold/2.3.1
 
 
 # include parameters common to the CPU and the GPU steps
-source user_parameters.inc
+source /u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/user_parameters.inc
 
 # check if the directories set by the alphafold module do exist
 if [ ! -d ${ALPHAFOLD_DATA} ]; then
@@ -33,9 +34,13 @@ if [ ! -d ${ALPHAFOLD_DATA} ]; then
   exit 1
 fi
 
-PROT_NAME=$(sed -n "${SLURM_ARRAY_TASK_ID}p;${SLURM_ARRAY_TASK_ID}q" ${2})
-FASTA_PATHS=/raven/ptmp/mgoel/cur_proteins/test_run/"${PROT_NAME}"
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/"${PROT_NAME}"
+PROT_NAME=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${2})
+echo ${PROT_NAME}
+echo $PROT_NAME
+mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
+echo ${mrna}
+FASTA_PATHS=/raven/ptmp/mgoel/cur_proteins/test_run/${PROT_NAME}
+OUTPUT_DIR=/ptmp/mgoel/cur_proteins/test_run/${mrna}
 mkdir -p ${OUTPUT_DIR}
 
 
