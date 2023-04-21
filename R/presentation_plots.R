@@ -67,8 +67,8 @@ ann_colors = list(
   tissue=c('L1'='#006d2c', 'L2'='#31a354', 'L3'='#74c476', 'leaf'='#e6550d')
 )
 color = colorRampPalette(c("white", "seagreen"))(50)
-## These plots were updated on 09.01.2023 after sending the poster for PAG
-pheatmap(t(rcvalues[4:32]), cluster_rows = FALSE, cluster_cols=FALSE, annotation_row = annorow[2:3], annotation_col = annocol[3], color=color, annotation_colors=ann_colors, show_rownames = FALSE, show_colnames=FALSE, gaps_row=c(0,0,0,8, 15, 22), gaps_col=c(79), fontsize_row=40, filename='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.read_counts.pdf', width=12, height=4, border_color=NA, main='Read count at somatic mutation positions')
+## These plots were updated on 09.01.2023 after sending the poster for PAG. CHANGE THE POSITION OF MARGIN BASED ON THE NUMBER OF SNPs/INDELs
+pheatmap(t(rcvalues[4:32]), cluster_rows = FALSE, cluster_cols=FALSE, annotation_row = annorow[3], annotation_col = annocol[4], color=color, annotation_colors=ann_colors, show_rownames = FALSE, show_colnames=FALSE, gaps_row=c(0,0,0,8, 15, 22), gaps_col=c(79), fontsize_row=40, filename='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.read_counts.png', width=8, height=4, border_color=NA, main='Read count at layer-specific somatic mutation positions')
 pheatmap(t(afvalues[4:32]), cluster_rows = FALSE, cluster_cols=FALSE, annotation_row = annorow[3], annotation_col = annocol[4], color=color, annotation_colors=ann_colors, show_rownames = FALSE, show_colnames=FALSE, gaps_row=c(0,0,0,8, 15, 22), gaps_col=c(79), fontsize_row=60, annotation_names_row = FALSE, annotation_names_col = FALSE, filename ='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.allele_freq.png', width=8, height=4, border_color=NA, main='Allele frequency at layer-specific somatic mutation positions')
 
 

@@ -178,7 +178,7 @@ for s in ['cur', 'ora']:
             if int(line[0]) > 5:
                 cursum += int(line[1])
 
-    with open('{indir}/{s}_hapmers/orangered.inherited.hist'.format(indir=INDIR, i=i, s=s)) as f:
+    with open('{indir}/{s}_hapmers/orangered.inherited.hist'.format(indir=INDIR, s=s)) as f:
         for line in f:
             line = line.strip().split()
             if int(line[0]) > 5:
@@ -196,7 +196,7 @@ for s in ['cur', 'ora']:
             if int(line[0]) > 5:
                 cursum += int(line[1])
 
-    with open('{indir}/intersect_{s}/{s}_orangered_21mers.histo'.format(indir=INDIR, i=i, s=s)) as f:
+    with open('{indir}/intersect_{s}/{s}_orangered_21mers.histo'.format(indir=INDIR, s=s)) as f:
         for line in f:
             line = line.strip().split()
             if int(line[0]) > 5:

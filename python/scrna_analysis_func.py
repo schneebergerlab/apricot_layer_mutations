@@ -186,3 +186,5 @@ for sample in SAMPLES:
 for sample in SAMPLES:
     with open(CWD + sample + "/" + 'good_bcs_list.txt', 'w') as fout:
         fout.write("\n".join(bcslist4[sample]))
+
+

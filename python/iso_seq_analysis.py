@@ -3,17 +3,158 @@ import pandas as pd
 from collections import deque, Counter, defaultdict
 import sys
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
-from myUsefulFunctions import revcomp
+# from myUsefulFunctions import revcomp
+from hometools.hometools import revcomp
 from matplotlib import pyplot as plt
 import warnings
 import seaborn as sns
 import numpy as np
 import pysam
 import pathlib
+from itertools import product
+from matplotlib import colors as mcolors
 
-SAMPLES=('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
-INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-CUTS=(10, 25, 50, 100)
+
+def get_transcriptome_variants():
+    """
+    Compare the transcriptome for the four brancehs and check if ther eare genes
+    with different transcripts/isoforms
+    """
+    import os
+    import pandas as pd
+    import pybedtools as bt
+    from collections import defaultdict, deque
+    from venn import venn
+    import numpy as np
+    import seaborn as sns
+
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/allele_specific/variant_transcripts/'
+    smfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt'
+    gff = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.protein_coding.3utr.gff3'
+    transdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/allele_specific/'
+    samples = 'WT_1 WT_19 MUT_11_1 MUT_15'.split()
+    wsize = 10000
+
+    # Change working directory
+    os.chdir(cwd)
+
+    # Get somatic mutations in bed format and then parse geneids near the somatic mutations
+    sms = pd.read_table(smfin)
+    df = pd.DataFrame({'chromosome': sms.chromosome, 'start': sms.position - 1, 'end': sms.position}).drop_duplicates()
+    sms_bed = bt.BedTool.from_dataframe(df)
+    muts = sms_bed.window(b=gff, w=wsize).saveas().filter(func=lambda x: x[5] == 'gene').saveas().to_dataframe()
+    geneids = set(muts.apply(func=lambda x: x[11].split(';')[0].split('=')[1], axis=1).to_list())
+
+    # Get transcripts that are matching geneids
+    strid = {}  # Sample overlapping transcripts
+    getdict = lambda x: {a.split()[0]: a.split()[1].replace('"', '') for a in x.split(';')[:-1]}
+    for sample in samples:
+        trids = sms_bed.window(b=f'{transdir}/{sample}/{sample}.resucue_rescued.gtf', w=wsize).saveas().filter(func=lambda x: x[5] == 'transcript').saveas().to_dataframe()
+        # trids = set(trids.apply(func=lambda x: x[11].split(';')[1].strip().split()[1].replace('"', ''), axis=1).to_list())
+        trids = set(trids.apply(func=lambda x: getdict(x[11])['transcript_id'], axis=1).to_list())
+        tridsgene = {}
+        with open(f'{transdir}/{sample}/{sample}.ML_MLresult_classification.txt', 'r') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if line[0] in trids:
+                    tridsgene[line[0]] = [line[6], line[5], line[14]]
+        # Transcripts and Genes for reference transcripts that are added in the
+        # final GTF but absent in the classification file
+        for t in trids:
+            if t not in tridsgene:
+                tridsgene[t] = t.replace('mRNA', 'Gene')
+        strid[sample] = [trids, tridsgene]
+    genetrs = {}
+    for sample in samples:
+        genetrs[sample] = defaultdict(deque)
+        for k, v in strid[sample][1].items():
+            if v[0] in geneids:
+                genetrs[sample][v[0]].append(k)
+    allgenes = set([k  for sample in samples for k in list(genetrs[sample].keys())])
+
+    # Remove genes that only have full-splice match transcripts
+    badgene = deque()
+    for gene in allgenes:
+        cat = deque()
+        for sample in samples:
+            try:
+                for t in genetrs[sample][gene]:
+                    cat.append(strid[sample][1][t][1])
+            except KeyError:
+                pass
+        cat = set(cat)
+        if cat == {'full-splice_match'}:
+            badgene.append(gene)
+    allgenes = allgenes.difference(set(badgene))
+
+    # Remove genes that only have mono-exon
+    badgene = deque()
+    for gene in allgenes:
+        cat = deque()
+        for sample in samples:
+            try:
+                for t in genetrs[sample][gene]:
+                    cat.append(strid[sample][1][t][2])
+            except KeyError:
+                pass
+        cat = set(cat)
+        if all([c in {'mono-exon', 'mono-exon_by_intron_retention', 'reference_match'} for c in cat]):
+            badgene.append(gene)
+    allgenes = allgenes.difference(set(badgene))
+
+
+
+
+
+
+
+        for sample in samples:
+            try:
+                for t in genetrs[sample]['Gene.9100']:
+                    print(sample, t, strid[sample][1][t])
+            except KeyError:
+                pass
+
+
+
+    genetrcnt = dict()
+    for gene in allgenes:
+        d = deque()
+        for sample in samples:
+            try:
+                d.append(len(genetrs[sample][gene]))
+            except:
+                d.append(0)
+        genetrcnt[gene] = list(d)
+    genetrcnt = pd.DataFrame(genetrcnt, index=samples).T
+    genetrcnt['diff_t_cnt'] = genetrcnt.apply(axis=1, func=lambda x: len(set(x)))
+    sns.heatmap(genetrcnt, vmin=0, vmax=5)
+
+    venn({sample: list(genetrs[sample].keys()))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return
+# END
+
+
+SAMPLES = ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+CUTS = (10, 25, 50, 100)
 
 # Get BC read-count stats
 for s in SAMPLES:
@@ -71,15 +212,18 @@ for s in SAMPLES:
         v.close()
 
 # Plot Alt-readcount frequency
-cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
 # snps=pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.regions', header=None)
-muts=pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
+muts = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
 sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
 basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
 # snps = snps.head(39)
 # snps[1] = snps[1].astype(int)
 muts.sort_values(['branch', 'chromosome', 'position'], inplace=True)
 pos = set(zip(muts.chromosome, muts.position, muts.alt_allele))
+posdict = {}
+for g in muts.groupby(['chromosome', 'position', 'alt_allele']):
+    posdict[g[0]] = g[1].branch.to_list()
 # snps['af'] = ['high' if af > 0.2 else 'low' for af in snps[6]]
 mutsrc = pd.DataFrame()
 
@@ -140,8 +284,9 @@ L2pos = muts.loc[(muts.Layer=='L2') & (muts.branch.isin(['mut_11_1', 'mut_15', '
 L2pos = set(L2pos.chromosome.astype(str) + '_' + L2pos.position.astype(str) + '_' + L2pos.alt_allele.astype(str))
 
 cmap = [(1, 1, 1, 1) for i in np.linspace(0.1, 0, 10)] + [(1, 1-i, 1-i, 1) for i in np.linspace(0, 1, 110)]
-cmap=mcolors.ListedColormap(cmap) # make color map
+cmap = mcolors.ListedColormap(cmap) # make color map
 
+# TODO: consider adding sample information in the plot
 fig = plt.figure(figsize=[8, 14])
 ax = fig.add_subplot(3, 1, 1)
 # Normalise values of rc, ac, af to be in range
@@ -173,7 +318,8 @@ afhm = allpos.pivot(index=['c'], columns='p')['af']
 afhm = pd.concat([afhm.loc[:, [c for c in afhm.columns if c in L1pos]], afhm.loc[:, [c for c in afhm.columns if c in L2pos]]], axis=1)
 afhm = afhm*10/afhm.values.max()
 afhm[afhm < 0] = -1
-sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, norm=norm, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
+sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
+# sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, norm=norm, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
 ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
 ax.vlines([len([c for c in afhm.columns if c in L1pos])], *ax.get_ylim(), color='k')
 ax.set_xlabel('')

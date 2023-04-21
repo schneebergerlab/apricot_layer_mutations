@@ -215,6 +215,29 @@ for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
     done
 done
 
+# Get pileup data at ShV positions (added when analysing layer-specific gene conversions)
+cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling
+awk '{if($4~/^-/){print $1"\t"$2-1"\t"$2"\t\t"$4} else {print $0}}' shv_close.bed > shv_close.for_mpileup.bed
+awk '{print $1":"$3"-"$3}' shv_close.bed > shv_close.txt
+awk '{if($4~/^-/){print $1":"$2"-"$2} else {print $1":"$3"-"$3}}' shv_close.bed > shv_close.txt
+mkdir -p shv_split
+for i in {1..8}; do
+    grep CUR${i}G shv_close.txt > shv_split/shv_CUR${i}G.txt
+done
+
+## TODO: RUN THE BELOW PILEUP COMMAND FOR LEAF DATA
+#for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
+#    cd ${CWD}/${sample}
+#    N=20
+#    for i in {1..8}; do
+#        snps="../snps_split/snps_CUR${i}G.txt"
+#        bsub -q multicore40 -n $N -R "span[hosts=1] rusage[mem=10000]" -M 15000 -oo ${sample}_snps_pileup.log -eo ${sample}_snps_pileup.err "
+#            xargs -a $snps -P $N -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 snps_reads.bam -r {} -O --output-QNAME > snps_CUR${i}G.pileup 2> garb
+#            sort -k2,2n -o snps_CUR${i}G.pileup snps_CUR${i}G.pileup
+#        "
+#    done
+#done
+
 # Get pileup data at selected gene conversion positions
 for sample in wt7 wt18 mut4 mut11_2 MUT_11_1 MUT_15 WT_1 WT_19; do
     cd ${CWD}/${sample}

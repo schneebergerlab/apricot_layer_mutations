@@ -114,3 +114,4 @@ STAR --runThreadN 30 \
     --alignIntronMax 20000 \
     --outFilterMismatchNmax 5 > rp_leaf.sorted.bam
 
+

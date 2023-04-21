@@ -8,7 +8,7 @@ library(dplyr)
 library(patchwork)
 library(ggplot2)
 library(ggpubr)
-
+library(cowplot)
 
 gff <- import.gff3('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.protein_coding.3utr.gff3')
 gffgenes <- gff[gff@elementMetadata$type == 'gene']
@@ -483,37 +483,178 @@ ggsave(plot=plt, "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf
 
 
 
-# Using SCT normalisation
-wtseu.list <- lapply(X = wtseu.list, FUN = SCTransform)
-features <- SelectIntegrationFeatures(object.list = wtseu.list, nfeatures = 3000)
-wtseu.list <- PrepSCTIntegration(object.list = wtseu.list, anchor.features = features)
+################################################################################
+# DE Analysis
+################################################################################
+# First run Seurat integration analysis (SCT normalisation) transformation to check
+# heterogenity in the single cells. If the cellular populations are not heterogenous
+# then run normal bulk RNA DESeq analysis.
+
+# Samcnt was based on manual barcode selection, filtering, and count matrix generation
+# This was useful for variant calling, but is not required for normal scRNA analysis.
+# Therefore, now using the method described by Seurat for reading the scRNA data
+# directly from 10X output
+# seuobj.list <- lapply(SAMPLES, FUN=function(x){
+#   CreateSeuratObject(counts = samcnt[[x]], project = x, min.cells = 3, min.features = 200)
+# })
+# Load the PBMC dataset
+SAMPLES=c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/'
+seuobj.list <- sapply(SAMPLES, USE.NAMES=TRUE, FUN=function(x){
+  df <- Read10X(data.dir = paste0(CWD, 'get_cells/', x, '/',x,'/outs/filtered_feature_bc_matrix'))
+  CreateSeuratObject(counts = df, project = x, min.cells = 3, min.features = 200)
+  })
+seuobj.list <-sapply(SAMPLES, USE.NAMES=TRUE, FUN=function(x){
+  subset(seuobj.list[[x]], subset = nFeature_RNA > 500 & nFeature_RNA < 3000 )
+})
+plist <- lapply(SAMPLES, FUN=function(x){
+  VlnPlot(seuobj.list[[x]], features = c("nFeature_RNA", "nCount_RNA"))
+})
+names(plist) <- SAMPLES
+
+# Define dataset condition
+seuobj.list[['WT_1']]$stim <- 'wt'
+seuobj.list[['WT_19']]$stim <- 'wt'
+seuobj.list[['MUT_11_1']]$stim <- 'mut'
+seuobj.list[['MUT_15']]$stim <- 'mut'
+# Transform all datasets
+seuobj.list <- lapply(X = seuobj.list, FUN = SCTransform)
+features <- SelectIntegrationFeatures(object.list = seuobj.list, nfeatures = 3000)
+seuobj.list <- PrepSCTIntegration(object.list = seuobj.list, anchor.features = features)
 # Integrate
-wt.anchors <- FindIntegrationAnchors(object.list = wtseu.list, normalization.method = "SCT", anchor.features = features)
-wt.combined.sct <- IntegrateData(anchorset = wt.anchors, normalization.method = "SCT")
-VlnPlot(wt.combined.sct, features = c("nFeature_RNA", "nCount_RNA", "nCount_SCT"), ncol = 2, group.by = NULL, split.by = NULL)
-VlnPlot(wt1seu, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2, group.by = NULL, split.by = NULL)
+seuobj.anchors <- FindIntegrationAnchors(object.list = seuobj.list, normalization.method = "SCT", anchor.features = features)
+seuobj.combined.sct <- IntegrateData(anchorset = seuobj.anchors, normalization.method = "SCT")
+seuobj.combined.sct  <- PrepSCTFindMarkers(seuobj.combined.sct)
 
-DefaultAssay(wt.combined.sct) <- "integrated"
-wt.combined.sct <- RunPCA(wt.combined.sct,  npcs = 30, verbose = FALSE)
-wt.combined.sct <- RunUMAP(wt.combined.sct, reduction = "pca", dims = 1:30)
-wt.combined.sct <- FindNeighbors(wt.combined.sct, reduction = "pca", dims = 1:30)
-wt.combined.sct <- FindClusters(wt.combined.sct, resolution = 0.5)
+DefaultAssay(seuobj.combined.sct) <- "integrated"
+seuobj.combined.sct <- RunPCA(seuobj.combined.sct,  npcs = 30, verbose = FALSE)
+seuobj.combined.sct <- RunUMAP(seuobj.combined.sct, reduction = "pca", dims = 1:30)
+seuobj.combined.sct <- FindNeighbors(seuobj.combined.sct, reduction = "pca", dims = 1:30)
+seuobj.combined.sct <- FindClusters(seuobj.combined.sct, resolution = 0.5)
+p1 <- DimPlot(seuobj.combined.sct, reduction = "umap", split.by = "orig.ident", label = TRUE)
+ggsave(paste0(CWD,'integrate_all_samples.png'), p1, width=12, height=6)
 
-DimPlot(wt.combined.sct, reduction = "umap", group.by = "orig.ident")
-DimPlot(wt.combined.sct, reduction = "umap")
+DefaultAssay(seuobj.combined.sct) <- "SCT"
+theme_set(theme_cowplot())
+clst2.cells <- subset(seuobj.combined.sct, idents = "1")
+Idents(clst2.cells) <- "stim"
+avg.clst2.cells <- as.data.frame(AverageExpression(clst2.cells, assay='SCT', splot='data', verbose=FALSE)$SCT)
+avg.clst2.cells$gene <- rownames(avg.clst2.cells)
 
-DefaultAssay(wt.combined.sct) <- "RNA"
-wt.markers <- FindConservedMarkers(wt.combined.sct, ident.1 = 1, grouping.var = "orig.ident", verbose = FALSE)
-garb3 <- wt.markers %>%
-  filter(max_pval < 0.05) %>%
-  filter(WT_1_pct.1 > 1.5*WT_1_pct.2, WT_19_pct.1 > 1.5*WT_19_pct.2) %>%
-  filter(WT_1_avg_log2FC > 1, WT_19_avg_log2FC>1) %>%
-  top_n(n = 3, wt = WT_1_avg_log2FC)
-
+p1 <- ggplot(avg.clst2.cells, aes(ctrl, mut)) + geom_point() + ggtitle("Cluster 2 Cells")
 
 
+# Read genes close to somatic mutations
+mut15.genes <- read.table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15.all.layer_somatic_variants.overllaping_100000bp.genes.txt')
+mut11.1.genes <- read.table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1.all.layer_somatic_variants.overllaping_100000bp.genes.txt')
+wt1.genes <- read.table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_1.all.layer_somatic_variants.overllaping_100000bp.genes.txt')
+wt19.genes <- read.table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/wt_19.all.layer_somatic_variants.overllaping_100000bp.genes.txt')
+mut.genes <- union(mut15.genes$V1, mut11.1.genes$V1)
+mut.genes <- intersect(mut.genes, rownames(seuobj.combined.sct))
 
-## Need to also check how different are the clusters between two WTs or two MUTs
-## Merge the two wild types together
+# Select all DE genes between the WT and MUT clusters
+# Use of scale.data was suggested her https://github.com/satijalab/seurat/issues/5321,
+# but other places suggested using slot=data. So using slot=data.
+seuobj.combined.sct$celltype.stim <- paste(Idents(seuobj.combined.sct), seuobj.combined.sct$stim, sep = "_")
+seuobj.combined.sct$celltype <- Idents(seuobj.combined.sct)
+Idents(seuobj.combined.sct) <- "celltype.stim"
+for(i in 0:16){
+  clst1.response <- FindMarkers(seuobj.combined.sct, assay='SCT', slot='data', ident.1 = paste0(i, "_mut"), ident.2 = paste0(i, "_wt"),verbose = FALSE, features=mut.genes)
+  print(i)
+  garb <- clst1.response %>%
+    filter(abs(avg_log2FC)>0.5) %>%
+    filter(p_val_adj < 0.05)
+  print(garb)
+}
+FeaturePlot(seuobj.combined.sct, features = c('Gene.4534', 'Gene.2239', 'Gene.32994', 'Gene.50057'), split.by = "orig.ident", min.cutoff = 1, max.cutoff = 3, cols = c("grey", "red"), pt.size=0.5, order=TRUE)
 
+Idents(seuobj.combined.sct) <- "celltype"
+Idents(seuobj.combined.sct) <- paste(Idents(seuobj.combined.sct), seuobj.combined.sct$orig.ident, sep = "_")
+markerdf <- data.frame()
+for(s1 in c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')){
+  for(s2 in c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')){
+    if(s1==s2) next()
+    print(c(s1, s2))
+    for(i in 1:9){
+      clst1.response <- FindMarkers(seuobj.combined.sct, assay='SCT', slot='data', ident.1 = paste(i, s1, sep='_'), ident.2 = paste(i, s2, sep='_'), verbose = FALSE)
+      if (nrow(clst1.response) == 0){next()}
+      garb <- clst1.response %>%
+        filter(abs(avg_log2FC)>0.5) %>%
+        filter(p_val_adj < 0.05)
+      if(nrow(garb) > 0){
+        # print(i)
+        # print(garb)
+        garb['gene'] <- rownames(garb)
+        garb['s1'] <- s1
+        garb['s2'] <- s2
+        garb['i'] <- i
+        markerdf <- bind_rows(markerdf, garb)
+      }
+    }
+  }
+}
+
+
+FeaturePlot(seuobj.combined.sct, features = c('Gene.4605', 'Gene.5501'), split.by='orig.ident', min.cutoff = 1, max.cutoff = 3, cols = c("grey", "red"), pt.size=0.5, order=TRUE)
+
+
+seuobj.combined.sct$type <- paste(Idents(seuobj.combined.sct), 'ctrl', sep = "_")
+seuobj.combined.sct$type[seuobj.combined.sct$orig.ident == 'MUT_15'] <- paste(Idents(seuobj.combined.sct)[seuobj.combined.sct$orig.ident == 'MUT_15'], 'mut', sep = "_")
+Idents(seuobj.combined.sct) <- "type"
+for(i in 0:16){
+  clst1.response <- FindMarkers(seuobj.combined.sct, assay='SCT', slot='data', ident.1 = paste0(i, "_mut"), ident.2 = paste0(i, "_ctrl"),verbose = FALSE, features=mut.genes, max.cells.per.ident=500)
+  print(i)
+  if (nrow(clst1.response) == 0){next()}
+  garb <- clst1.response %>%
+    filter(abs(avg_log2FC)>0.5) %>%
+    filter(p_val_adj < 0.05)
+  print(garb)
+}
+
+
+garb <- subset(seuobj.combined.sct, idents = c('0_ctrl', '0_mut'))
+VlnPlot(garb, features = 'nFeature_RNA', pt.size = 0.1, combine = TRUE)
+
+
+clst1.response <- FindMarkers(seuobj.combined.sct, assay='SCT', slot='data', ident.1 = "1_mut", ident.2 = "1_wt",verbose = FALSE, features=mut.genes)
+clst1.response %>%
+  filter(abs(avg_log2FC)>0.5) %>%
+  filter(p_val_adj < 0.05)
+# p_val avg_log2FC pct.1 pct.2    p_val_adj
+# Gene.2239 8.605091e-103 -0.6330453 0.060 0.388 1.474999e-98
+# Gene.4534  6.686506e-86 -0.5982580 0.102 0.425 1.146134e-81
+
+markers.genes <- FindAllMarkers(seuobj.combined.sct, assay='SCT', slot='data', verbose = FALSE, features=mut.genes)
+markers.genes['gene'] <- rownames(markers.genes)
+markers.genes.filt <- markers.genes %>%
+  filter(abs(avg_log2FC)>0.5) %>%
+  filter(p_val_adj < 0.05)
+
+
+VlnPlot(seuobj.combined.sct, features = 'nFeature_RNA', split.by = "stim", pt.size = 0.1, combine = TRUE)
+VlnPlot(seuobj.combined.sct, features = 'nFeature_RNA', group.by = "orig.ident", pt.size = 0, idents=c('2_mut', '2_ctrl'), combine = FALSE)
+
+
+
+
+# The above figure shows that MUT_15 is outlier and has some weird expression profile
+# when compared to other samples. So now, I use that as the treatment and the rest
+# as the control and then find all the genes that have different expression profile in
+# MUT_15
+seuobj.list <- lapply(SAMPLES, FUN=function(x){
+  CreateSeuratObject(counts = samcnt[[x]], project = x, min.cells = 3, min.features = 200)
+})
+names(seuobj.list) <- SAMPLES
+# Define dataset condition
+seuobj.list[['WT_1']]$stim <- 'ctrl'
+seuobj.list[['WT_19']]$stim <- 'ctrl'
+seuobj.list[['MUT_11_1']]$stim <- 'ctrl'
+seuobj.list[['MUT_15']]$stim <- 'mut'
+# Transform all datasets
+seuobj.list <- lapply(X = seuobj.list, FUN = SCTransform)
+features <- SelectIntegrationFeatures(object.list = seuobj.list, nfeatures = 3000)
+seuobj.list <- PrepSCTIntegration(object.list = seuobj.list, anchor.features = features)
+# Integrate
+seuobj.anchors <- FindIntegrationAnchors(object.list = seuobj.list, normalization.method = "SCT", anchor.features = features)
+seuobj.combined.sct <- IntegrateData(anchorset = seuobj.anchors, normalization.method = "SCT")
 

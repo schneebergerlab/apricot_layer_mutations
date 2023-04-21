@@ -14,100 +14,155 @@ ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/pro
 ### Lima from syri3.8 environment
 SAMPLES=("MUT_11_1" "MUT_15" "WT_1" "WT_19")
 CWD=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/
+# /srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/lima
+# Library design -s leads to no good BAM identification
+# Recommended workflow: https://isoseq.how/getting-started.html
+wget https://downloads.pacbcloud.com/public/dataset/MAS-Seq/REF-10x_barcodes/3M-february-2018-REVERSE-COMPLEMENTED.txt.gz
+
 for sample in ${SAMPLES[@]}; do
-    lima --isoseq --dump-clips --dump-removed ${sample}.iso_seq.ccs.bam 10x_primers.fasta ${sample}.iso_seq.bam &
+    lima --isoseq --dump-clips --dump-removed -d ${sample}.iso_seq.ccs.bam 10x_primers.fasta ${sample}.iso_seq.bam &
 done
 
-## Get BC and UMI tags for the reads
+declare -A sdict
+sdict['WT_1']=85
+sdict['WT_19']=85
+sdict['MUT_11_1']=83
+sdict['MUT_15']=80
+# Select reads from barcodes and deduplicate reads (https://isoseq.how/umi/)
 for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    isoseq3 tag ${s}.iso_seq.5p--3p.bam ${s}.iso_seq.fl.bam --design T-12U-16B &
+    {
+    ## Get BC and UMI tags for the reads
+#    isoseq3 tag ${s}.iso_seq.5p--3p.bam ${s}.iso_seq.flt.bam --design T-12U-16B &
+    ## Remove poly-A tails from the reads
+#    isoseq3 refine --require-polya ${s}.iso_seq.flt.bam 10x_primers.fasta ${s}.iso_seq.flnc.bam &
+    # Corect barcodes using the barcode white-list provided by 10x. Percentile cutoffs are selected based on the 'knee' in the plots. Consider increasing allowed mismatch between the RAW and corrected BC
+#    isoseq3 correct --B 3M-february-2018-REVERSE-COMPLEMENTED.txt.gz -M 2 --method percentile --percentile ${sdict[$s]} ${s}.iso_seq.flnc.bam ${s}.iso_seq.flnc-bccorr.bam &
+    # Get BC stats and check if the selected cutoff is correct
+#    isoseq3 bcstats --method percentile --percentile ${sdict[$s]} -o ${s}.bcstats.tsv ${s}.iso_seq.flnc-bccorr.bam
+#    python3 plot_knees.py -t ${s}.bcstats.tsv -o ${s}
+    # Deduplicate reads based on UMIs
+    samtools sort -@ 4 -t CB ${s}.iso_seq.flnc-bccorr.bam -o ${s}.iso_seq.flnc-bccorr.sorted.bam
+#    isoseq3 groupdedup --keep-non-real-cells ${s}.iso_seq.flnc-bccorr.sorted.bam ${s}.iso_seq.flnc-bccorr.dedup.bam
+    isoseq3 groupdedup ${s}.iso_seq.flnc-bccorr.sorted.bam ${s}.iso_seq.flnc-bccorr.dedup.bam
+    } &
 done
+# The above pipeline resulted in the following number of reads:
+# WT_1:  772070
+# WT_19:  707564
+# MUT_11_1:  534001
+# MUT_15:  234369
+
+# Full length transcript analysis. Trying to find allele-specifc expression (https://isoseq.how/classification/pigeon.html)
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/allele_specific/
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+curanno=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gtf
+sqndir=/srv/netscratch/dep_mercier/grp_schneeberger/software/sqanti2_12_04_2023/SQANTI3-5.1.1/
+echo /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/RNAseq/4031.srt.bam > srbam.fofn
+export PYTHONPATH=$PYTHONPATH:/srv/netscratch/dep_mercier/grp_schneeberger/software/cDNA_Cupcake/sequence/
+export PYTHONPATH=$PYTHONPATH:/srv/netscratch/dep_mercier/grp_schneeberger/software/cDNA_Cupcake/
+
+cd $cwd
+# Sort and index the reference annotation files
+#pigeon sort $curanno -o cur.annotation.sorted.gtf
+#awk -i inplace -v FS=' ' '{print $0" gene_name "$12}' cur.annotation.sorted.gtf
+#pigeon index cur.annotation.sorted.gtf
+
+# Run sqanti_qc on the reference annotation file
+python ${sqndir}/sqanti3_qc.py \
+    cur.annotation.sorted.gtf \
+    cur.annotation.sorted.gtf \
+    $refcur \
+    -o cur \
+    -d . \
+    --SR_bam srbam.fofn \
+    -t 10 -n 4 --report skip --isoAnnotLite
+
+
 for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    isoseq3 refine --require-polya ${s}.iso_seq.fl.bam 10x_primers.fasta ${s}.iso_seq.flnc.bam &
+    {
+        cd $cwd
+        # Align reads found above the currot reference genome
+#        pbmm2 align --preset ISOSEQ --sort -j 10 -J 4 ${indir}${s}.iso_seq.flnc-bccorr.dedup.bam $refcur ${s}.mapped.bam
+        # Collapse redundant transcripts into unique isoforms based on exonic structures using isoseq collapse.
+#        isoseq3 collapse ${s}.mapped.bam ${s}.collapsed.gff
+        # Sort the transcript GFF file
+#        pigeon sort ${s}.collapsed.gff -o ${s}.sorted.gff
+        # Classify Isoforms (categories https://isoseq.how/classification/categories)
+#        pigeon classify ${s}.sorted.gff cur.annotation.sorted.gtf $refcur --fl ${s}.collapsed.abundance.txt
+        # Filter isoforms from the classification output.
+#        pigeon filter ${s}_classification.txt --isoforms ${s}.sorted.gff -c 5 --min-cov 5
+
+        # The classify and filter sub-commands from pigeon were resulting in quite many isoforms.
+        # So testing the classification and filtering by SQANTI3
+
+        # conda activate SQANTI3.env
+
+        # Run qc
+#        mkdir -p $s
+        cd $s;
+#        rm -r splits
+#        tail +3 ../${s}.collapsed.gff > ${s}.collapsed.gtf
+#        python ${sqndir}/sqanti3_qc.py \
+#            ${s}.collapsed.gtf \
+#            ../cur.annotation.sorted.gtf \
+#            $refcur \
+#            -o ${s} \
+#            -d . \
+#            -fl ../${s}.collapsed.abundance.txt \
+#            --SR_bam ../srbam.fofn \
+#            -t 10 -n 4 --report both --isoAnnotLite
+        # Filter using default rules
+#        python ${sqndir}/sqanti3_filter.py rules \
+#            --isoAnnotGFF3 ${s}.gff3 \
+#            --isoforms ${s}_corrected.fasta \
+#            --gtf ${s}_corrected.gtf \
+#            --faa ${s}_corrected.faa \
+#            -o ${s} \
+#            -d . \
+#            ${s}_classification.txt
+        # Filter using ML method
+#        python ${sqndir}/sqanti3_filter.py ML \
+#            --isoAnnotGFF3 ${s}.gff3 \
+#            --isoforms ${s}_corrected.fasta \
+#            --gtf ${s}_corrected.gtf \
+#            --faa ${s}_corrected.faa \
+#            -o ${s}.ML \
+#            -d . \
+#            ${s}_classification.txt
+        # Rescue transcripts using sqanti3_rescue
+        python ${sqndir}/sqanti3_rescue.py ml \
+            --isoforms ${s}_corrected.fasta \
+            --gtf ${s}.ML.filtered.gtf \
+            --refGTF ../cur.annotation.sorted.gtf \
+            -f $refcur \
+            --refClassif ../cur_classification.txt \
+            -o ${s}.rescue \
+            -d . \
+            -r randomforest.RData \
+            ${s}.ML_MLresult_classification.txt
+    } &
 done
+# The above pipeline resulted in following number of transcripts:
+#MUT_11_1: 45390
+#MUT_15: 22877
+#WT_19: 57937
+#WT_1: 61485
 
+# Now check if there are any genes with clear difference in the transcriptome
+iso_seq_analysis.py -> get_transcriptome_variants()
 
-### Select reads with correct primer orientation from the raw CCS bam
-#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-#    {
-#    samtools view -@ 12 ${s}.iso_seq.5p--3p.bam | cut -f1 > ${s}_read_names.txt
-#    samtools view -@ 12 -H ${s}.iso_seq.ccs.bam > ${s}.iso_seq.ccs.good_primer.sam
-#    samtools view -@ 12 ${s}.iso_seq.ccs.bam \
-#    | grep -Ff ${s}_read_names.txt \
-#    >> ${s}.iso_seq.ccs.good_primer.sam
-#    samtools view -@ 12 -b ${s}.iso_seq.ccs.good_primer.sam > ${s}.iso_seq.ccs.good_primer.bam
-#    rm ${s}.iso_seq.ccs.good_primer.sam
-#    } &
-#done
-#
-### Rerun Lima but this time append the BCs (from scRNA) to the 10X_primers.fasta
-#### Append the BC to primers
-#BCDIR=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/barcodes/
-#for s in wt1 wt19 mut11 mut15; do
-#    cd $CWD
-#    rm ${s}_bcs.fasta
-#    while read r; do
-#        bc=$(echo $r | cut -d' ' -f 2)
-#        echo -e ">${bc}_5p\nCTACACGACGCTCTTCCGATCT${bc}\n" >> ${s}_bcs.fasta
-#    done < $BCDIR/${s}_bcs_clstr_id.txt
-#    echo -e ">${end}_3p\nAAGCAGTGGTATCAACGCAGAGTACATGGG\n" >> ${s}_bcs.fasta
-#done
-#mv wt1_bcs.fasta WT_1_bcs.fasta
-#mv wt19_bcs.fasta WT_19_bcs.fasta
-#mv mut11_bcs.fasta MUT_11_1_bcs.fasta
-#mv mut15_bcs.fasta MUT_15_bcs.fasta
-#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-#    cd $CWD
-#    mkdir ${s}_no3primer; cd ${s}_no3primer
-#    {
-#    lima --isoseq -d \
-#    --dump-clips \
-#    --dump-removed \
-#    -j 12 \
-#    ../${s}.iso_seq.ccs.good_primer.bam \
-#    ../${s}_bcs.no3primer.fasta \
-#    ${s}.iso_seq.bam
-#    } &
-#done
-#
-#### Test without using the 3' primer
-#for s in wt1 wt19 mut11 mut15; do
-#    cd $CWD
-#    rm ${s}_bcs.no3primer.fasta
-#    while read r; do
-#        bc=$(echo $r | cut -d' ' -f 2)
-#        echo -e ">${bc}_5p\n${bc}\n" >> ${s}_bcs.no3primer.fasta
-#    done < $BCDIR/${s}_bcs_clstr_id.txt
-#    echo -e ">${end}_3p\nAAGCAGTGGTATCAACGCAGAGTACATGGG\n" >> ${s}_bcs.no3primer.fasta
-#done
-#mv wt1_bcs.no3primer.fasta WT_1_bcs.no3primer.fasta
-#mv wt19_bcs.no3primer.fasta WT_19_bcs.no3primer.fasta
-#mv mut11_bcs.no3primer.fasta MUT_11_1_bcs.no3primer.fasta
-#mv mut15_bcs.no3primer.fasta MUT_15_bcs.no3primer.fasta
-#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-#    cd $CWD
-#    mkdir ${s}_no3primer; cd ${s}_no3primer
-#    {
-#    lima --isoseq -d \
-#    --dump-clips \
-#    --dump-removed \
-#    -j 12 \
-#    ../${s}.iso_seq.ccs.good_primer.bam \
-#    ../${s}_bcs.no3primer.fasta \
-#    ${s}.iso_seq.bam
-#    } &
-#done
-##### Without the 3' primer fewer reads were classified into BCs
-
+############ OLD STUFF BEFORE REANALYSIS OF ISO-SEQ READS ######################
 ## Get reads scRNA BCs
 INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/'
 CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
 for s in WT_1 WT_19 MUT_11_1 MUT_15; do
     cd $CWD
     mkdir $s; cd $s
-    samtools sort -t XC -O BAM ${INDIR}/${s}.iso_seq.flnc.bam > ${s}.XC_sorted.bam &
-    samtools index ${s}.XC_sorted.bam
-    samtools view $s.XC_sorted.bam  | grep -o -P 'XC:Z:[^\s]*' | uniq -c > cnt.txt &
+    # Initial analysis done using the raw barcodes.
+#    samtools sort -t XC -O BAM ${INDIR}/${s}.iso_seq.flnc.bam > ${s}.XC_sorted.bam &
+#    samtools index ${s}.XC_sorted.bam
+#    samtools view $s.XC_sorted.bam  | grep -o -P 'XC:Z:[^\s]*' | uniq -c > cnt.txt &
 done
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/iso_seq_analysis.py
 cd $CWD

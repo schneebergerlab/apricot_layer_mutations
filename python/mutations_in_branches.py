@@ -203,7 +203,7 @@ for k, l in hcsm.items():
     for pos, v in l.items():
         posd.append(list(pos) + list(v) + [k])
 posd = pd.DataFrame(posd)
-posd.sort_values([0,1], inplace=True)
+posd.sort_values([0, 1], inplace=True)
 posd.to_csv(f"{CWD}/high_cov_mutants_sorted.all_samples.txt", sep=',',index=False,header=False)
 
 
@@ -486,10 +486,10 @@ snps[1] = snps[1].astype(int)
 i = 1
 # Get distribution of inter-snp distance
 fig = plt.figure()
-for grp in snps.groupby([0]):
+for grp in snps.groupby(0):
     garb = grp[1].sort_values([1])
-    x = np.array(garb[1][1:])
-    y = np.array(garb[1][:-1])
+    x = np.array(garb.loc[:, 1])[1:]
+    y = np.array(garb.loc[:, 1])[:-1]
     print(grp[0], min(x-y), max(x-y))
     ax = fig.add_subplot(4, 2, i)
     ax.hist(x-y, bins=100, range=[0, 1000])
@@ -500,15 +500,56 @@ for grp in snps.groupby([0]):
 
 # Get all snps that are within 1kb to each other
 snpsfilt = pd.DataFrame()
-for grp in snps.groupby([0]):
+for grp in snps.groupby(0):
     garb = grp[1].sort_values([1])
-    x = np.array(garb[1][1:])
-    y = np.array(garb[1][:-1])
+    # x = np.array(garb[1][1:])
+    # y = np.array(garb[1][:-1])
+    x = np.array(garb.loc[:, 1])[1:]
+    y = np.array(garb.loc[:, 1])[:-1]
     diff = x-y < 1000
     close_snps = garb.loc[[diff[0]] + list(diff)]
     snpsfilt = pd.concat([snpsfilt, close_snps])
 snpsfilt[1] -= 1
 snpsfilt.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/snps_close.bed', index=False, sep='\t', header=None)
+
+### Get linked indel positions as well (adding for layer_enriched data, leaf data can also be analysed later)
+snps = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt', header=None)
+snps.columns = ['chromosome', 'start', 'end', 'ref_allele', 'alt_allele']
+indels = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.indels.txt', header=None)
+indels.columns = ['chromosome', 'start', 'end', 'alt_allele']
+shv = pd.concat([snps, indels])
+shv['start'] = shv['start'].astype(int)
+shv.sort_values(['chromosome', 'start'], inplace=True)
+
+i = 1
+# Get distribution of inter-snp distance
+fig = plt.figure()
+for grp in shv.groupby('chromosome'):
+    garb = grp[1].sort_values(['start'])
+    x = np.array(garb.loc[:, 'start'])[1:]
+    y = np.array(garb.loc[:, 'start'])[:-1]
+    print(grp[0], min(x-y), max(x-y))
+    ax = fig.add_subplot(4, 2, i)
+    ax.hist(x-y, bins=100, range=[0, 1000])
+    # ax.hist([grp[1][1][i] - grp[1][1][i-1] for i in range(1, grp[1].shape[0])])
+    ax.set_title(grp[0])
+    ax.set_yscale('log')
+    i += 1
+
+# Get all snps that are within 1kb to each other
+shvsfilt = pd.DataFrame()
+for grp in shv.groupby('chromosome'):
+    garb = grp[1].sort_values(['start'])
+    # x = np.array(garb[1][1:])
+    # y = np.array(garb[1][:-1])
+    x = np.array(garb.loc[:, 'start'])[1:]
+    y = np.array(garb.loc[:, 'start'])[:-1]
+    diff = x-y < 1000
+    close_shv = garb.loc[[diff[0]] + list(diff)]
+    shvsfilt = pd.concat([shvsfilt, close_shv])
+shvsfilt['start'] -= 1
+shvsfilt.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/shv_close.bed', index=False, sep='\t', header=None)
+
 
 # Get pileup data at SNP positions (done in leaf_dna_analysis.sh)
 import sys

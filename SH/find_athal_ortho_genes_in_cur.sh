@@ -44,14 +44,36 @@ blastp -query athal_cell_specific_genes.prot.fa \
 # Run OrthoFinder
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology
 nohup orthofinder -t 40 -a 40 -f cur_athal &
-geneids="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/athal_cell_specific_genes.geneids"
-orthogroups="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology/cur_athal/OrthoFinder/Results_Sep29/Orthogroups/Orthogroups.txt"
-python -c "
-import sys;
-sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/');
-from find_athal_ortho_genes_in_cur import filter_orthologs;
-filter_orthologs(\"$geneids\", \"$orthogroups\")
-" > cur_ortho_genes.txt
+# Get cur genes orthologous to A.thaliana marker genes
+find_athal_ortho_genes_in_cur.py -> filter_orthologs()
+#geneids="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/athal_cell_specific_genes.geneids"
+#orthogroups="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology/cur_athal/OrthoFinder/Results_Sep29/Orthogroups/Orthogroups.txt"
+#python -c "
+#import sys;
+#sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/');
+#from find_athal_ortho_genes_in_cur import filter_orthologs;
+#filter_orthologs(\"$geneids\", \"$orthogroups\")
+#" > cur_ortho_genes.txt
+#
+## Ortho Gene Functions
+#grep -Ff cur_ortho_genes.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/function/cur.pasa_out.prot.fasta.eggnog_mapper.tsv > cur_ortho_genes.func.txt
 
-# Ortho Gene Functions
-grep -f cur_ortho_genes.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/function/cur.pasa_out.prot.fasta.eggnog_mapper.tsv > cur_ortho_genes.func.txt
+################################################################################
+## Find cluster marker genes using thaliana leaf atlas
+################################################################################
+# In the paper (https://academic.oup.com/plcell/article/33/3/511/6067477?login=true)
+# they list different marker genes for different cell types. I downloaded there
+# list and then we can check the expression of "sequence orthologous" genes for
+# the RP scRNA seq data
+
+# Commands to find orthologous genes in find_athal_ortho_genes_in_cur.py -> get_cluster_marker_orthologs()
+
+
+################################################################################
+## Find orthologs between thaliana and apricot using structural similarity
+
+### Athal protein database
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/
+cd $cwd
+foldseek createdb athal_proteins/*pdb.gz athalprodb --threads 32
+

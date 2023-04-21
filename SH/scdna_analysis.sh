@@ -1598,12 +1598,6 @@ done < TMP.regions
 
 
 
-
-
-
-
-
-
 # Merge all the called indel calls. This will give us all regions where identified
 # sSNVs would be of low confidence because of alignment errors.
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
@@ -1762,8 +1756,6 @@ for sample in ${samples[@]}; do
         $refcur \
         -o ${sample}_bt2 &
 done
-
-
 
 
 ################################################################################
