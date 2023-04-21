@@ -1,11 +1,15 @@
 #!/bin/bash -l
-#SBATCH -J AF2-MSA
+#SBATCH -J AF2-MS_${1}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=userid@example.mpg.de
 #SBATCH --time=12:00:00
+#SBATCH --array=0-$(($(cat $1.txt | wc -l)-1))
+#SBATCH --output=output_%A_%a.txt  # Set the output file name
+#SBATCH --error=error_%A_%a.txt  # Set the error file name
+
 
 # AlphaFold2 template submit script (single sequence case) for RAVEN @ MPCDF,
 # please create a local copy and customize to your use case.
@@ -23,13 +27,17 @@ module load alphafold/2.3.1
 # include parameters common to the CPU and the GPU steps
 source user_parameters.inc
 
-
 # check if the directories set by the alphafold module do exist
 if [ ! -d ${ALPHAFOLD_DATA} ]; then
   echo "Could not find ${ALPHAFOLD_DATA}. STOP."
   exit 1
 fi
+
+PROT_NAME=$(sed -n "${SLURM_ARRAY_TASK_ID}p;${SLURM_ARRAY_TASK_ID}q" ${2})
+FASTA_PATHS=/raven/ptmp/mgoel/cur_proteins/test_run/"${PROT_NAME}"
+OUTPUT_DIR=/ptmp/mgoel/cur_proteins/"${PROT_NAME}"
 mkdir -p ${OUTPUT_DIR}
+
 
 
 # make CUDA and AI libs accessible
