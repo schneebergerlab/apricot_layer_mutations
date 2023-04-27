@@ -8,8 +8,8 @@
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=4:00:00
 #SBATCH --array=1-10
-#SBATCH --output=output_%A_%a.txt  # Set the output file name
-#SBATCH --error=error_%A_%a.txt  # Set the error file name
+#SBATCH --output=output_%x_%a.txt  # Set the output file name
+#SBATCH --error=error_%x_%a.txt  # Set the error file name
 
 
 # AlphaFold2 template submit script (single sequence case) for RAVEN @ MPCDF,
@@ -38,7 +38,7 @@ PROT_NAME=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${1})
 mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
 echo ${mrna}
 FASTA_PATHS=/raven/u/mgoel/apricot/cur_protein/${PROT_NAME}
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/${PROT_NAME}
+OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
 #mkdir -p ${OUTPUT_DIR}
 
 
