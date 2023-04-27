@@ -8,8 +8,8 @@
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=4:00:00
 #SBATCH --array=1-10
-#SBATCH --output=output_%x_%a.txt  # Set the output file name
-#SBATCH --error=error_%x_%a.txt  # Set the error file name
+#SBATCH --output=output_%A_%a.txt  # Set the output file name
+#SBATCH --error=error_%A_%a.txt  # Set the error file name
 
 
 # AlphaFold2 template submit script (single sequence case) for RAVEN @ MPCDF,
