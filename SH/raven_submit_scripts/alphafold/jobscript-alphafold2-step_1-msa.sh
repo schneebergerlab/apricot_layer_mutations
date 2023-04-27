@@ -1,12 +1,12 @@
 #!/bin/bash -l
-#SBATCH -J AF2-MS_${1}
+#SBATCH -J AF2-MS
 #SBATCH --partition general
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=12:00:00
+#SBATCH --time=4:00:00
 #SBATCH --array=1-10
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
