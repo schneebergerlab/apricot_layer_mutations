@@ -35,14 +35,10 @@ if [ ! -d ${ALPHAFOLD_DATA} ]; then
 fi
 
 PROT_NAME=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${2})
-echo ${PROT_NAME}
-echo $PROT_NAME
 mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
-echo ${mrna}
-FASTA_PATHS=/raven/ptmp/mgoel/cur_proteins/test_run/${PROT_NAME}
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/test_run/${mrna}
-mkdir -p ${OUTPUT_DIR}
-
+FASTA_PATHS=/raven/u/mgoel/apricot/cur_protein/${PROT_NAME}
+OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa
+#mkdir -p ${OUTPUT_DIR}
 
 
 # make CUDA and AI libs accessible
@@ -74,7 +70,7 @@ srun ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold
         --run_msa_and_templates_only --nouse_gpu_relax
 #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 
-
+echo "Finished ${SLURM_ARRAY_TASK_ID}"
 
 # AF2 2.3.0 complete output of '--helpfull' below
 

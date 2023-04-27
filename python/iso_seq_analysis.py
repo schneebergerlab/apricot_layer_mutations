@@ -114,40 +114,6 @@ def get_transcriptome_variants():
                     print(sample, t, strid[sample][1][t])
             except KeyError:
                 pass
-
-
-
-    genetrcnt = dict()
-    for gene in allgenes:
-        d = deque()
-        for sample in samples:
-            try:
-                d.append(len(genetrs[sample][gene]))
-            except:
-                d.append(0)
-        genetrcnt[gene] = list(d)
-    genetrcnt = pd.DataFrame(genetrcnt, index=samples).T
-    genetrcnt['diff_t_cnt'] = genetrcnt.apply(axis=1, func=lambda x: len(set(x)))
-    sns.heatmap(genetrcnt, vmin=0, vmax=5)
-
-    venn({sample: list(genetrs[sample].keys()))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     return
 # END
 

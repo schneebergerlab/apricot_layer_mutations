@@ -154,10 +154,102 @@ def read_coverage(depthfin, fout, mm2_good, y_cut=10):
         plt.close()
 
 
+def merge_all_SM():
+    """
+    Merge the list of SMs identified in leaf as well as layers
+    """
+    import pandas as pd
+    import igraph as ig
+    from matplotlib import pyplot as plt
+    import numpy as np
+    import seaborn as sns
+
+
+    layerfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt'
+    leaffin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt"
+
+    layersm = pd.read_table(layerfin)
+    leafsm = pd.read_table(leaffin, header=None)
+    leafsm.columns = 'chromosome position ref_allele alt_allele read_count allele_freq branch selected remark read_depth ploidy'.split()
+    leafsm.drop('selected remark read_depth ploidy'.split(), axis=1, inplace=True)
+    leafsm['tissue'] = 'leaf'
+    leafsm['type'] = 'SNP'
+    leafsm.loc[[a[0] in '+-' for a in leafsm.alt_allele], 'type'] = 'Indel'
+
+    layersm['tissue'] = layersm['Layer']
+    layersm.drop('Layer'.split(), axis=1, inplace=True)
+
+    allsm = pd.concat([leafsm, layersm])
+    allsm.sort_values(['chromosome', 'position'], inplace=True)
+    # Change the annotation for the position manually
+    allsm.loc[allsm.position == 20360183, 'type'] = 'SNP'
+    allsm.loc[allsm.position == 20360183, 'alt_allele'] = 'G'
+    # fix mismatching branch names
+    allsm.loc[allsm.branch == 'MUT_11_1', 'branch'] = 'mut_11_1'
+    allsm.loc[allsm.branch == 'mut11_2', 'branch'] = 'mut_11_2'
+    allsm.loc[allsm.branch == 'WT_19', 'branch'] = 'wt_19'
+    allsm.loc[allsm.branch == 'WT_1', 'branch'] = 'wt_1'
+    allsm.loc[allsm.branch == 'MUT_15', 'branch'] = 'mut_15'
+    allsm.loc[allsm.branch == 'mut4', 'branch'] = 'mut_4'
+    allsm.loc[allsm.branch == 'wt18', 'branch'] = 'wt_18'
+    allsm.loc[allsm.branch == 'wt7', 'branch'] = 'wt_7'
+
+    allsm['branch_tissue'] = allsm.branch + '_' + allsm.tissue
+    btiss = ['_'.join([b, a]) for a in ['leaf', 'L1', 'L2'] for b in ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15', 'mut_4']]
+    btiss.remove('mut_4_L1')
+    btiss.remove('mut_4_L2')
+    # btiss = sorted(set(allsm.branch_tissue))
+    btissm = dict()
+    for grp in allsm.groupby('branch_tissue'):
+        btissm[grp[0]] = set((grp[1].chromosome + '_' + grp[1].position.astype(str) + '_' + grp[1].alt_allele))
+
+    btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
+    for i, a in enumerate(btiss):
+        for j, b in enumerate(btiss):
+            if i == j:
+                continue
+            else:
+                btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+
+    col_dict = {'leaf': 'green', 'L1': 'red', 'L2': 'blue'}
+    fig = plt.figure()
+    ax = fig.add_subplot(2, 1, 1)
+    g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
+    g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
+    g.vs['tname'] = [col_dict[i.rsplit("_", 1)[1]] for i in btiss]
+    ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), edge_label=[int(i) for i in g.es['weight']], layout=g.layout_circle(), margin=0, bbox=[100, 100])
+    ax = fig.add_subplot(2, 1, 2)
+    sns.heatmap(btiss_mat, xticklabels=btiss, yticklabels=btiss)
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png')
+
+    # Check if the mutations that are leaf/L2 specific in a branch are present elsewhere
+    for grp in allsm.groupby('chromosome position alt_allele'.split()):
+        df = grp[1]
+        if df.shape[0] == 1:
+            continue
+        if pd.unique(df.tissue)[0] == 'L1':
+            continue
+        print(df)
+
+        break
+        if 'leaf' in df.tissue.to_list():
+            df2 = df.loc[df.tissue == 'leaf']
+            df3 = df.loc[df.tissue != 'leaf']
+            for b in df2.branch.to_list():
+                if b not in df3
+
+            print(grp)
+            break
+
+
+
+    return
+# END
+
 def mutation_spectra():
-    '''
-        Plots describing mutations spectra of the selected somatic mutations
-    '''
+    """
+    Plots describing mutations spectra of the selected somatic mutations
+    """
     import pandas as pd
     from matplotlib import pyplot as plt
     from itertools import permutations
@@ -172,7 +264,7 @@ def mutation_spectra():
     from scipy.sparse.csgraph import minimum_spanning_tree
     from scipy.sparse import triu, csr_matrix
 
-    cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
     bnames = ['mut_11_1', 'mut_11_2', 'wt_19', 'wt_1', 'mut_15', 'wt_18', 'wt_7']
     # Get mutation spectra (transitions vs transversions) for L1 and L2
     data = pd.read_table(f'{cwd}all_layer_somatic_variants.txt')
@@ -202,7 +294,6 @@ def mutation_spectra():
     datafilter.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt', index=False, header=True, sep='\t')
 
     # Get stats/counts
-
     datafilter = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
 
     print(f'Number of SM events: {datafilter.shape[0]}')
