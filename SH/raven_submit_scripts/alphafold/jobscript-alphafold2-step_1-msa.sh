@@ -7,7 +7,7 @@
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=4:00:00
-#SBATCH --array=1-10
+#SBATCH --array=1-100
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
