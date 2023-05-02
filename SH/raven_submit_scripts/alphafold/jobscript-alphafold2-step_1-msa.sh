@@ -1,4 +1,5 @@
 #!/bin/bash -l
+#SBATCH --array=1-5
 #SBATCH -J AF2-MS
 #SBATCH --partition general
 #SBATCH --ntasks=1
@@ -6,8 +7,7 @@
 #SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=4:00:00
-#SBATCH --array=1-100
+#SBATCH --time=23:59:59
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
@@ -34,10 +34,16 @@ if [ ! -d ${ALPHAFOLD_DATA} ]; then
   exit 1
 fi
 
-PROT_NAME=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${1})
-mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
-echo ${mrna}
-FASTA_PATHS=/raven/u/mgoel/apricot/cur_protein/${PROT_NAME}
+end=$((SLURM_ARRAY_TASK_ID * 20))
+start=$((end - 19))
+PROT_NAME=$(sed -n ${start},${end}p ${1})
+#mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
+#echo ${mrna}
+FASTA_PATHS=''
+for prot in ${PROT_NAME[@]}; do
+	FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+done
+FASTA_PATHS=${FASTA_PATHS/,}
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
 #mkdir -p ${OUTPUT_DIR}
 
