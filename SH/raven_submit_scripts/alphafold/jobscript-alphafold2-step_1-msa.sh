@@ -1,10 +1,11 @@
 #!/bin/bash -l
-#SBATCH --array=1-5
+###SBATCH --array=1-5
 #SBATCH -J AF2-MS
-#SBATCH --partition general
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
-#SBATCH --mem=120000
+#SBATCH --nodes=2
+#SBATCH --ntasks=4
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=36
+##SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=23:59:59
@@ -34,19 +35,6 @@ if [ ! -d ${ALPHAFOLD_DATA} ]; then
   exit 1
 fi
 
-end=$((SLURM_ARRAY_TASK_ID * 20))
-start=$((end - 19))
-PROT_NAME=$(sed -n ${start},${end}p ${1})
-#mrna=$(echo ${PROT_NAME}| sed 's/\.fa//')
-#echo ${mrna}
-FASTA_PATHS=''
-for prot in ${PROT_NAME[@]}; do
-	FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
-done
-FASTA_PATHS=${FASTA_PATHS/,}
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-#mkdir -p ${OUTPUT_DIR}
-
 
 # make CUDA and AI libs accessible
 export LD_LIBRARY_PATH=${ALPHAFOLD_HOME}/lib:${LD_LIBRARY_PATH}
@@ -61,7 +49,17 @@ export CUDA_VISIBLE_DEVICES=""
 
 
 # run the application
-srun ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
+for start in 1 26 51 76; do
+end=$((start + 24))
+PROT_NAME=$(sed -n ${start},${end}p ${1})
+FASTA_PATHS=''
+for prot in ${PROT_NAME[@]}; do
+	FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+done
+FASTA_PATHS=${FASTA_PATHS/,}
+echo $FASTA_PATHS
+srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \
@@ -74,8 +72,11 @@ srun ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold
         --template_mmcif_dir=${template_mmcif_dir} \
         --obsolete_pdbs_path=${obsolete_pdbs_path} \
         --max_template_date="2022-12-21" \
-        --run_msa_and_templates_only --nouse_gpu_relax
+        --run_msa_and_templates_only --nouse_gpu_relax &
 #       ^^^ last line: limit to msa and templates on the CPU, then STOP
+done
+
+wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"
 
