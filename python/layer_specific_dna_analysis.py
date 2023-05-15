@@ -1154,6 +1154,362 @@ layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apric
 layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/', 'mut_15', {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}, nc=6)
 
 
+def sm_after_masking_layers():
+    """
+    Calling layer-specific SMs would miss SMs that are shared between layers.
+    Here, I treat all 14 samples (7 from L1 and 7 from L2) as equivalent and calls
+    SMs as mutations that are present in some but absent in other.
+    """
+    from collections import deque, defaultdict, Counter
+    from matplotlib import pyplot as plt
+    from pandas import read_table, DataFrame
+    from subprocess import Popen, PIPE
+    import numpy as np
+    from tqdm import tqdm
+    import pandas as pd
+    from hometools.classes import snvdata
+    from hometools.hometools import undict
+
+    ## Read snps/indels between assemblies identified by syri
+    syri_snp_list, syri_indel_list = getsyrivarlist()
+
+    ## Conditions for selecting variants:
+    ## Only alt alleles with more than 5 reads are considered
+    ## If a position has multiple alt_alleles => noise_pos_list AND not a somatic mutation
+    ## For syri SNP/indel positions: record alt_allele_frequency AND not a somatic mutation
+    ## If not above => save candidate SNP position
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    branches = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
+    scovs = {'wt_1':  {'l1': (40, 240), 'l2': (20, 180)},
+             'wt_7':  {'l1': (30, 180), 'l2': (30, 180)},
+             'wt_18': {'l1': (40, 200), 'l2': (30, 180)},
+             'wt_19': {'l1': (40, 220), 'l2': (40, 220)},
+             'mut_11_1': {'l1': (20, 160), 'l2': (20, 150)},
+             'mut_11_2': {'l1': (30, 200), 'l2': (20, 180)},
+             'mut_15': {'l1': (40, 220), 'l2': (30, 220)}}
+    samples = ('l1', 'l2')
+    rcthresh = 20
+    afthresh = 0.25
+
+
+    branch_vars = {}
+    posdict = defaultdict(dict)
+    for bname in branches:
+        indir = f'{cwd}/{bname}/{bname}_'
+        noise_pos = set()
+        samples_sm = {}
+        sample_syri_snp = {}
+        sample_syri_indel = {}
+
+        for sample in samples:
+            filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
+            # sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scovs[bname][sample][0], scovs[bname][sample][1], noise_pos, syri_snp_list, syri_indel_list)
+            sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, 0, 10000, noise_pos, syri_snp_list, syri_indel_list)  # Fetch all positions with alt alleles and do not filter based on read depth
+            noise_pos = noise_pos.union(set(sample_noise))
+            samples_sm[sample] = sm_pos
+            sample_syri_snp[sample] = snp_alfrq
+            sample_syri_indel[sample] = indel_alfrq
+
+        # Remove noise positions from candidate lists
+        for sample in samples:
+            for p in noise_pos:
+                try:
+                    samples_sm[sample].pop(p)
+                except KeyError:
+                    pass
+
+        # Transform data so that dict_keys are positions and dict_values are RC/AF at different layers
+        snpslist = set(list(samples_sm['l1'].keys()) + list(samples_sm['l2'].keys()))
+        # snpsdict = defaultdict(dict)
+        for snp in snpslist:
+            posdict[snp][bname] = {s: samples_sm[s][snp] if snp in samples_sm[s] else (None, None, 0, 0) for s in samples}
+
+    posdict_bkp = posdict.copy()
+
+    ## Filetering posdict
+    to_pop = deque()
+
+    ### Remove positions which are not supported by atleast 20 reads in any l1/l2
+    for k, v in tqdm(posdict.items()):
+        if any([v1['l1'][2] > rcthresh or v1['l2'][2] > rcthresh for v1 in v.values()]): continue
+        to_pop.append(k)
+
+    ### Remove positions that are selected in all l1 and l2 samples
+    for k, v in tqdm(posdict.items()):
+        if len(v) < 7:
+            continue
+        if all([v1['l1'][2] >= 5 and v1['l2'][2] >= 5 for v1 in v.values()]):
+            to_pop.append(k)
+
+    ### Remove positions that have low alt allele frequency in all samples
+    for k, v in tqdm(posdict.items()):
+        if all([v1['l1'][3] <= afthresh and v1['l2'][3] <= afthresh for v1 in v.values()]):
+            to_pop.append(k)
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    aflist = deque()
+    for k, v in posdict.items():
+        for v1 in v.values():
+            aflist.append(v1['l1'][3])
+            aflist.append(v1['l2'][3])
+        break
+    plt.hist(aflist) # This shows a peak at ~0.15 with the tail from 0.35. Therefore,
+
+    # Use the same cutoffs as used in "mutations_in_branches.py" for selecting
+    # high coverage mutations.
+    to_pop = deque()
+    for k, v in posdict.items():
+        if any([(v1['l1'][3] > afthresh and v1['l1'][2] > rcthresh) or (v1['l2'][3] > afthresh and v1['l2'][2] > rcthresh) for v1 in v.values()]):
+            continue
+        else:
+            to_pop.append(k)
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    hcsm = deque()        # High coverage/confidence somatic mutations
+    for k, v in posdict.items():
+        for k1, v1 in v.items():
+            for l in {'l1', 'l2'}:
+                if v1[l][2] > rcthresh and v1[l][3] > afthresh:
+                    hcsm.append([k[0], k[1], k1, l] + list(v1[l]))
+    hcsm = DataFrame(hcsm)
+    hcsm.sort_values([0, 1], inplace=True)
+    # This resulted in 20433 events from 7931 SMs in all samples.
+
+    # Save the SM positions in BED format to get read count at these positions
+    tmp = hcsm.loc[:, [0, 1]]
+    tmp[2] = tmp[1]
+    tmp.drop_duplicates(inplace=True)
+    tmp.to_csv(f'{cwd}/all_samples_candidate_high_cov_sms.txt', sep='\t', header=False, index=False)
+
+    # Get read counts at the HCSM positions (code in layer_specific_dna_analysis_all_samples.sh)
+    # Read alt read count at HCSM positions
+    altrc = defaultdict(dict)
+    for k in posdict.keys():
+        for bname in branches:
+            altrc[k][bname] = {}
+    # colname = 'chrom pos ref_allele read_depth A C G T N ind1 ind1_rc ind2 ind2_rc ind3 ind3_rc'.split()
+    for bname in branches:
+        for l in {'l1', 'l2'}:
+            sdict = dict()
+            with open(f'{cwd}/{bname}/{bname}_{l}/bam_read_counts_b0_q0.bt2.txt', 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    altrc[(line[0], int(line[1]))][bname][l] = {'A': int(line[4]),
+                                                                'C': int(line[5]),
+                                                                'G': int(line[6]),
+                                                                'T': int(line[7]),
+                                                                **{line[i]: int(line[i+1]) for i in range(9, len(line), 2)}}
+
+    # Filter positions that have >=20 reads or > 0.25 alt_allele_freq in all samples
+    to_pop = deque()
+    to_pop_allele = deque()
+    for k, v in posdict.items():
+        alt_allele = {v1[l][1] for v1 in v.values() for l in {'l1', 'l2'} if v1[l][1] is not None}
+        bad_allele = deque()
+        for alt in alt_allele:
+            good=False
+            for bname in branches:
+                for l in {'l1', 'l2'}:
+                    try:
+                        if altrc[k][bname][l][alt] < 10:
+                            if altrc[k][bname][l][alt]/sum(altrc[k][bname][l].values()) < 0.1:
+                                good = True
+                                break
+                    except KeyError:
+                        good = True
+                        break
+                if good:
+                    break
+            if not good:
+                bad_allele.append(alt)
+        if len(bad_allele) == 0:
+            continue
+        if set(bad_allele) == alt_allele:
+            to_pop.append(k)
+        else:
+            to_pop_allele.append((k, bad_allele))
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    # Remove positions in repeat regions (if read depth > 500 in any sample)
+    to_pop = deque()
+    for k in posdict.keys():
+        for bname in branches:
+            try:
+                if sum(altrc[k][bname]['l1'].values()) > 500:
+                    to_pop.append(k)
+                    break
+                if sum(altrc[k][bname]['l2'].values()) > 500:
+                    to_pop.append(k)
+                    break
+            except KeyError:
+                pass
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    # Many candidate positions were supported by only reads from a single strand
+    # I run pileup on the candidate positions and then filter out positions that
+    # had this read strand bias.
+
+    hcsm = deque()        # High coverage/confidence somatic mutations
+    for k, v in posdict.items():
+        for k1, v1 in v.items():
+            for l in {'l1', 'l2'}:
+                if v1[l][2] > 20 and v1[l][3] > 0.25:
+                    hcsm.append([k[0], k[1], k1, l] + list(v1[l]))
+    hcsm = DataFrame(hcsm)
+    hcsm.sort_values([0, 1], inplace=True)
+    # This resulted in 3814 events from 1365 SMs in all samples.
+
+    # Save the SM positions in BED format to get read count at these positions
+    tmp = hcsm.loc[:, [0, 1]].copy()
+    tmp[2] = tmp[1]
+    tmp.drop_duplicates(inplace=True)
+    tmp[1] = tmp[1] - 2             # BED width of two because need the focal base for SNPs and insertions and the previous base for deletions
+    tmp.to_csv(f'{cwd}/all_samples_candidate_high_cov_sms2.bed', sep='\t', header=False, index=False)
+
+    # Get pileup data. Commands in layer_specific_dna_analysis_all_samples.sh
+    keys = set(posdict.keys())
+    badalts = deque()
+    for bname in branches:
+        for l in ['l1', 'l2']:
+            for f in ['all_samples_candidate_high_cov_sms2.q0.Q0.pileup', 'all_samples_candidate_high_cov_sms2.q10.Q13.pileup']:
+                with open(f'{cwd}/{bname}/{bname}_{l}/{f}', 'r') as fin:
+                    for i, line in enumerate(fin):
+                        line = line.strip().split()
+                        pile = snvdata(line)
+                        if (pile.chr, pile.pos) in keys:
+                            c, p = pile.chr, pile.pos
+                            try:
+                                alt = posdict[(pile.chr, pile.pos)][bname][l][1]
+                            except KeyError:
+                                continue
+                            if alt is not None:
+                                if alt[0] == '-':
+                                    continue
+                        elif (pile.chr, pile.pos+1) in keys:
+                            c, p = pile.chr, pile.pos+1
+                            try:
+                                alt = posdict[(pile.chr, pile.pos+1)][bname][l][1]
+                            except KeyError:
+                                continue
+                            if alt is not None:
+                                if alt[0] != '-':
+                                    continue
+                        if alt is None:
+                            continue
+                        if alt[0] not in '+-':
+                            fstrnd = pile.basecnt(alt.upper())
+                            rstrnd = pile.basecnt(alt.lower())
+                        else:
+                            fstrnd = pile.indelcnt(alt.upper())
+                            rstrnd = pile.indelcnt(alt.lower())
+                        if fstrnd == 0 and rstrnd == 0:
+                            continue
+                        if 0.1 < fstrnd/(fstrnd+rstrnd) < 0.9:
+                            continue
+                        else:
+                            badalts.append((c, p, bname, l))
+    # remove all positions that have read strand bias in any sample
+    to_pop = set([(b[0], b[1]) for b in badalts])
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+
+    # Filter out positions that are already selected as layer-specific
+    layerpos = read_table(f'{cwd}/all_layer_somatic_variants.filtered.txt')
+    to_pop = set([(r[0], r[1]) for r in layerpos.itertuples(index=False)])
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+
+    # Write the candidate positions to a file and check them manually
+    hcsm, _ = undict(posdict)
+    hcsm = DataFrame(hcsm)
+    hcsm.sort_values([0, 1], inplace=True)
+    hcsm.to_csv(f'{cwd}/all_samples_candidate_high_cov_sms3.csv', sep='\t', header=False, index=False)
+    # Manually curate the candidate SMs (Idea for handling L1 and L2 SM calling:
+    # I already identified layer-specific variations. This mean that all the other
+    # variations are in both layers.)
+
+
+    """
+        # Code to remove individual alt alleles. Not used now as positions with
+        bad alt allele in sample is removed.
+         
+        b in badalts:
+            try:
+                posdict[(b[0], b[1])][b[2]].pop(b[3])
+            except KeyError: pass
+    
+        for k in keys:
+            for bname in branches:
+                try:
+                    if len(posdict[k][bname]) == 0:
+                        posdict[k].pop(bname)
+                        continue
+                except KeyError:
+                    pass
+                for l in {'l1', 'l2'}:
+                    try:
+                        rc = posdict[k][bname][l][2]
+                        if rc == 0:
+                            posdict[k][bname].pop(l)
+                    except KeyError:
+                        pass
+                try:
+                    if len(posdict[k][bname]) == 0:
+                        posdict[k].pop(bname)
+                        continue
+                except KeyError:
+                    pass
+            if len(posdict[k]) == 0:
+                posdict.pop(k)
+    """
+
+    """
+    # Select positions that are within 5 bps from each other and filter them out
+    ## This is a very strong filter and removes many positions. Not using for now
+        
+    poslist = DataFrame(sorted(posdict.keys()))
+    to_pop = deque()
+    for grp in poslist.groupby(0):
+        df = grp[1].copy()
+        pos = np.array(df[1])
+        dist = pos[1:] - pos[:-1]
+        issmall = dist < 5
+        todel = list(set(np.where(issmall)[0]).union(np.where(issmall)[0] + 1))
+        todelindex = df.index.values[todel]
+        df = df.loc[todelindex]
+        to_pop.extend([tuple(r) for r in df.itertuples(index=False)])
+
+    for p in to_pop:
+        try:
+            posdict.pop(p)
+        except KeyError: pass
+    """
+
+    return
+# END
+
+
 def merge_variant_calls():
     '''
     This function reads the somatic variants lists from different analysis of the

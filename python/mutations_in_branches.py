@@ -197,14 +197,14 @@ plot_selected_pos(hcpos, "tmp_igv.bat", "tmp/hcsm/", M=75, HEIGHT=600, emptydir=
 
 
 # Write hcsm to table and then check individual positions manually to select high confidence mutations
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
 posd = deque()
 for k, l in hcsm.items():
     for pos, v in l.items():
         posd.append(list(pos) + list(v) + [k])
 posd = pd.DataFrame(posd)
 posd.sort_values([0, 1], inplace=True)
-posd.to_csv(f"{CWD}/high_cov_mutants_sorted.all_samples.txt", sep=',',index=False,header=False)
+posd.to_csv(f"{CWD}/high_cov_mutants_sorted.all_samples.txt", sep=',', index=False, header=False)
 
 
 # Manually curated list of somatic mutations in the 8 branches

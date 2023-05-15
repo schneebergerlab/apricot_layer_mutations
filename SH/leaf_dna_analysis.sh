@@ -119,9 +119,6 @@ for s in wt7 wt18 mut4 mut11_2; do
     cd ${CWD}/$s
     bsub -q ioheavy -n 8  -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${s}_bamrc_q0.log -eo ${s}_bamrc_q0.err -m 'hpc001 hpc002 hpc003 hpc005 hpc004' "
         $hometools pbamrc -n 8 -b 0 -q 0 -w 0 -S -I -f $refcur -l $CHRBED ${s}.deduped.bam bam_read_counts_b0_q0.bt2.txt
-
-      # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
-      /netscratch/dep_mercier/grp_schneeberger/software/anaconda3/envs/syri3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b0_q0.bt2.txt
   "
 done
 

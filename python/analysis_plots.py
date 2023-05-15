@@ -156,19 +156,37 @@ def read_coverage(depthfin, fout, mm2_good, y_cut=10):
 
 def merge_all_SM():
     """
-    Merge the list of SMs identified in leaf as well as layers
+    Merge the list of SMs identified in leaf, layers, and all samples together
     """
     import pandas as pd
-    import igraph as ig
     from matplotlib import pyplot as plt
     import numpy as np
     import seaborn as sns
+    from collections import deque
+    import pybedtools as bt
+    from matplotlib_venn import venn2
+    from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
 
+
+    # Set colours
+    colour = {('L1', 'SNP'): '#3274a1',
+              ('L1', 'Indel'): '#74A6C6',
+              ('L2', 'SNP'): '#e1812c',
+              ('L2', 'Indel'): '#EDB07B',
+              'L1': '#3274a1',
+              'L2': '#e1812c',
+              'leaf': '#31a354'}
 
     layerfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt'
     leaffin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt"
+    allfin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_samples_candidate_high_cov_sms3.only_selected.csv"
 
+    # Read layer SM
     layersm = pd.read_table(layerfin)
+    layersm['tissue'] = layersm['Layer']
+    layersm.drop('Layer'.split(), axis=1, inplace=True)
+
+    # Read leaf SM
     leafsm = pd.read_table(leaffin, header=None)
     leafsm.columns = 'chromosome position ref_allele alt_allele read_count allele_freq branch selected remark read_depth ploidy'.split()
     leafsm.drop('selected remark read_depth ploidy'.split(), axis=1, inplace=True)
@@ -176,14 +194,22 @@ def merge_all_SM():
     leafsm['type'] = 'SNP'
     leafsm.loc[[a[0] in '+-' for a in leafsm.alt_allele], 'type'] = 'Indel'
 
-    layersm['tissue'] = layersm['Layer']
-    layersm.drop('Layer'.split(), axis=1, inplace=True)
+    # Read all sample SM
+    allsam = pd.read_table(allfin, header=None)
+    allsam.columns = 'chromosome position branch tissue ref_allele alt_allele read_count allele_freq selected ploidy remark'.split()
+    allsam.tissue = allsam.tissue.str.upper()
 
-    allsm = pd.concat([leafsm, layersm])
+    allsm = pd.concat([leafsm, layersm, allsam])
     allsm.sort_values(['chromosome', 'position'], inplace=True)
-    # Change the annotation for the position manually
+
+    # Change the annotation at positions incorrectly aligned manually
     allsm.loc[allsm.position == 20360183, 'type'] = 'SNP'
     allsm.loc[allsm.position == 20360183, 'alt_allele'] = 'G'
+
+    allsm.loc[allsm.position == 19296318, 'alt_allele'] = 'A'
+    allsm.loc[allsm.position == 19296318, 'ref_allele'] = 'C'
+    allsm.loc[allsm.position == 19296318, 'position'] = 19296319
+
     # fix mismatching branch names
     allsm.loc[allsm.branch == 'MUT_11_1', 'branch'] = 'mut_11_1'
     allsm.loc[allsm.branch == 'mut11_2', 'branch'] = 'mut_11_2'
@@ -195,56 +221,194 @@ def merge_all_SM():
     allsm.loc[allsm.branch == 'wt7', 'branch'] = 'wt_7'
 
     allsm['branch_tissue'] = allsm.branch + '_' + allsm.tissue
-    btiss = ['_'.join([b, a]) for a in ['leaf', 'L1', 'L2'] for b in ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15', 'mut_4']]
+    # Create table for the presence and absence of SM in different tissues
+    tissues = ['leaf', 'L1', 'L2']
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15', 'mut_4']
+    btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     btiss.remove('mut_4_L1')
     btiss.remove('mut_4_L2')
-    # btiss = sorted(set(allsm.branch_tissue))
+    allsmmat = dict()          # All somatic mutation matrix
+    for g in allsm.groupby('chromosome position alt_allele'.split()):
+        allsmmat[g[0]] = {k: (1 if k in g[1].branch_tissue.values else 0) for k in btiss}
+    allsmmat = pd.DataFrame(allsmmat).T
+    allsmmat.reset_index(inplace=True)
+    allsmmat.columns = 'chromosome position alt_allele'.split() + list(allsmmat.columns.values[3:])
+    leafl2mis = deque()
+    for row in allsmmat.itertuples(index=False):
+        if any([row[i] != row[i+15] for i in range(3, 10)]):
+            leafl2mis.append(1)
+        else:
+            leafl2mis.append(0)
+    allsmmat['leafl2mis'] = leafl2mis
+    allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.csv', sep=',', index=False, header=True)
+    # Analyse manually to select positions that are FN in other tissues
+    # Read the manually curated file and update the allsmat mat
+    allsmmat = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.csv', sep=',')
+    colname = list(allsmmat.columns.values)
+    for i in range(allsmmat.shape[0]):
+        if allsmmat.iat[i, 26] == 'Y':        # If selected to add manual annotation
+            for v in allsmmat.iat[i, 27].split(','):
+                allsmmat.iat[i, colname.index(v)] = 1
+    allsmmat.set_index('chromosome position alt_allele'.split(), inplace=True)
+    allsmmat.drop(['leafl2mis', 'selected', 'samples added'], axis=1, inplace=True)
+    # Draw and save heatmap
+    isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmmat.index]
+    isSNP = pd.Series(isSNP, index=allsmmat.index)
+    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples.png', dpi=300)
+    plt.close()
+    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', col_cluster=False, dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples_no_col_cluster.png', dpi=300)
+    plt.close()
+
     btissm = dict()
-    for grp in allsm.groupby('branch_tissue'):
-        btissm[grp[0]] = set((grp[1].chromosome + '_' + grp[1].position.astype(str) + '_' + grp[1].alt_allele))
+    for c in allsmmat.columns:
+        btissm[c] = set((allsmmat.loc[allsmmat[c] == 1]).index.values)
+    # for grp in allsm.groupby('branch_tissue'):
+    #     btissm[grp[0]] = set((grp[1].chromosome + '_' + grp[1].position.astype(str) + '_' + grp[1].alt_allele))
 
     btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
     for i, a in enumerate(btiss):
         for j, b in enumerate(btiss):
-            if i == j:
+            # if i == j:
+            #     continue
+            # else:
+            btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+
+    # col_dict = {'leaf': 'green', 'L1': 'red', 'L2': 'blue'}
+    # fig = plt.figure(figsize=[10, 10])
+    # ax = fig.add_subplot(1, 1, 1)
+    # g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
+    # g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
+    # g.vs['tname'] = [col_dict[i.rsplit("_", 1)[1]] for i in btiss]
+    # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), edge_label=[int(i) for i in g.es['weight']], layout=g.layout_circle(), margin=0, bbox=[100, 100], vertex_size=0.1)
+    # plt.tight_layout()
+    # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
+    # ax = fig.add_subplot(2, 1, 2)
+    sns.clustermap(btiss_mat, xticklabels=btiss, yticklabels=btiss, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), cbar_pos=None, linewidths=0.01, figsize=(8, 10))
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png', dpi=300)
+    plt.close()
+
+
+    # Create BED files for Leaf/L1/L2 and draw them as tracks with plotsr
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    for tissue in 'leaf L1 L2'.split():
+        pos = deque()
+        for b in branches:
+            try:
+                pos.extend(list(allsmmat.loc[allsmmat[f'{b}_{tissue}'] == 1].index.values))
+            except KeyError:
+                pass
+        pos = sorted(set(pos))
+        with open(f'{cwd}/{tissue}_sm_pos.bed', 'w') as fout:
+            for p in pos:
+                fout.write(f'{p[0]}\t{p[1]-1}\t{p[1]}\n')
+    ## Run plotsr using the above BED files as tracks (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run)
+    ## plotsr command:
+    ## plotsr --sr syri.out --genomes genomes.txt --tracks tracks.txt -o tmp.pdf -S 0.3 -R -W 7 -H 8 -s 25000 -f 10
+    ## Get syntenic and SR regions from syri.out
+    fin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
+    curanno = deque()
+    with open(fin, 'r') as f:
+        for line in f:
+            line = line.strip().split()
+            if line[10] in {'SYN', 'INV', 'TRANS', 'INVTR', 'DUP', 'INVDP'}:
+                curanno.append(line[:3] + [line[10]])
                 continue
-            else:
-                btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+            if line[10] == 'NOTAL':
+                if line[0] != '-':
+                    curanno.append(line[:3] + [line[10]])
+                # break
+    curanno = pd.DataFrame(curanno)
+    curanno.columns = 'chromosome start end anno'.split()
+    cursyn = curanno.loc[curanno['anno'] == 'SYN']
+    cursyn = bt.BedTool.from_dataframe(cursyn)
+    cursr = curanno.loc[curanno['anno'] != 'SYN']
+    cursr = bt.BedTool.from_dataframe(cursr)
+    smdist = deque()
+    for tissue in 'leaf L1 L2'.split():
+        sms = bt.BedTool(f'{cwd}/{tissue}_sm_pos.bed').saveas()
+        synpos = sms.intersect(cursyn, u=True)
+        srpos = sms.intersect(cursr, u=True)
+        smdist.append([tissue, round(len(synpos)/len(sms), 2), round(len(srpos)/len(sms), 2)])
+    smdist = pd.DataFrame(smdist)
+    smdist.columns = 'tissue syn sr'.split()
+    smdist = pd.melt(smdist, id_vars='tissue')
 
-    col_dict = {'leaf': 'green', 'L1': 'red', 'L2': 'blue'}
-    fig = plt.figure()
-    ax = fig.add_subplot(2, 1, 1)
-    g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
-    g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
-    g.vs['tname'] = [col_dict[i.rsplit("_", 1)[1]] for i in btiss]
-    ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), edge_label=[int(i) for i in g.es['weight']], layout=g.layout_circle(), margin=0, bbox=[100, 100])
-    ax = fig.add_subplot(2, 1, 2)
-    sns.heatmap(btiss_mat, xticklabels=btiss, yticklabels=btiss)
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png')
+    plt.rc('font', size=15)
+    fig = plt.figure(figsize=[4, 3.5])
+    ax = fig.add_subplot()
+    sns.barplot(data=smdist, x='variable', y='value', hue='tissue', palette=[colour['leaf'], colour['L1'], colour['L2']], ax=ax)
+    ax.legend(frameon=False, title='Layer')
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.set_xlabel('')
+    ax.set_ylabel('Ratio of SMs')
+    plt.tight_layout(pad=0)
+    plt.savefig(f'{cwd}/sm_overlap_with_structural_annotation.png', dpi=600)
+    plt.close()
 
-    # Check if the mutations that are leaf/L2 specific in a branch are present elsewhere
-    for grp in allsm.groupby('chromosome position alt_allele'.split()):
-        df = grp[1]
-        if df.shape[0] == 1:
-            continue
-        if pd.unique(df.tissue)[0] == 'L1':
-            continue
-        print(df)
+    leafsms = bt.BedTool(f'{cwd}/leaf_sm_pos.bed').saveas()
+    l1sms = bt.BedTool(f'{cwd}/L1_sm_pos.bed').saveas()
+    l2sms = bt.BedTool(f'{cwd}/L2_sm_pos.bed').saveas()
+    common = leafsms.intersect(l2sms, u=True)
+    fig = plt.figure(figsize=(3, 4))
+    ax = fig.add_subplot()
+    leafcnt = len(leafsms.subtract(l1sms).subtract(l2sms))
+    l1cnt = len(l1sms.subtract(leafsms).subtract(l2sms))
+    l2cnt = len(l2sms.subtract(leafsms).subtract(l1sms))
+    leafl2cnt = len(leafsms.intersect(l2sms, u=True).subtract(l1sms))
+    leafl1cnt = len(leafsms.intersect(l1sms, u=True).subtract(l2sms))
+    l1l2cnt = len(l1sms.intersect(l2sms, u=True).subtract(leafsms))
+    l1l2leafcnt = len(l1sms.intersect(l2sms, u=True).intersect(leafsms, u=True))
+    venn3(subsets=(leafcnt, l2cnt, leafl2cnt, l1cnt, leafl1cnt, l1l2cnt, l1l2leafcnt),
+          set_labels='leaf L2 L1'.split(),
+          set_colors=(colour['leaf'], colour['L2'], colour['L1']), alpha=1, ax=ax)
+    # v = venn2(subsets=(len(leafsms.subtract(l2sms)), len(l2sms.subtract(leafsms)), len(common)), set_labels=('Leaf SMs', 'L2 SMs'), set_colors=(colour['leaf'], colour['L2']), alpha=0.5, ax=ax)
+    # o = v.get_patch_by_id("A")
+    # o.set_edgecolor(colour['leaf'])
+    # o.set_lw(1.5)
+    # o = v.get_patch_by_id("B")
+    # o.set_edgecolor(colour['L2'])
+    # o.set_lw(1.5)
+    # plt.title('')
+    plt.tight_layout(rect=(0, 0, 1, 1))
+    plt.savefig(f'{cwd}/organ_specificity.png', dpi=600)
+    plt.close()
 
-        break
-        if 'leaf' in df.tissue.to_list():
-            df2 = df.loc[df.tissue == 'leaf']
-            df3 = df.loc[df.tissue != 'leaf']
-            for b in df2.branch.to_list():
-                if b not in df3
+    # Get maximum spanning tree and hierarchical clustering between branches (this would show
+    # whether the SMs fit the morphology of the tree). Do separately for leaf, L1, L2 and all combined
+    fig = plt.figure(figsize=(3, 8))
+    for cnt, l in enumerate('leaf L1 L2'.split()):
+        ax = fig.add_subplot(3, 1, cnt+1)
+        branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+        AM = deque()
+        for i, s in enumerate(branches):
+            for j, e in enumerate(branches):
+                if i >= j:
+                    continue
+                common = sum(allsmmat[f'{s}_{l}'] != allsmmat[f'{e}_{l}'])
+                AM.append(common)
+        AM = np.array(list(AM))
+        Z = linkage(AM, method='single')
+        dendrogram(optimal_leaf_ordering(Z, AM), ax=ax, leaf_font_size=15)
+        ax.spines[:].set_visible(False)
+        ax.tick_params(left=False, labelleft=False)
+        ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=plt.xticks()[0], rotation=90)
+        ax.set_title(l)
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/dendrogram_for_tree_structure.png', dpi=600)
+    plt.close()
 
-            print(grp)
-            break
-
-
+    #TODO: distance distribution between SMs
+    # TODO: calculate mutation rate per branch
 
     return
 # END
+
 
 def mutation_spectra():
     """
@@ -759,12 +923,8 @@ def mutation_spectra():
     plt.savefig(f'{cwd}/af_dist_layer_sm_in_leaf.png')
     plt.close()
 
-
     # Check the presence of somatic mutations in the scRNA data
     ## Done in iso_seq_analysis.py
-
-    # TODO: Plot the distribution of somatic mutations with respect to genomic
-    # structure (syntenic vs SR)
 
     # Check the relationships between branching/branch lengths to SMs
     datafilter = pd.read_table(f'{cwd}/all_layer_somatic_variants.filtered.txt')

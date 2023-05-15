@@ -17,7 +17,7 @@ from matplotlib import colors as mcolors
 
 def get_transcriptome_variants():
     """
-    Compare the transcriptome for the four brancehs and check if ther eare genes
+    Compare the transcriptome for the four brancehs and check if there are genes
     with different transcripts/isoforms
     """
     import os
@@ -102,12 +102,6 @@ def get_transcriptome_variants():
             badgene.append(gene)
     allgenes = allgenes.difference(set(badgene))
 
-
-
-
-
-
-
         for sample in samples:
             try:
                 for t in genetrs[sample]['Gene.9100']:
@@ -117,49 +111,66 @@ def get_transcriptome_variants():
     return
 # END
 
+def get_iso_seq_stats():
+    """
+    Compare the coverage/read-count (etc) of iso-seq reads to the scrna seq reads
+    (Older code (before Anshupa's analysis and removal of duplicates by isoseq3)
+     is overwritten).
 
-SAMPLES = ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
-INDIR = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-CUTS = (10, 25, 50, 100)
+    scrna read count and clusters generated using Anshupa's analysis
+    """
+    from hometools.hometools import revcomp
+    sdict = {'WT_1': 'wt1',
+             'WT_19': 'wt19',
+             'MUT_11_1': 'mut_11_1',
+             'MUT_15': 'mut_15'}
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+    CUTS = (10, 25, 50, 100)
 
-# Get BC read-count stats
-for s in SAMPLES:
-    bcrc = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/barcodes/{}_bc_readcnts.txt'.format(s), header=None, delimiter=' ')
-    df = deque()
-    with open(INDIR+s+"/cnt.txt", 'r') as fin:
-        for line in fin:
-            line = line.strip().split()
-            df.append(line)
-    df = pd.DataFrame(df)
-    df[1] = df[1].str.replace('XC:Z:', '')
-    df[1] = list(map(revcomp, df[1]))
-    df[0] = df[0].astype(int)
-    isoillrc = pd.merge(bcrc, df, how='inner', on=[1])
-    fig=plt.figure(figsize=(8, 8))
-    i = 1
-    ax = fig.add_subplot(3,2,i)
-    ax.scatter(isoillrc['0_x'], isoillrc['0_y'], s=1)
-    ax.set_xlabel("scRNA read count")
-    ax.set_ylabel("scIso-Seq read count")
-    ax.set_title("Read count in cluster BC\nTotal Iso-Seq reads: {}".format(sum(isoillrc['0_y'])), fontdict={'fontsize': 8})
-    i+=1
-    ax = fig.add_subplot(3,2,i)
-    ax.hist(isoillrc['0_y'], bins=100)
-    ax.set_xlabel("scIso-Seq read count")
-    ax.set_ylabel("Number of BC")
-    i+=1
-    for c in CUTS:
-        g = df.loc[(df[0]<1000) & (df[0]>=c)]
-        ax = fig.add_subplot(3, 2, i)
-        ax.set_title(i)
-        ax.hist(g[0], bins=100)
-        ax.set_xlim(0, 1000)
-        ax.set_title("Number of reads: {}\nNumber of cells: {}\ncutoff: {}".format(sum(g[0]), len(g[1]), c), fontdict={'fontsize':8})
+    # Get BC read-count stats
+    for k, v in sdict.items():
+        bcrc = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bc_readcnts.txt'.format(v), header=None, delimiter=' ')
+        df = deque()
+        with open(indir+k+"/cnt.txt", 'r') as fin:
+            for line in fin:
+                line = line.strip().split()
+                df.append(line)
+        df = pd.DataFrame(df)
+        df[1] = df[1].str.replace('CB:Z:', '')
+        df[1] = list(map(revcomp, df[1]))           # CB in Iso-Seq is reverse complemented
+        df[0] = df[0].astype(int)
+        isoillrc = pd.merge(bcrc, df, how='inner', on=[1])
+        fig=plt.figure(figsize=(8, 8))
+        i = 1
+        ax = fig.add_subplot(3,2,i)
+        ax.scatter(isoillrc['0_x'], isoillrc['0_y'], s=1)
+        ax.set_xlabel("scRNA read count")
+        ax.set_ylabel("scIso-Seq read count")
+        ax.set_title("Read count in cluster BC\nTotal Iso-Seq reads: {}".format(sum(isoillrc['0_y'])), fontdict={'fontsize': 8})
         i+=1
-    plt.tight_layout(h_pad=3, w_pad=3)
-    plt.savefig(INDIR+s+"/bc_read_dist.pdf")
-    plt.savefig(INDIR+s+"/bc_read_dist.png", transparent=True)
-    plt.close()
+        ax = fig.add_subplot(3,2,i)
+        ax.hist(isoillrc['0_y'], bins=100)
+        ax.set_xlabel("scIso-Seq read count")
+        ax.set_ylabel("Number of BC")
+        i+=1
+        for c in CUTS:
+            g = df.loc[(df[0]<1000) & (df[0]>=c)]
+            ax = fig.add_subplot(3, 2, i)
+            ax.set_title(i)
+            ax.hist(g[0], bins=100)
+            ax.set_xlim(0, 1000)
+            ax.set_title("Number of reads: {}\nNumber of cells: {}\ncutoff: {}".format(sum(g[0]), len(g[1]), c), fontdict={'fontsize':8})
+            i+=1
+        plt.tight_layout(h_pad=3, w_pad=3)
+        plt.savefig(INDIR+s+"/bc_read_dist.pdf")
+        plt.savefig(INDIR+s+"/bc_read_dist.png", transparent=True)
+        plt.close()
+
+
+
+    return
+# END
+get_iso_seq_stats()
 
 # Filter BC reads and save into Fasta
 for s in SAMPLES:

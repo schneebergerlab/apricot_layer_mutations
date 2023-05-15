@@ -96,11 +96,42 @@ for s in ${samples[@]}; do
         bsub -q ioheavy -n 8 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${l}_bamrc.log -eo ${l}_bamrc.err  "
             $hometools pbamrc -n 8 -b 30 -q 10 -w 0 -S -I -f $refcur -l $CHRBED ${l}.deduped.bam bam_read_counts_b30_q10.bt2.txt
 
-          # GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
-          /srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
+#           GET POSITIONS WITH AT LEAST THREE NON-REFERENCE BASES
+            /srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/python /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/get_positions_with_low_ref_af.py bam_read_counts_b30_q10.bt2.txt
+
+
         "
   done
 done
+
+# Get read counts at candidate high coverage somatic mutations in all samples
+# Being used in layer_specific_dna_analysis => sm_after_masking_layers()
+regfile=${CWD}/all_samples_candidate_high_cov_sms.txt
+hometools=/srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/hometools
+for s in ${samples[@]}; do
+    for l in l1 l2 l3; do
+        cd ${CWD}/${s}/${s}_${l}
+        bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${l}_bamrc.log -eo ${l}_bamrc.err  "
+            $hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l ${regfile} ${l}.deduped.bam bam_read_counts_b0_q0.bt2.txt
+        "
+  done
+done
+
+# Get pileup data at candidate high coverage somatic mutations (second set) in all samples
+# Being used in layer_specific_dna_analysis => sm_after_masking_layers()
+bedfile=${CWD}/all_samples_candidate_high_cov_sms2.bed
+for s in ${samples[@]}; do
+    for l in l1 l2 l3; do
+        cd ${CWD}/${s}/${s}_${l}
+        bsub -q multicore20 -n 1 -R "span[hosts=1] rusage[mem=5000]" -M 6000 -oo ${l}_pileup.log -eo ${l}_pileup.err  "
+            samtools mpileup -A -f $refcur -q 0 -E -Q 0 ${l}.deduped.bam -l $bedfile -O --output-QNAME > all_samples_candidate_high_cov_sms2.q0.Q0.pileup
+            sort -k1,1 -k2,2n -o all_samples_candidate_high_cov_sms2.q0.Q0.pileup all_samples_candidate_high_cov_sms2.q0.Q0.pileup
+            samtools mpileup -A -f $refcur -q 10 -E -Q 13 ${l}.deduped.bam -l $bedfile -O --output-QNAME > all_samples_candidate_high_cov_sms2.q10.Q13.pileup
+            sort -k1,1 -k2,2n -o all_samples_candidate_high_cov_sms2.q10.Q13.pileup all_samples_candidate_high_cov_sms2.q10.Q13.pileup
+        "
+  done
+done
+
 
 ## Get read mapping depth histogram, allele count at leaf mutation positions
 MUTSNEW=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.unique.regions

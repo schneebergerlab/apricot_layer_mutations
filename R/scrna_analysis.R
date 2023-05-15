@@ -499,6 +499,7 @@ ggsave(plot=plt, "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf
 # })
 # Load the PBMC dataset
 SAMPLES=c('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
+SAMPLES=c('WT_1')
 CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/'
 seuobj.list <- sapply(SAMPLES, USE.NAMES=TRUE, FUN=function(x){
   df <- Read10X(data.dir = paste0(CWD, 'get_cells/', x, '/',x,'/outs/filtered_feature_bc_matrix'))
@@ -636,7 +637,6 @@ VlnPlot(seuobj.combined.sct, features = 'nFeature_RNA', group.by = "orig.ident",
 
 
 
-
 # The above figure shows that MUT_15 is outlier and has some weird expression profile
 # when compared to other samples. So now, I use that as the treatment and the rest
 # as the control and then find all the genes that have different expression profile in
@@ -658,3 +658,33 @@ seuobj.list <- PrepSCTIntegration(object.list = seuobj.list, anchor.features = f
 seuobj.anchors <- FindIntegrationAnchors(object.list = seuobj.list, normalization.method = "SCT", anchor.features = features)
 seuobj.combined.sct <- IntegrateData(anchorset = seuobj.anchors, normalization.method = "SCT")
 
+################################################################################
+# DE Analysis
+################################################################################
+# Load object created by Anshupa and get BCs and clusters
+load('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/clusterObj_umap_res0.5.RData')
+orig.ident = int.combinedClst@meta.data$orig.ident
+bcs <- names(Idents(int.combinedClst))
+clustid <- as.numeric(Idents(int.combinedClst))
+wt1.bcs <- gsub('-.*', '', bcs[grep('_1', bcs)])
+wt1.clst <- clustid[grep('_1', bcs)]
+wt19.bcs <- gsub('-.*', '', bcs[grep('_2', bcs)])
+wt19.clst <- clustid[grep('_2', bcs)]
+mut11.1.bcs <- gsub('-.*', '', bcs[grep('_3', bcs)])
+mut11.1.clst <- clustid[grep('_3', bcs)]
+mut15.bcs <- gsub('-.*', '', bcs[grep('_4', bcs)])
+mut15.clst <- clustid[grep('_4', bcs)]
+write.table(data.frame(wt1.clst, wt1.bcs), '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/wt1_bcs_clstr_id.txt', quote=FALSE, row.names=FALSE)
+write.table(data.frame(wt19.clst, wt19.bcs), '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/wt19_bcs_clstr_id.txt', quote=FALSE, row.names=FALSE)
+write.table(data.frame(mut11.1.clst, mut11.1.bcs), '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/mut_11_1_bcs_clstr_id.txt', quote=FALSE, row.names=FALSE)
+write.table(data.frame(mut15.clst, mut15.bcs), '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/mut_15_bcs_clstr_id.txt', quote=FALSE, row.names=FALSE)
+
+samples <- c('wt1', 'wt19', 'mut_11_1', 'mut_15')
+cnts <- int.combinedClst@assays$RNA@counts
+for(s in samples){
+  ids <- which(orig.ident == s)
+  scnts <- cnts[,ids]
+  outdf <- data.frame(colSums(scnts))
+  outdf['bc'] <- gsub('-.*', '', rownames(outdf))
+  write.table(outdf, paste0('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/', s, '_bc_readcnts.txt'), quote=FALSE, row.names=FALSE, col.names=FALSE)
+}

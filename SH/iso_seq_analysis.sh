@@ -52,6 +52,23 @@ done
 # MUT_11_1:  534001
 # MUT_15:  234369
 
+
+## Get read count for each BC
+indir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/'
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $cwd
+    mkdir -p $s; cd $s
+    {
+        samtools sort -t CB -O BAM ${indir}/${s}.iso_seq.flnc-bccorr.dedup.bam > ${s}.CB_sorted.bam
+        samtools index ${s}.CB_sorted.bam
+        samtools view ${s}.CB_sorted.bam  | grep -o -P 'CB:Z:[^\s]*' | uniq -c > cnt.txt
+    } &
+done
+
+iso_seq_analysis.py --> get_iso_seq_stats()
+
+
 # Full length transcript analysis. Trying to find allele-specifc expression (https://isoseq.how/classification/pigeon.html)
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/allele_specific/
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/
@@ -152,18 +169,9 @@ done
 # Now check if there are any genes with clear difference in the transcriptome
 iso_seq_analysis.py -> get_transcriptome_variants()
 
+
 ############ OLD STUFF BEFORE REANALYSIS OF ISO-SEQ READS ######################
-## Get reads scRNA BCs
-INDIR='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_isoseq/'
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    cd $CWD
-    mkdir $s; cd $s
-    # Initial analysis done using the raw barcodes.
-#    samtools sort -t XC -O BAM ${INDIR}/${s}.iso_seq.flnc.bam > ${s}.XC_sorted.bam &
-#    samtools index ${s}.XC_sorted.bam
-#    samtools view $s.XC_sorted.bam  | grep -o -P 'XC:Z:[^\s]*' | uniq -c > cnt.txt &
-done
+
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/iso_seq_analysis.py
 cd $CWD
 pigz -p 10 */*_reads.fa
