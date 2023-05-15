@@ -15,4 +15,25 @@ for b in 00{4..9} 0{10..99} {100..373}; do
         /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
 done
 
-# IDEA: Submit a job that automatically submit MSA jobs!!
+#for b in {364..373}; do
+#    sbatch -J falist.${b} \
+#        -o output_%x.txt -e error_%x.txt \
+#        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
+#        /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
+#done
+#
+## Code to check if any of the msa jobs are unfinished/crashed.
+cd /u/mgoel/apricot/cur_protein
+indir=/ptmp/mgoel/cur_proteins/af2_msa/
+rm failed_mrna.txt; touch failed_mrna.txt
+for i in  00{1..9} 0{10..99} {100..373}; do
+    echo $i
+    while read m; do
+        mrna=$(basename $m .fa)
+        if [ -f ${indir}/${mrna}/features.pkl ]; then
+            true
+        else
+            echo $m >> failed_mrna.txt
+        fi
+    done < fa.list.${i}.txt
+done
