@@ -67,6 +67,45 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
 done
 
 iso_seq_analysis.py --> get_iso_seq_stats()
+# Separate Iso-seq reads to individual clusters
+python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot()
+# Map iso-seq reads from individual clusters to cur reference and get read-count
+# at SM positions
+refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $cwd; cd $s
+    clst=$(ls clstrs*reads.fa.gz)
+    for c in ${clst[@]}; do
+        cls=$(echo $c | sed 's/_reads.fa.gz//g')
+        bsub -q multicore20 -n 10 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo ${cls}.log -eo ${cls}.err "
+            minimap2 -ax splice:hq -t 10 -R '@RG\tID:${cls}\tSM:1' --secondary=no -uf -C5 -O6,24 -B4 -Y $refcur $c \
+            | samtools view -F 2048 -h - \
+            | samtools sort -O BAM -@ 10 - \
+            > ${cls}.iso_seq.bam
+            samtools index -@ 10 ${cls}.iso_seq.bam
+    "
+    done
+done
+
+# Get readcount at all SM positions
+## convert SM positions to regions files usable with bam-readcount
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
+fin=${indir}/all_sm_in_all_samples.csv
+tail +2 $fin \
+| cut -f1,2 -d',' \
+| awk -F ',' '{print $1"\t"$2"\t"$2}' > ${indir}/all_sm_in_all_samples.regions
+
+# All sample somatic mutations
+muts=${indir}/all_sm_in_all_samples.regions
+for sample in WT_1 WT_19 MUT_15 MUT_11_1 ; do
+    cd $cwd; cd $sample
+    {
+    for i in {1..12}; do
+        hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts clstrs_${i}.iso_seq.bam clstrs_${i}.iso_seq.rc.txt
+    done
+    } &
+done
 
 
 # Full length transcript analysis. Trying to find allele-specifc expression (https://isoseq.how/classification/pigeon.html)
@@ -173,82 +212,4 @@ iso_seq_analysis.py -> get_transcriptome_variants()
 ############ OLD STUFF BEFORE REANALYSIS OF ISO-SEQ READS ######################
 
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/iso_seq_analysis.py
-cd $CWD
-pigz -p 10 */*_reads.fa
 
-## Map reads
-refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-    cd $CWD; cd $s
-    clst=$(ls clstrs*reads.fa.gz)
-    for c in ${clst[@]}; do
-        cls=$(echo $c | sed 's/_reads.fa.gz//g')
-        bsub -q multicore20 -n 10 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo ${cls}.log -eo ${cls}.err "
-            minimap2 -ax splice:hq -t 10 -R '@RG\tID:${cls}\tSM:1' --secondary=no -uf -C5 -O6,24 -B4 -Y $refcur $c \
-            | samtools view -F 2048 -h - \
-            | samtools sort -O BAM -@ 10 - \
-            > ${cls}.iso_seq.bam
-            samtools index -@ 10 ${cls}.iso_seq.bam
-    "
-    done
-done
-
-## Get readcount at candidate-indel positions
-refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-CWD='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-
-# The loop below was with old list of mutations.
-#muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/mutations.bed'
-#for s in WT_1 WT_19 MUT_11_1 MUT_15; do
-#    cd $CWD; cd $s
-#    clstrs=$(ls clstrs*bam)
-#    for cls in ${clstrs[@]}; do
-#        c=$(echo $cls | sed 's/bam/rc.txt/g')
-#
-#        bam-readcount -b 0 -q 0 -w 0 -l $muts -f $refcur $cls \
-#        | awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > $c &
-##        hometools pbamrc \
-##        -l $muts \
-##        -f $refcur \
-##        -w 0 \
-##        -n 1 \
-##        $cls \
-##        $c \
-##        &
-#    done
-#done
-
-
-# All sample leaf somatic mutations
-muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.unique.regions'
-for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
-    cd $CWD; cd $sample
-    clstrs=$(ls clstrs*bam)
-    for cls in ${clstrs[@]}; do
-        c=$(echo $cls | sed 's/bam/leaf.rc.txt/g')
-        hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts $cls $c &
-    done
-done
-
-# All sample layer somatic mutations
-muts='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.positions'
-for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
-    cd $CWD; cd $sample
-    clstrs=$(ls clstrs*bam)
-    for cls in ${clstrs[@]}; do
-        c=$(echo $cls | sed 's/bam/layer.rc.txt/g')
-        hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts $cls $c &
-    done
-done
-
-# This is probably not useful
-#for sample in ${SAMPLES[@]}; do
-#    cd  $CWD; cd $sample
-#    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.filtered.bam \
-#| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.b30_q60.readcount &
-#    bam-readcount -b 30 -q 60 -w 0 -l $canind -f $refcur ${sample}.iso_seq.removed.bam \
-#| awk '{printf $1" "$2" "$3" "$4; for(i=6;i<=10;i++) {n1=split($i,a,":"); printf " "a[2]};  for(i=11;i<=NF;i++) {n1=split($i,a,":"); printf " "a[1]" "a[2]}; printf "\n"}' > ${sample}.iso_seq.removed.b30_q60.readcount &
-#done
-#
-#

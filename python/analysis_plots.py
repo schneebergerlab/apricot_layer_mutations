@@ -251,6 +251,7 @@ def merge_all_SM():
                 allsmmat.iat[i, colname.index(v)] = 1
     allsmmat.set_index('chromosome position alt_allele'.split(), inplace=True)
     allsmmat.drop(['leafl2mis', 'selected', 'samples added'], axis=1, inplace=True)
+    # allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv')
     # Draw and save heatmap
     isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmmat.index]
     isSNP = pd.Series(isSNP, index=allsmmat.index)

@@ -1,8 +1,8 @@
 #!/bin/bash -l
 ###SBATCH --array=1-5
 #SBATCH -J AF2-MS
-#SBATCH --nodes=2
-#SBATCH --ntasks=4
+#SBATCH --nodes=10
+#SBATCH --ntasks=20
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=36
 ##SBATCH --mem=120000
@@ -50,8 +50,8 @@ export CUDA_VISIBLE_DEVICES=""
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in 1 26 51 76; do
-end=$((start + 24))
+for start in {1..470..24}; do
+end=$((start + 23))
 PROT_NAME=$(sed -n ${start},${end}p ${1})
 FASTA_PATHS=''
 for prot in ${PROT_NAME[@]}; do
@@ -59,6 +59,8 @@ for prot in ${PROT_NAME[@]}; do
 done
 FASTA_PATHS=${FASTA_PATHS/,}
 echo $FASTA_PATHS
+export NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \

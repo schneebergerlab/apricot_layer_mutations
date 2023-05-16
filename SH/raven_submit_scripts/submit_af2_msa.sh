@@ -11,17 +11,12 @@ split -l 100 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna.fa.list.txt
 cd /ptmp/mgoel/cur_proteins
 for b in 00{4..9} 0{10..99} {100..373}; do
     sbatch -J falist.${b} \
+        -o output_%x.txt -e error_%x.txt \
         /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
         /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
 done
 
-#for b in {364..373}; do
-#    sbatch -J falist.${b} \
-#        -o output_%x.txt -e error_%x.txt \
-#        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
-#        /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
-#done
-#
+
 ## Code to check if any of the msa jobs are unfinished/crashed.
 cd /u/mgoel/apricot/cur_protein
 indir=/ptmp/mgoel/cur_proteins/af2_msa/
@@ -36,4 +31,13 @@ for i in  00{1..9} 0{10..99} {100..373}; do
             echo $m >> failed_mrna.txt
         fi
     done < fa.list.${i}.txt
+done
+split -l 470 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
+
+cd /ptmp/mgoel/cur_proteins
+for b in 00{1..6}; do
+    sbatch -J fa.list2.${b} \
+        -o output_%x.txt -e error_%x.txt \
+        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
+        /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
 done
