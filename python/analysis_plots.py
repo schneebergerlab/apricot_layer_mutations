@@ -463,9 +463,21 @@ def mutation_spectra():
 
     print(f'Number of SM events: {datafilter.shape[0]}')
     print(f'Number of unique SNPs: {datafilter.loc[datafilter.type == "SNP"].drop_duplicates(subset=["chromosome", "position", "ref_allele", "alt_allele", "Layer"]).shape[0]}')
-    print(f'Number of unique Indels: {datafilter.loc[datafilter.type == "Indel"].drop_duplicates(subset=["chromosome", "position", "ref_allele", "alt_allele", "Layer"]).shape[0]}')
-    print(f'Layer specific SM counts:\n{datafilter.drop_duplicates(subset=["chromosome", "position", "alt_allele"]).Layer.value_counts()}')
+    print(f'Number of unique Indel:', datafilter.loc[datafilter.type == "Indel"] \
+            .drop_duplicates(subset=["chromosome", "position", "ref_allele", "alt_allele", "Layer"]) \
+            .shape[0])
+    print(f'Layer specific SM counts:\n', datafilter \
+          .drop_duplicates(subset=["chromosome", "position", "alt_allele"]) \
+          .Layer.value_counts())
+    print(f'Number of branches for each SM', Counter([grp[1].shape[0] for grp in datafilter \
+                                                     .groupby(['chromosome', 'position', 'alt_allele'])]))
+    print("Number of SMs per branch: ", datafilter.branch.value_counts())
+    # Is the statistically significance? No
+    g = datafilter.branch.value_counts()
+    z = (g - np.mean(g))/np.std(g)  # Z-transform shows that No value is outside the 95% range
 
+    print("Dimeric indels: ", {i: Counter([grp[0][2] for grp in datafilter.loc[datafilter.type == 'Indel'].groupby('chromosome position alt_allele'.split())])[i] for i in ['-AT', '-TA', '+AT', '+TA']})
+    print("Dimeric indels total count: ", sum([Counter([grp[0][2] for grp in datafilter.loc[datafilter.type == 'Indel'].groupby('chromosome position alt_allele'.split())])[i] for i in ['-AT', '-TA', '+AT', '+TA']]))
 
     # Set colours
     colour = {('L1', 'SNP'): '#3274a1',
@@ -540,6 +552,7 @@ def mutation_spectra():
     # TODO: Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?
 
     # Indel size distribution
+    # TODO: Add distinction between L1 and L2
     inddf = datafilter.loc[datafilter['type']=='Indel'].copy()
     inddf.drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele'], inplace=True)
     inddf['size'] = [len(a)-1 if '+' in a else 1-len(a) for a in inddf.alt_allele]
@@ -558,6 +571,7 @@ def mutation_spectra():
 
     # SMs overlapping genes, TEs, and intergenic, annotations
     ## TODO: Permutation test for the distribution of ShVs?
+    ## TODO: Create a third plot normalised by the number of identified SM in each layer
     gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
     te_rep = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.ann.gff3').saveas()
 
