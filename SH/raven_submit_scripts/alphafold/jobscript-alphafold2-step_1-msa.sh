@@ -1,8 +1,8 @@
 #!/bin/bash -l
 ###SBATCH --array=1-5
 #SBATCH -J AF2-MS
-#SBATCH --nodes=10
-#SBATCH --ntasks=20
+#SBATCH --nodes=16
+#SBATCH --ntasks=32
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=36
 ##SBATCH --mem=120000
@@ -50,7 +50,7 @@ export CUDA_VISIBLE_DEVICES=""
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..20..1}; do
+for start in {1..32..1}; do
 end=$((start + 0))
 PROT_NAME=$(sed -n ${start},${end}p ${1})
 FASTA_PATHS=''
