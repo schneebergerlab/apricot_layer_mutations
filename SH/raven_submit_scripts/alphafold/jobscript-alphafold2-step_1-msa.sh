@@ -2,13 +2,13 @@
 ###SBATCH --array=1-5
 #SBATCH -J AF2-MS
 #SBATCH --nodes=16
-#SBATCH --ntasks=32
-#SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=36
+#SBATCH --ntasks=16
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=72
 ##SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=8:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
@@ -50,8 +50,8 @@ export CUDA_VISIBLE_DEVICES=""
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..32..1}; do
-end=$((start + 0))
+for start in {1..320..20}; do
+end=$((start + 19))
 PROT_NAME=$(sed -n ${start},${end}p ${1})
 FASTA_PATHS=''
 for prot in ${PROT_NAME[@]}; do
@@ -61,7 +61,7 @@ FASTA_PATHS=${FASTA_PATHS/,}
 echo $FASTA_PATHS
 export NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=256000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \

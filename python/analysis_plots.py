@@ -162,11 +162,10 @@ def merge_all_SM():
     from matplotlib import pyplot as plt
     import numpy as np
     import seaborn as sns
-    from collections import deque
+    from collections import deque, defaultdict
     import pybedtools as bt
     from matplotlib_venn import venn2
     from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
-
 
     # Set colours
     colour = {('L1', 'SNP'): '#3274a1',
@@ -251,48 +250,36 @@ def merge_all_SM():
                 allsmmat.iat[i, colname.index(v)] = 1
     allsmmat.set_index('chromosome position alt_allele'.split(), inplace=True)
     allsmmat.drop(['leafl2mis', 'selected', 'samples added'], axis=1, inplace=True)
+    allsmmat.drop('mut_4_leaf', axis=1, inplace=True)
+    allsmmat = allsmmat.loc[allsmmat.values.sum(axis=1) != 0]
     # allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv')
-    # Draw and save heatmap
-    isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmmat.index]
-    isSNP = pd.Series(isSNP, index=allsmmat.index)
-    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples.png', dpi=300)
-    plt.close()
-    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', col_cluster=False, dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples_no_col_cluster.png', dpi=300)
-    plt.close()
 
-    btissm = dict()
-    for c in allsmmat.columns:
-        btissm[c] = set((allsmmat.loc[allsmmat[c] == 1]).index.values)
-    # for grp in allsm.groupby('branch_tissue'):
-    #     btissm[grp[0]] = set((grp[1].chromosome + '_' + grp[1].position.astype(str) + '_' + grp[1].alt_allele))
+    ####################################################################################################################
+    ####################################################################################################################
+    ####################################################################################################################
 
-    btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
-    for i, a in enumerate(btiss):
-        for j, b in enumerate(btiss):
-            # if i == j:
-            #     continue
-            # else:
-            btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+    # Read the cleaned allsmmat file and create summary stats
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    allsmmat = pd.read_csv(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv', index_col=[0, 1, 2])
 
-    # col_dict = {'leaf': 'green', 'L1': 'red', 'L2': 'blue'}
-    # fig = plt.figure(figsize=[10, 10])
-    # ax = fig.add_subplot(1, 1, 1)
-    # g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
-    # g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
-    # g.vs['tname'] = [col_dict[i.rsplit("_", 1)[1]] for i in btiss]
-    # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), edge_label=[int(i) for i in g.es['weight']], layout=g.layout_circle(), margin=0, bbox=[100, 100], vertex_size=0.1)
-    # plt.tight_layout()
-    # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
-    # ax = fig.add_subplot(2, 1, 2)
-    sns.clustermap(btiss_mat, xticklabels=btiss, yticklabels=btiss, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), cbar_pos=None, linewidths=0.01, figsize=(8, 10))
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png', dpi=300)
-    plt.close()
+    print("Number of SMs: ", allsmmat.shape[0])
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    onlyleaf = set()
+    onlyfruit = set()
+    for b in branches:
+        pos = defaultdict(set)
+        for tissue in 'leaf L1 L2'.split():
+            try:
+                pos[tissue] = set(allsmmat.loc[allsmmat[f'{b}_{tissue}'] == 1].index.values)
+            except KeyError:
+                pass
+        onlyleaf = onlyleaf.union(pos['leaf'].difference(pos['L1']).difference(pos['L2']))
+        onlyfruit = onlyfruit.union(pos['L1'].union(pos['L2']).difference(pos['leaf']))
 
+
+    ####################################################################################################################
+    ####################################################################################################################
+    ####################################################################################################################
 
     # Create BED files for Leaf/L1/L2 and draw them as tracks with plotsr
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
@@ -352,10 +339,10 @@ def merge_all_SM():
     plt.savefig(f'{cwd}/sm_overlap_with_structural_annotation.png', dpi=600)
     plt.close()
 
+    # Plot Venn diagram showing organ specificity of SMs
     leafsms = bt.BedTool(f'{cwd}/leaf_sm_pos.bed').saveas()
     l1sms = bt.BedTool(f'{cwd}/L1_sm_pos.bed').saveas()
     l2sms = bt.BedTool(f'{cwd}/L2_sm_pos.bed').saveas()
-    common = leafsms.intersect(l2sms, u=True)
     fig = plt.figure(figsize=(3, 4))
     ax = fig.add_subplot()
     leafcnt = len(leafsms.subtract(l1sms).subtract(l2sms))
@@ -365,20 +352,194 @@ def merge_all_SM():
     leafl1cnt = len(leafsms.intersect(l1sms, u=True).subtract(l2sms))
     l1l2cnt = len(l1sms.intersect(l2sms, u=True).subtract(leafsms))
     l1l2leafcnt = len(l1sms.intersect(l2sms, u=True).intersect(leafsms, u=True))
+    # venn3(subsets=(len(leafcnt), len(l2cnt), len(leafl2cnt), len(l1cnt), len(leafl1cnt), len(l1l2cnt), len(l1l2leafcnt)),
     venn3(subsets=(leafcnt, l2cnt, leafl2cnt, l1cnt, leafl1cnt, l1l2cnt, l1l2leafcnt),
           set_labels='leaf L2 L1'.split(),
           set_colors=(colour['leaf'], colour['L2'], colour['L1']), alpha=1, ax=ax)
-    # v = venn2(subsets=(len(leafsms.subtract(l2sms)), len(l2sms.subtract(leafsms)), len(common)), set_labels=('Leaf SMs', 'L2 SMs'), set_colors=(colour['leaf'], colour['L2']), alpha=0.5, ax=ax)
-    # o = v.get_patch_by_id("A")
-    # o.set_edgecolor(colour['leaf'])
-    # o.set_lw(1.5)
-    # o = v.get_patch_by_id("B")
-    # o.set_edgecolor(colour['L2'])
-    # o.set_lw(1.5)
-    # plt.title('')
     plt.tight_layout(rect=(0, 0, 1, 1))
-    plt.savefig(f'{cwd}/organ_specificity.png', dpi=600)
+    plt.savefig(f'{cwd}/organ_specificity.png', dpi=300)
     plt.close()
+
+
+    # Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2
+    ## Get readcounts from the leaf BAM files, using code in layer_specific_dna_analysis_all_samples.sh
+    pos = set(allsmmat.index.values)
+    rc = dict()
+    af = dict()
+    basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+    sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
+    ## Read read counts at the layer SM positions in leaves
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    for b in ('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'MUT_15'):
+        with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.all_sm_in_all_samples.read_count.txt', 'r') as fin:
+            bname = sdict[b]
+            rc[bname] = dict()
+            af[bname] = dict()
+            for line in fin:
+                line = line.strip().split()
+                alts = deque()
+                for p in pos:
+                    if (line[0], int(line[1])) == (p[0], p[1]):
+                        alts.append(p[2])
+                for alt in alts:
+                    try:
+                        rc[bname][line[0], int(line[1]), alt] = int(line[basedict[alt]])
+                        af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
+                    except KeyError:
+                        try:
+                            i = line.index(alt)
+                            rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
+                            af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
+                        except ValueError:
+                            rc[bname][line[0], int(line[1]), alt] = 0
+                            af[bname][line[0], int(line[1]), alt] = 0
+
+    ## Read counts at the layer SM positions in layers
+    for l in ('l1', 'l2'):
+        for b in ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15'):
+            with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.{l}.all_sm_in_all_samples.read_count.txt', 'r') as fin:
+                bname = f'{b}_{l}'
+                rc[bname] = dict()
+                af[bname] = dict()
+                for line in fin:
+                    line = line.strip().split()
+                    alts = deque()
+                    for p in pos:
+                        if (line[0], int(line[1])) == (p[0], p[1]):
+                            alts.append(p[2])
+                    for alt in alts:
+                        try:
+                            rc[bname][line[0], int(line[1]), alt] = int(line[basedict[alt]])
+                            af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
+                        except KeyError:
+                            try:
+                                i = line.index(alt)
+                                rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
+                                af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
+                            except ValueError:
+                                rc[bname][line[0], int(line[1]), alt] = 0
+                                af[bname][line[0], int(line[1]), alt] = 0
+
+    rcvalues = pd.DataFrame(rc)
+    afvalues = pd.DataFrame(af)
+    rcvalues['var_type'] = ['Indel' if i[2][0] in '+-' else 'SNP' for i in rcvalues.index.values]
+    rcvalues['Organ'] = ['Leaf' if i in onlyleaf else 'Fruit' if i in onlyfruit else 'Both' for i in rcvalues.index.values]
+    assert all(rcvalues.index.values == afvalues.index.values)
+    afvalues['var_type'] = rcvalues['var_type'].copy()
+    afvalues['Organ'] = rcvalues['Organ'].copy()
+    rcvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=False)
+    afvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=False)
+
+    annocol = pd.DataFrame({
+        'branch': list(rcvalues.columns[:7]) + [c.rsplit('_', maxsplit=1)[0] for c in rcvalues.columns[7:21]],
+        'Sample': np.repeat(['Leaf', 'L1', 'L2'], [7, 7, 7])
+    })
+    annorow = pd.DataFrame({
+        'var_type': rcvalues.var_type,
+        'Organ': rcvalues.Organ
+    })
+    rcvalues.to_csv(f'{cwd}/all_sm_in_all_samples.read_counts.txt', sep='\t')
+    afvalues.to_csv(f'{cwd}/all_sm_in_all_samples.allele_freq.txt', sep='\t')
+    annocol.to_csv(f'{cwd}/all_sm_in_all_samples.annocol.txt', sep='\t')
+    annorow.to_csv(f'{cwd}/all_sm_in_all_samples.annorow.txt', sep='\t')
+
+    ## Creat pheatmap in R (file: /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/presentation_plots.R)
+    # subprocess.call(f'inkscape {cwd}/all_layer_somatic_variants.allele_freq.pdf -M {cwd}/all_layer_somatic_variants.allele_freq.emf', shell=True)
+
+    # Get AF plots of layer mutations in leaves (this would demonstrate that the
+    # layer 1 mutations could not be identified in leaves, further support that
+    # accurate SM identification would require homogenous cell population)
+    # TODO: Fix this plot
+    afvalues = pd.read_table(f'{cwd}/all_sm_in_all_samples.allele_freq.txt')
+    afvalues.columns = ['chromosome', 'position', 'alt_allele'] + list(afvalues.columns)[3:]
+    fig = plt.figure(figsize=[8, 12])
+    plt.rc('font', size=10)
+    for i, grp in enumerate(datafilter.groupby('branch')):
+        bmut = grp[1].merge(afvalues, on=['chromosome', 'position', 'alt_allele'])
+        assert(bmut.shape[0] == grp[1].shape[0])
+        print(grp[0], grp[1].shape[0])
+        pltdf = bmut[['chromosome', 'position', 'Layer', 'type'] + [grp[0]+s for s in ['', '_l1', '_l2', '_l3']]]
+        pltdf.columns = ['chromosome', 'position', 'Layer', 'type'] + ['leaf', 'l1', 'l2', 'l3']
+        pltdf = pltdf.melt(id_vars=['chromosome', 'position', 'Layer', 'type'])
+        ax = fig.add_subplot(4, 2, i+1)
+        sns.lineplot(pltdf, x='variable', y='value', units='position', estimator=None, hue='Layer', style='type', ax=ax)
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.set_xlabel(grp[0])
+        ax.set_ylabel('Alelle freq')
+        ax.set_ylim([-0.1, 1.1])
+        ax.get_legend().set_visible(False)
+    ax.legend(bbox_to_anchor=(1.01, 1))
+    plt.suptitle("Allele frequency of layer specific mutations")
+    plt.tight_layout(rect=(0, 0, 1, 0.98))
+    plt.savefig(f'{cwd}/af_dist_layer_sm_in_leaf.png')
+    plt.close()
+
+    # Heatmap for presence/absence of SMs in different samples
+    isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmmat.index]
+    isSNP = pd.Series(isSNP, index=allsmmat.index)
+    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples.png', dpi=300)
+    plt.close()
+    sns.clustermap(allsmmat, cmap="Greens", linecolor='lightgrey', col_cluster=False, dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples_no_col_cluster.png', dpi=300)
+    plt.close()
+
+    # Heatmap for clustering of different samples based on SMs in them
+    tissues = ['leaf', 'L1', 'L2']
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    btissm = dict()
+    for c in allsmmat.columns:
+        btissm[c] = set((allsmmat.loc[allsmmat[c] == 1]).index.values)
+    allL1 = btissm[f'{branches[0]}_L1']
+    for b in branches[1:]:
+        allL1 = allL1.intersection(btissm[f'{b}_L1'])
+    for b in branches:
+        btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
+
+    btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
+    for i, a in enumerate(btiss):
+        for j, b in enumerate(btiss):
+            btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+
+    sns.clustermap(btiss_mat, xticklabels=btiss, yticklabels=btiss, cmap="Greens", linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), cbar_pos=None, linewidths=0.01, figsize=(8, 10))
+    plt.tight_layout()
+    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution2.png', dpi=300)
+    plt.close()
+    # for i in range(21):
+    #     btiss_mat[i, i] = 0
+    # col_dict = {'leaf': 'green', 'L1': 'red', 'L2': 'blue'}
+    # fig = plt.figure(figsize=[10, 10])
+    # ax = fig.add_subplot(1, 1, 1)
+    # g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
+    # g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
+    # g.vs['tname'] = [col_dict[i.rsplit("_", 1)[1]] for i in btiss]
+    # # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), edge_label=[int(i) for i in g.es['weight']], layout=g.layout_circle(), margin=0, bbox=[100, 100], vertex_size=0.1)
+    # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), layout=g.layout_circle(), margin=0, bbox=[100, 100], vertex_size=0.1)
+    # plt.tight_layout()
+    # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
+
+
+    # Get mutations that are different between Leaf and paired L2
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    bdiff = dict()
+    for b in branches:
+        pos = defaultdict(set)
+        for tissue in 'leaf L1 L2'.split():
+            try:
+                pos[tissue] = set(allsmmat.loc[allsmmat[f'{b}_{tissue}'] == 1].index.values)
+            except KeyError:
+                pass
+        print(b, 'leaf', pos['leaf'].difference(pos['L2']))
+        print(b, 'L2', pos['L2'].difference(pos['leaf']))
+        onlyleaf = onlyleaf.union(pos['leaf'].difference(pos['L1']).difference(pos['L2']))
+        onlyfruit = onlyfruit.union(pos['L1'].union(pos['L2']).difference(pos['leaf']))
+
+
+
 
     # Get maximum spanning tree and hierarchical clustering between branches (this would show
     # whether the SMs fit the morphology of the tree). Do separately for leaf, L1, L2 and all combined
@@ -404,7 +565,7 @@ def merge_all_SM():
     plt.savefig(f'{cwd}/dendrogram_for_tree_structure.png', dpi=600)
     plt.close()
 
-    #TODO: distance distribution between SMs
+    # TODO: distance distribution between SMs
     # TODO: calculate mutation rate per branch
 
     return
@@ -823,119 +984,6 @@ def mutation_spectra():
     ax.spines['top'].set_visible(False)
     plt.tight_layout(pad=0)
     plt.savefig(f"{cwd}/layer_conserved_somatic_mutation_allele_frequency.png", dpi=600)
-    plt.close()
-
-    # Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2
-    ## Get readcounts from the leaf BAM files, using code in layer_specific_dna_analysis_all_samples.sh
-    pos = set(zip(datafilter.chromosome, datafilter.position, datafilter.alt_allele))
-    rc = dict()
-    af = dict()
-    basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-    sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
-    ## Read read counts at the layer SM positions in leaves
-    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
-    for b in ('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'MUT_15', 'mut4'):
-        with open(f'{cwd}/{b}.all_layer_somatic_variants.read_count.txt', 'r') as fin:
-            bname = sdict[b]
-            rc[bname] = dict()
-            af[bname] = dict()
-            for line in fin:
-                line = line.strip().split()
-                alts = deque()
-                for p in pos:
-                    if (line[0], int(line[1])) == (p[0], p[1]):
-                        alts.append(p[2])
-                for alt in alts:
-                    try:
-                        rc[bname][line[0], int(line[1]), alt] = int(line[basedict[alt]])
-                        af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
-                    except KeyError:
-                        try:
-                            i = line.index(alt)
-                            rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
-                            af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
-                        except ValueError:
-                            rc[bname][line[0], int(line[1]), alt] = 0
-                            af[bname][line[0], int(line[1]), alt] = 0
-
-    ## Read counts at the layer SM positions in layers
-    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
-    for l in ('l1', 'l2', 'l3'):
-        for b in ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15'):
-            with open(f'{cwd}/{b}.{l}.all_layer_somatic_variants.read_count.txt', 'r') as fin:
-                bname = f'{b}_{l}'
-                rc[bname] = dict()
-                af[bname] = dict()
-                for line in fin:
-                    line = line.strip().split()
-                    alts = deque()
-                    for p in pos:
-                        if (line[0], int(line[1])) == (p[0], p[1]):
-                            alts.append(p[2])
-                    for alt in alts:
-                        try:
-                            rc[bname][line[0], int(line[1]), alt] = int(line[basedict[alt]])
-                            af[bname][line[0], int(line[1]), alt] = round(int(line[basedict[alt]])/int(line[3]), 2)
-                        except KeyError:
-                            try:
-                                i = line.index(alt)
-                                rc[bname][line[0], int(line[1]), alt] = int(line[i+1])
-                                af[bname][line[0], int(line[1]), alt] = round(int(line[i+1])/int(line[3]), 2)
-                            except ValueError:
-                                rc[bname][line[0], int(line[1]), alt] = 0
-                                af[bname][line[0], int(line[1]), alt] = 0
-
-    rcvalues = pd.DataFrame(rc)
-    afvalues = pd.DataFrame(af)
-    rcvalues['var_type'] = [datafilter.loc[(datafilter.chromosome == k[0]) & (datafilter.position == k[1]) & (datafilter.alt_allele == k[2])].iloc[0].type for k in rcvalues.index.values]
-    rcvalues['var_tissue'] = [datafilter.loc[(datafilter.chromosome == k[0]) & (datafilter.position == k[1]) & (datafilter.alt_allele == k[2])].iloc[0].Layer for k in rcvalues.index.values]
-    rcvalues.sort_values(['var_type', 'var_tissue'], inplace=True, ascending=False)
-    afvalues['var_type'] = [datafilter.loc[(datafilter.chromosome == k[0]) & (datafilter.position == k[1]) & (datafilter.alt_allele == k[2])].iloc[0].type for k in afvalues.index.values]
-    afvalues['var_tissue'] = [datafilter.loc[(datafilter.chromosome == k[0]) & (datafilter.position == k[1]) & (datafilter.alt_allele == k[2])].iloc[0].Layer for k in afvalues.index.values]
-    afvalues.sort_values(['var_type', 'var_tissue'], inplace=True, ascending=False)
-
-    annocol = pd.DataFrame({
-        'branch': list(rcvalues.columns[:8]) + [c.rsplit('_', maxsplit=1)[0] for c in rcvalues.columns[8:29]],
-        'tissue': np.repeat(['leaf', 'L1', 'L2', 'L3'], [8, 7, 7, 7])
-    })
-    annorow = pd.DataFrame({
-        'var_type': rcvalues.var_type,
-        'var_tissue': rcvalues.var_tissue
-    })
-    rcvalues.to_csv(f'{cwd}/all_layer_somatic_variants.read_counts.txt', sep='\t')
-    afvalues.to_csv(f'{cwd}/all_layer_somatic_variants.allele_freq.txt', sep='\t')
-    annocol.to_csv(f'{cwd}/all_layer_somatic_variants.annocol.txt', sep='\t')
-    annorow.to_csv(f'{cwd}/all_layer_somatic_variants.annorow.txt', sep='\t')
-
-    ## Creat pheatmap in R (file: /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/R/presentation_plots.R)
-    subprocess.call(f'inkscape {cwd}/all_layer_somatic_variants.allele_freq.pdf -M {cwd}/all_layer_somatic_variants.allele_freq.emf', shell=True)
-
-    # Get AF plots of layer mutations in leaves (this would demonstrate that the
-    # layer 1 mutations could not be identified in leaves, further support that
-    # accurate SM identification would require homogenous cell population)
-    afvalues = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.allele_freq.txt')
-    afvalues.columns = ['chromosome', 'position', 'alt_allele'] + list(afvalues.columns)[3:]
-    fig = plt.figure(figsize=[8, 12])
-    plt.rc('font', size=10)
-    for i, grp in enumerate(datafilter.groupby('branch')):
-        bmut = grp[1].merge(afvalues, on=['chromosome', 'position', 'alt_allele'])
-        assert(bmut.shape[0] == grp[1].shape[0])
-        print(grp[0], grp[1].shape[0])
-        pltdf = bmut[['chromosome', 'position', 'Layer', 'type'] + [grp[0]+s for s in ['', '_l1', '_l2', '_l3']]]
-        pltdf.columns = ['chromosome', 'position', 'Layer', 'type'] + ['leaf', 'l1', 'l2', 'l3']
-        pltdf = pltdf.melt(id_vars=['chromosome', 'position', 'Layer', 'type'])
-        ax = fig.add_subplot(4, 2, i+1)
-        sns.lineplot(pltdf, x='variable', y='value', units='position', estimator=None, hue='Layer', style='type', ax=ax)
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.set_xlabel(grp[0])
-        ax.set_ylabel('Alelle freq')
-        ax.set_ylim([-0.1, 1.1])
-        ax.get_legend().set_visible(False)
-    ax.legend(bbox_to_anchor=(1.01, 1))
-    plt.suptitle("Allele frequency of layer specific mutations")
-    plt.tight_layout(rect=(0, 0, 1, 0.98))
-    plt.savefig(f'{cwd}/af_dist_layer_sm_in_leaf.png')
     plt.close()
 
     # Check the presence of somatic mutations in the scRNA data

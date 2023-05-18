@@ -194,7 +194,6 @@ cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/
 tail +2 all_layer_somatic_variants.txt  | cut -f 1,2 | uniq | sort -k1,1 -k2,2n | awk '{print $1,$2,$2}' > all_layer_somatic_variants.positions
 tail +2 all_layer_somatic_variants.txt  | cut -f 1,2 | uniq | sort -k1,1 -k2,2n | awk '{print $1,$2-1,$2}' > all_layer_somatic_variants.bed
 
-
 for sample in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
     hometools pbamrc -n 4 -b 0 -q 0 -w 0 -I -f $refcur -l all_layer_somatic_variants.positions ../${sample}/${sample}.sorted.bt2.bam ${sample}.all_layer_somatic_variants.read_count.txt
     echo $sample
@@ -211,6 +210,27 @@ for s in ${samples[@]}; do
     done
 done
 
+# Get allele frequency of all_sm_in_all_sample in leaf, L1, and L2 samples
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples_readcounts/
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
+muts=${indir}/all_sm_in_all_samples.regions
+# Leaf scdna
+cd $cwd
+for s in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
+    echo $s
+    hometools pbamrc -n 10 -b 0 -q 0 -w 0 -I -f $refcur -l $muts ../${s}/${s}.sorted.bt2.bam ${s}.all_sm_in_all_samples.read_count.txt
+done
+# Leaf normal
+for s in 'wt7' 'wt18' 'mut4' 'mut11_2' ; do
+    echo $s
+    hometools pbamrc -n 10 -b 0 -q 0 -w 0 -I -f $refcur -l $muts ../${s}/${s}.deduped.bam ${s}.all_sm_in_all_samples.read_count.txt
+done
+# Layers
+for s in wt_1 wt_7 wt_18 wt_19 mut_11_1 mut_11_2 mut_15; do
+    for l in l1 l2; do
+        hometools pbamrc -n 10 -b 0 -q 0 -w 0 -f $refcur -I -l $muts ../layer_samples/${s}/${s}_${l}/${l}.deduped.bam ${s}.${l}.all_sm_in_all_samples.read_count.txt
+    done
+done
 
 ####################################################################
 ############ Gene-conversion identification
