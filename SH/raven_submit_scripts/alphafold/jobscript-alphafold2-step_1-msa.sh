@@ -61,7 +61,7 @@ FASTA_PATHS=${FASTA_PATHS/,}
 echo $FASTA_PATHS
 export NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=256000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \
