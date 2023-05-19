@@ -50,8 +50,8 @@ export CUDA_VISIBLE_DEVICES=""
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..320..20}; do
-end=$((start + 19))
+for start in {1..16..1}; do
+end=$((start + 0))
 PROT_NAME=$(sed -n ${start},${end}p ${1})
 FASTA_PATHS=''
 for prot in ${PROT_NAME[@]}; do

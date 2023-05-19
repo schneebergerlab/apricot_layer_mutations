@@ -32,10 +32,10 @@ for i in  00{1..9} 0{10..99} {100..373}; do
         fi
     done < fa.list.${i}.txt
 done
-split -l 320 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
+split -l 16 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
 
 cd /ptmp/mgoel/cur_proteins
-for b in 00{1..1}; do
+for b in 00{1..9} 0{10..20}; do
     sbatch -J fa.list2.${b} \
         -o output_%x.txt -e error_%x.txt \
         /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
