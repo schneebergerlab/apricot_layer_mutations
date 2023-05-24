@@ -61,10 +61,11 @@ for start in {1..32..1}; do
     echo $FASTA_PATHS
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+    # Changed the database as some proteins crashed with full database
     srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
             --output_dir="${OUTPUT_DIR}" \
             --fasta_paths="${FASTA_PATHS}" \
-            --db_preset="reduced_dbs" \               # Changed the database as some proteins crashed with full database
+            --db_preset="reduced_dbs" \
             --data_dir="${ALPHAFOLD_DATA}" \
             --bfd_database_path=${bfd_database_path} \
             --uniref30_database_path=${uniref30_database_path} \
