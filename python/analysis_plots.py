@@ -449,7 +449,7 @@ def merge_all_SM():
     # Get AF plots of layer mutations in leaves (this would demonstrate that the
     # layer 1 mutations could not be identified in leaves, further support that
     # accurate SM identification would require homogenous cell population)
-    # TODO: Fix this plot
+    # TODO: Fix this plot so that it works for data from all_sm
     afvalues = pd.read_table(f'{cwd}/all_sm_in_all_samples.allele_freq.txt')
     afvalues.columns = ['chromosome', 'position', 'alt_allele'] + list(afvalues.columns)[3:]
     fig = plt.figure(figsize=[8, 12])
@@ -522,25 +522,6 @@ def merge_all_SM():
     # plt.tight_layout()
     # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
 
-
-    # Get mutations that are different between Leaf and paired L2
-    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
-    bdiff = dict()
-    for b in branches:
-        pos = defaultdict(set)
-        for tissue in 'leaf L1 L2'.split():
-            try:
-                pos[tissue] = set(allsmmat.loc[allsmmat[f'{b}_{tissue}'] == 1].index.values)
-            except KeyError:
-                pass
-        print(b, 'leaf', pos['leaf'].difference(pos['L2']))
-        print(b, 'L2', pos['L2'].difference(pos['leaf']))
-        onlyleaf = onlyleaf.union(pos['leaf'].difference(pos['L1']).difference(pos['L2']))
-        onlyfruit = onlyfruit.union(pos['L1'].union(pos['L2']).difference(pos['leaf']))
-
-
-
-
     # Get maximum spanning tree and hierarchical clustering between branches (this would show
     # whether the SMs fit the morphology of the tree). Do separately for leaf, L1, L2 and all combined
     fig = plt.figure(figsize=(3, 8))
@@ -565,8 +546,77 @@ def merge_all_SM():
     plt.savefig(f'{cwd}/dendrogram_for_tree_structure.png', dpi=600)
     plt.close()
 
-    # TODO: distance distribution between SMs
+    # Get mutations that are different between Leaf and paired L2
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    for b in branches:
+        pos = defaultdict(set)
+        for tissue in 'leaf L2'.split():
+            try:
+                pos[tissue] = set(allsmmat.loc[allsmmat[f'{b}_{tissue}'] == 1].index.values)
+            except KeyError:
+                pass
+        # print(b, 'leaf', pos['leaf'].difference(pos['L2']))
+        # print(b, 'L2', pos['L2'].difference(pos['leaf']))
+        onlyleaf = pos['leaf'].difference(pos['L2'])
+        for s in onlyleaf:
+            if sum(allsmmat.loc[s, allsmmat.columns != f'{b}_leaf']) > 0:
+                print(b, 'leaf', s)
+        onlyfruit = pos['L2'].difference(pos['leaf'])
+        for s in onlyfruit:
+            if sum(allsmmat.loc[s, allsmmat.columns != f'{b}_L2']) > 0:
+                print(b, 'leaf', s)
+    ## This found two positions
+    ## mut_11_1 leaf ('CUR2G', 367749, '+TA'): Present in all samples expect mut_11_1_l2
+    ## mut_15 leaf ('CUR3G', 8510980, '-GAG'): Found because it is present in both L1 and L2
+
     # TODO: calculate mutation rate per branch
+    # Calculate mutation rate: Consider each sample as separate lineage and divide by the diploid genome size
+    fig = plt.figure(figsize=[6, 4])
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    mrates = pd.DataFrame(allsmmat.apply(sum, axis=0)/480000000)
+    mrates.columns = ['value']
+    mrates['mrate'] = 'Mutation Rate'
+    mrates['Tissue'] = [i.rsplit('_', 1)[1] for i in mrates.index.values]
+    ax = fig.add_subplot(1, 2, 1)
+    ax = sns.violinplot(data=mrates, x="mrate", y="value", color='lightgrey', inner=None, ax=ax)
+    ylim = ax.get_ylim()
+    plt.setp(ax.collections, alpha=.4)
+    ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, zorder=1, ax=ax, hue='Tissue')
+    ax.set_ylim(ylim)
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.legend(frameon=False)
+    ax.set_title("All SMs")
+    plt.tight_layout(pad=0)
+    # plt.savefig(f'{cwd}/mutation_rate_differences.png', dpi=300)
+    # plt.close()
+
+    mutsinallL1 = allsmmat.loc[:, [b+'_L1' for b in branches]]
+    # mutsinallL1 = mutsinallL1.loc[mutsinallL1.apply(sum, axis=1) != 7]
+    mrates = pd.DataFrame(allsmmat.loc[mutsinallL1.apply(sum, axis=1) != 7].apply(sum, axis=0)/480000000)
+    mrates.columns = ['value']
+    mrates['mrate'] = 'Mutation Rate'
+    mrates['Tissue'] = [i.rsplit('_', 1)[1] for i in mrates.index.values]
+    ax = fig.add_subplot(1, 2, 2)
+    ax = sns.violinplot(data=mrates, x="mrate", y="value", color='lightgrey', inner=None, ax=ax)
+    # ylim = ax.get_ylim()
+    plt.setp(ax.collections, alpha=.4)
+    ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, zorder=1, ax=ax, hue='Tissue')
+    ax.set_ylim(ylim)
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    plt.tight_layout(pad=0)
+    ax.legend(frameon=False)
+    ax.set_title("Filtered SMs in all L1")
+    plt.tight_layout(pad=0)
+    plt.savefig(f'{cwd}/mutation_rate_differences.png', dpi=300)
+    plt.close()
+
+    # TODO: distance distribution between SMs
 
     return
 # END
@@ -649,7 +699,6 @@ def mutation_spectra():
               'L2': '#e1812c'}
 
     # Plot for number of SMs per branch
-    ## TODO: Test for significance
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     branchscnt = {g[0]: g[1].branch.value_counts() for g in datafilter.groupby(['Layer', 'type'])}
 
@@ -662,11 +711,11 @@ def mutation_spectra():
             y = [branchscnt[(l, t)][b] for b in branches]
             print(y)
             # y = [cnts[x] if x in cnts else 0 for x in xticks]
-            ax.bar(np.arange(1,8), y, label=f'{l}_{t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
+            ax.bar(np.arange(1, 8), y, label=f'{l}_{t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
             y_bottom = [y_bottom[i] + y[i] for i in range(7)]
     ax.set_xlabel("Branch")
     ax.set_ylabel("Number of SMs")
-    ax.set_xticks(np.arange(1,8))
+    ax.set_xticks(np.arange(1, 8))
     ax.set_xticklabels(['w1', 'w2', 'w3', 'w4', 'm1', 'm2', 'm3'])
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -1189,6 +1238,43 @@ def get_overlap_of_sm_and_flowering_gene():
     # Out[30]: Empty PyRanges
     # flowt
     # Out[31]: Empty PyRanges
+
+
+    return
+# END
+
+
+def axillary_stats_plots():
+    """
+    Functions and commands to get extra plots for manuscript
+    """
+
+    def raw_hifi_stats():
+        """
+        Get read count, read length distribution, and total number of bases
+        """
+        from gzip import open as gzopen
+        from collections import deque
+        from matplotlib import pyplot as plt
+        f = '/srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4784/4784_A_run521_HIFI.fastq.gz'
+        outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
+        cnt = 0
+        sizes = deque()
+        with gzopen(f, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i % 4 == 1:
+                    cnt += 1
+                    sizes.append(len(line.strip()))
+        print(f'Number of reads: {cnt}')
+        print(f'Total read lenght: {sum(sizes)}')
+        plt.hist(sizes, bins=100)
+        plt.ylabel("Number of reads")
+        plt.xlabel("Read length")
+        plt.tight_layout()
+        plt.savefig(f'{outdir}/hifi_read_lenght.png', dpi=300)
+        plt.close()
+        return
+    # END
 
 
     return

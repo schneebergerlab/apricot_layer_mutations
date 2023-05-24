@@ -195,6 +195,8 @@ def get_allele_freq_at_sm_pos_plot():
     import pandas as pd
     from itertools import product
     from matplotlib import colors as mcolors
+    from scipy.cluster.hierarchy import linkage, optimal_leaf_ordering, leaves_list
+    from scipy.spatial.distance import pdist
 
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
     sdict = {'WT_1': 'wt1',
@@ -289,10 +291,15 @@ def get_allele_freq_at_sm_pos_plot():
     mutsfilt = mutsfilt.loc[mutsfilt.index.isin(samids)]
     mutsfilt = mutsfilt.loc[samids]
     mutsfilt = mutsfilt.loc[:, (mutsfilt != 0).any(axis=0)]
-    smids = mutsfilt.columns
+
+    distance_matrix = pdist(mutsfilt.T)
+    linkage_matrix = linkage(distance_matrix, method='single')
+    smids = mutsfilt.columns[leaves_list(optimal_leaf_ordering(linkage_matrix, distance_matrix))]
+    mutsfilt = mutsfilt.loc[:, smids]
 
     fig = plt.figure(figsize=[8, 14])
     ax1 = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1)
+    # ax1 = sns.clustermap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap="Greens", xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
     ax1 = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap="Greens", xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
     ax1.set_ylabel('')
     ax1.set_xlabel('')
@@ -322,65 +329,11 @@ def get_allele_freq_at_sm_pos_plot():
     plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.png', dpi=300)
     plt.close()
 
-    # mutmerge = mutsrc.merge(muts, on=['chromosome', 'position', 'alt_allele', 'branch'], how='left')
-    # mutmerge.sort_values(['chromosome', 'position', 'alt_allele'], inplace=True)
-    # mutmerge.reset_index(drop=True, inplace=True)
-    # mutmerge['p'] = mutmerge.chromosome.astype(str) + '_' + mutmerge.position.astype(str) + '_' + mutmerge.alt_allele.astype(str)
-    # mutmerge['c'] = mutmerge.branch.astype(str) + '_' + mutmerge.cls.astype(str)
-    # nonzeropos = set(mutmerge.loc[mutmerge.rc > 0].p)
-    # mutmerge = mutmerge.loc[mutmerge.p.isin(nonzeropos)]
-    #
-    #
-    # allpos = pd.DataFrame(product(mutmerge.p.unique(), mutmerge.c.unique()))
-    # allpos.columns = ['p', 'c']
-    # allpos = allpos.merge(mutmerge, how='left', on=['p', 'c'])
-    # allpos.loc[allpos.rc.isna(), ['rc', 'ac', 'af']] = -1
-    #
-    #
-    # L1pos = muts.loc[(muts.Layer=='L1') & (muts.branch.isin(['mut_11_1', 'mut_15', 'wt_1', 'wt_19']))]
-    # L1pos = set(L1pos.chromosome.astype(str) + '_' + L1pos.position.astype(str) + '_' + L1pos.alt_allele.astype(str))
-    # L2pos = muts.loc[(muts.Layer=='L2') & (muts.branch.isin(['mut_11_1', 'mut_15', 'wt_1', 'wt_19']))]
-    # L2pos = set(L2pos.chromosome.astype(str) + '_' + L2pos.position.astype(str) + '_' + L2pos.alt_allele.astype(str))
-    #
-    # # TODO: consider adding sample information in the plot
-    # fig = plt.figure(figsize=[8, 14])
-    # ax = fig.add_subplot(3, 1, 1)
-    # # Normalise values of rc, ac, af to be in range
-    # rchm = allpos.pivot(index='c', columns='p')['rc']
-    # rchm = pd.concat([rchm.loc[:, [c for c in rchm.columns if c in L1pos]], rchm.loc[:, [c for c in rchm.columns if c in L2pos]]], axis=1)
-    # rchm = rchm*10/rchm.values.max()
-    # rchm[rchm < 0] = -1
-    # sns.heatmap(rchm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=False, yticklabels=rchm.index, cbar_kws={'label': 'Normalized read count', 'fraction': 0.05}, ax=ax, vmin=-1)
-    # ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
-    # ax.vlines([len([c for c in rchm.columns if c in L1pos])], *ax.get_ylim(), color='k')
-    # ax.set_ylabel('')
-    # ax.set_xlabel('')
-    # ax.set_title('Normalized read count')
-    #
-    # ax = fig.add_subplot(3, 1, 2)
-    # achm = allpos.pivot(index='c', columns='p')['ac']
-    # achm = pd.concat([achm.loc[:, [c for c in achm.columns if c in L1pos]], achm.loc[:, [c for c in achm.columns if c in L2pos]]], axis=1)
-    # achm = achm*10/achm.values.max()
-    # achm[achm < 0] = -1
-    # sns.heatmap(achm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=False, yticklabels=achm.index, cbar_kws={'label': 'Normalized allele count', 'fraction': 0.05}, ax=ax, vmin=-1)
-    # ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
-    # ax.vlines([len([c for c in achm.columns if c in L1pos])], *ax.get_ylim(), color='k')
-    # ax.set_ylabel('')
-    # ax.set_xlabel('')
-    # ax.set_title('Normalized allele count')
-    #
-    # ax = fig.add_subplot(3, 1, 3)
-    # afhm = allpos.pivot(index=['c'], columns='p')['af']
-    # afhm = pd.concat([afhm.loc[:, [c for c in afhm.columns if c in L1pos]], afhm.loc[:, [c for c in afhm.columns if c in L2pos]]], axis=1)
-    # afhm = afhm*10/afhm.values.max()
-    # afhm[afhm < 0] = -1
-    # sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
-    # # sns.heatmap(afhm, linewidths=0.1, linecolor='w', cmap=cmap, norm=norm, xticklabels=True, yticklabels=afhm.index, cbar_kws={'label': 'Normalized allele frequency', 'fraction': 0.05}, ax=ax, vmin=-1)
-    # ax.hlines([7, 14, 23], *ax.get_xlim(), color='k')
-    # ax.vlines([len([c for c in afhm.columns if c in L1pos])], *ax.get_ylim(), color='k')
-    # ax.set_xlabel('')
-    # ax.set_ylabel('')
-    # ax.set_title('Normalized allele frequency')
+    # List of SMs not matching the branch specificity:
+    # CUR6G 3442340
+    # CUR1G 17488551
+    # CUR1G 29471732
+
 
 
 
