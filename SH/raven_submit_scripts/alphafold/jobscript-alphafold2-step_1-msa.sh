@@ -65,7 +65,7 @@ for start in {1..32..1}; do
             --output_dir="${OUTPUT_DIR}" \
             --fasta_paths="${FASTA_PATHS}" \
     #        --db_preset="${PRESET}" \
-            --db_preset=reduced_dbs \               # Changed the database as some proteins crashed with full database
+            --db_preset="reduced_dbs" \               # Changed the database as some proteins crashed with full database
             --data_dir="${ALPHAFOLD_DATA}" \
             --bfd_database_path=${bfd_database_path} \
             --uniref30_database_path=${uniref30_database_path} \
