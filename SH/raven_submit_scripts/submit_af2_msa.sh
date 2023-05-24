@@ -30,10 +30,10 @@ while read m; do
     fi
 done < failed_mrna.txt
 mv failed_mrna2.txt failed_mrna.txt
-split -l 16 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
+split -l 12 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
 
 cd /ptmp/mgoel/cur_proteins
-for b in 00{1..9} ; do
+for b in 00{1..2} ; do
     sbatch -J fa.list2.${b} \
         -o output_%x.txt -e error_%x.txt \
         /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
@@ -51,8 +51,12 @@ sbatch -J test.predict \
     /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
     /raven/u/mgoel/apricot/cur_protein/test.fa.list
 
+## Split input mRNA files
+split -l 960 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna.fa.list.txt fa.list.
+for b in 00{1..9} 0{10..39} ; do
+    sbatch -J predict.${b} \
+        -o out_%x.txt -e err_%x.txt \
+        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
+        /raven/u/mgoel/apricot/cur_protein/fa.list.${b}.txt
+done
 
-
-
-
-split -l 100 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna.fa.list.txt fa.list.
