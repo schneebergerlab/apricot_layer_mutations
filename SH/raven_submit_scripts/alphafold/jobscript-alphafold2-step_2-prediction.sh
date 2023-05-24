@@ -1,13 +1,25 @@
 #!/bin/bash -l
 #SBATCH -J AF2-GPU
 #SBATCH --constraint="gpu"
-#
+#SBATCH --nodes=16
+#SBATCH --ntasks=64
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=18
+##SBATCH --mem=120000
+#SBATCH --gres=gpu:a100:4
+#SBATCH --mail-type=none
+#SBATCH --mail-user=goel@mpipz.mpg.de
+#SBATCH --time=24:00:00
+#SBATCH --output=output_%x_%a.txt  # Set the output file name
+#SBATCH --error=error_%x_%a.txt  # Set the error file name
+
+
 # Use 1 GPU (see below for using more GPUs instead):
 #
-#SBATCH --gres=gpu:a100:1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=18
-#SBATCH --mem=125000
+###SBATCH --gres=gpu:a100:1
+###SBATCH --ntasks-per-node=1
+###SBATCH --cpus-per-task=18
+###SBATCH --mem=125000
 #
 # Large models may need 2 or even 4 GPUs to cover their memory footprint:
 #
@@ -23,9 +35,6 @@
 ###SBATCH --cpus-per-task=72
 ###SBATCH --mem=500000
 #
-#SBATCH --mail-type=none
-#SBATCH --mail-user=userid@example.mpg.de
-#SBATCH --time=6:00:00
 
 
 # AlphaFold2 template submit script (single sequence case) for RAVEN @ MPCDF,
@@ -74,7 +83,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..32..1}; do
+for start in {1..64..1}; do
     end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''

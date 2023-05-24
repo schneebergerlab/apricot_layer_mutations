@@ -68,7 +68,6 @@ for start in {1..32..1}; do
             --db_preset="reduced_dbs" \
             --data_dir="${ALPHAFOLD_DATA}" \
             --small_bfd_database_path=${small_bfd_database_path} \
-            --uniref30_database_path=${uniref30_database_path} \
             --uniref90_database_path=${uniref90_database_path} \
             --mgnify_database_path=${mgnify_database_path} \
             --pdb70_database_path=${pdb70_database_path} \
@@ -79,12 +78,29 @@ for start in {1..32..1}; do
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
 
+#            --uniref30_database_path=${uniref30_database_path} \
 #            --bfd_database_path=${bfd_database_path} \
     #        --db_preset="${PRESET}" \
 wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"
 
+
+# Original srun command to be used with full database
+#    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+#            --output_dir="${OUTPUT_DIR}" \
+#            --fasta_paths="${FASTA_PATHS}" \
+#            --data_dir="${ALPHAFOLD_DATA}" \
+#            --db_preset="${PRESET}" \
+#            --bfd_database_path=${bfd_database_path} \
+#            --uniref30_database_path=${uniref30_database_path} \
+#            --uniref90_database_path=${uniref90_database_path} \
+#            --mgnify_database_path=${mgnify_database_path} \
+#            --pdb70_database_path=${pdb70_database_path} \
+#            --template_mmcif_dir=${template_mmcif_dir} \
+#            --obsolete_pdbs_path=${obsolete_pdbs_path} \
+#            --max_template_date="2022-12-21" \
+#            --run_msa_and_templates_only --nouse_gpu_relax &
 # AF2 2.3.0 complete output of '--helpfull' below
 
 # Full AlphaFold protein structure prediction script.
