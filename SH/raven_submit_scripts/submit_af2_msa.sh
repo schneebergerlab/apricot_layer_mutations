@@ -21,17 +21,14 @@ done
 cd /u/mgoel/apricot/cur_protein
 indir=/ptmp/mgoel/cur_proteins/af2_msa/
 rm failed_mrna.txt; touch failed_mrna.txt
-for i in  00{1..9} 0{10..99} {100..373}; do
-    echo $i
-    while read m; do
-        mrna=$(basename $m .fa)
-        if [ -f ${indir}/${mrna}/features.pkl ]; then
-            true
-        else
-            echo $m >> failed_mrna.txt
-        fi
-    done < fa.list.${i}.txt
-done
+while read m; do
+    mrna=$(basename $m .fa)
+    if [ -f ${indir}/${mrna}/features.pkl ]; then
+        true
+    else
+        echo $m >> failed_mrna.txt
+    fi
+done < mrna.fa.list.txt
 split -l 32 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
 
 cd /ptmp/mgoel/cur_proteins
