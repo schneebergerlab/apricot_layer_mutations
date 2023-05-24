@@ -68,6 +68,7 @@ for start in {1..32..1}; do
             --db_preset="reduced_dbs" \
             --data_dir="${ALPHAFOLD_DATA}" \
             --bfd_database_path=${bfd_database_path} \
+            --small_bfd_database_path=${small_bfd_database_path} \
             --uniref30_database_path=${uniref30_database_path} \
             --uniref90_database_path=${uniref90_database_path} \
             --mgnify_database_path=${mgnify_database_path} \
