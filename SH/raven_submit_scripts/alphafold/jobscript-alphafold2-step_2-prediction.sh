@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=18
 ##SBATCH --mem=120000
-###SBATCH --gres=gpu:a100:4
+#SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=6:00:00

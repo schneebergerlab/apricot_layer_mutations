@@ -20,16 +20,17 @@ done
 ## Code to check if any of the msa jobs are unfinished/crashed.
 cd /u/mgoel/apricot/cur_protein
 indir=/ptmp/mgoel/cur_proteins/af2_msa/
-rm failed_mrna.txt; touch failed_mrna.txt
+touch failed_mrna2.txt
 while read m; do
     mrna=$(basename $m .fa)
     if [ -f ${indir}/${mrna}/features.pkl ]; then
         true
     else
-        echo $m >> failed_mrna.txt
+        echo $m >> failed_mrna2.txt
     fi
-done < mrna.fa.list.txt
-split -l 32 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
+done < failed_mrna.txt
+mv failed_mrna2.txt failed_mrna.txt
+split -l 16 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_mrna.txt fa.list2.
 
 cd /ptmp/mgoel/cur_proteins
 for b in 00{1..9} ; do
