@@ -108,7 +108,7 @@ for start in {1..12..1}; do
         --obsolete_pdbs_path=${obsolete_pdbs_path} \
         --max_template_date="2022-12-31" \
         --use_gpu_relax \
-        --use_precomputed_msas
+        --use_precomputed_msas &
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
 

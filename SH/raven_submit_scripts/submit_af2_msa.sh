@@ -45,10 +45,10 @@ done
 head -12 mrna.fa.list.txt > test.fa.list
 ## Run test job with 3 nodes and 4 tasks per node
 cd /ptmp/mgoel/cur_proteins
- sbatch -J test.predict \
-        -o output_%x.txt -e error_%x.txt \
-        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
-        /raven/u/mgoel/apricot/cur_protein/test.fa.list
+sbatch -J test.predict \
+    -o output_%x.txt -e error_%x.txt \
+    /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
+    /raven/u/mgoel/apricot/cur_protein/test.fa.list
 
 
 
