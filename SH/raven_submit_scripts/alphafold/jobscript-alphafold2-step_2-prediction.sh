@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=18
 ##SBATCH --mem=120000
-#SBATCH --gres=gpu:a100:4
+###SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
 #SBATCH --time=6:00:00
@@ -94,7 +94,7 @@ for start in {1..12..1}; do
     echo $FASTA_PATHS
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=125000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+    srun --exclusive --gres=gpu:a100:1 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=125000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \
