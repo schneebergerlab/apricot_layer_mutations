@@ -1248,6 +1248,16 @@ def axillary_stats_plots():
     """
     Functions and commands to get extra plots for manuscript
     """
+    def get_fastq_readsizes(f):
+        from gzip import open as gzopen
+        from collections import deque
+        sizes = deque()
+        with gzopen(f, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i % 4 == 1:
+                    sizes.append(len(line.strip()))
+        return sizes
+    # END
 
     def raw_hifi_stats():
         """
@@ -1258,13 +1268,8 @@ def axillary_stats_plots():
         from matplotlib import pyplot as plt
         f = '/srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4784/4784_A_run521_HIFI.fastq.gz'
         outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
-        cnt = 0
-        sizes = deque()
-        with gzopen(f, 'r') as fin:
-            for i, line in enumerate(fin):
-                if i % 4 == 1:
-                    cnt += 1
-                    sizes.append(len(line.strip()))
+        sizes = get_fastq_readsizes(f)
+        cnt = len(sizes)
         print(f'Number of reads: {cnt}')
         print(f'Total read lenght: {sum(sizes)}')
         plt.hist(sizes, bins=100)
@@ -1273,6 +1278,41 @@ def axillary_stats_plots():
         plt.tight_layout()
         plt.savefig(f'{outdir}/hifi_read_lenght.png', dpi=300)
         plt.close()
+        return
+    # END
+
+    def get_layer_data_stats():
+        """
+            Get the sequencing read stats for the layer specific sample sequencing
+        """
+        from collections import defaultdict
+        from glob2 import glob
+        import pandas as pd
+        from hometools.hometools import undict
+
+        outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
+        indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/fruit_layer_specific/'
+        branches = 'mut_11_1/  mut_11_2/  mut_15/  wt_1/  wt_18/  wt_19/  wt_7/'.replace('/', '').split()
+        stats = defaultdict(dict)
+        for branch in branches:
+            for layer in 'l1 l2 l3'.split():
+                print(branch, layer)
+                stats[branch][layer] = dict()
+                for i in [1, 2]:
+                    total_size = 0
+                    total_cnt = 0
+                    # Get read sizes for mate 1
+                    for f in glob(f'{indir}/{branch}/{branch}_{layer}/*{i}.fq.gz'):
+                        sizes = get_fastq_readsizes(f)
+                        total_size += sum(sizes)
+                        total_cnt += len(sizes)
+                    stats[branch][layer][i] = {'size': total_size, 'count': total_cnt}
+                stats[branch][layer] = {'size': stats[branch][layer][1]['size'] + stats[branch][layer][2]['size'],
+                                        'count': stats[branch][layer][1]['count'] + stats[branch][layer][2]['count']}
+        stats_flat = undict(stats)
+        df = pd.Dataframe(stats_flat)
+        df.columns = 'branch layer sequenced_bases sequenced_reads'.split()
+        df.to_csv(f'{outdir}/layer_sequencing_stats.tsv', sep='\t', index=False, header=True)
         return
     # END
 

@@ -51,8 +51,24 @@ sbatch -J test.predict \
     /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
     /raven/u/mgoel/apricot/cur_protein/test.fa.list
 
+## mRNA for which MSA worked
+cd /u/mgoel/apricot/cur_protein
+indir=/ptmp/mgoel/cur_proteins/af2_msa/
+touch mrna_msa.txt
+while read m; do
+    mrna=$(basename $m .fa)
+    if [ -f ${indir}/${mrna}/features.pkl ]; then
+        echo $m >> mrna_msa.txt
+    else
+        true
+    fi
+done < mrna.fa.list.txt
+
 ## Split input mRNA files
-split -l 960 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna.fa.list.txt fa.list.
+rm fa.list.*
+split -l 960 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna_msa.txt fa.list.
+
+cd /ptmp/mgoel/cur_proteins
 for b in 00{1..9} 0{10..39} ; do
     sbatch -J predict.${b} \
         -o out_%x.txt -e err_%x.txt \
