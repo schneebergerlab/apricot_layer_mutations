@@ -41,3 +41,6 @@ for b in 00{1..9} ; do
         /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
         /raven/u/mgoel/apricot/cur_protein/fa.list2.${b}.txt
 done
+
+
+# Submit prediction job

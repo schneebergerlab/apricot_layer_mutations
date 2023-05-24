@@ -64,7 +64,6 @@ for start in {1..32..1}; do
     srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
             --output_dir="${OUTPUT_DIR}" \
             --fasta_paths="${FASTA_PATHS}" \
-    #        --db_preset="${PRESET}" \
             --db_preset="reduced_dbs" \               # Changed the database as some proteins crashed with full database
             --data_dir="${ALPHAFOLD_DATA}" \
             --bfd_database_path=${bfd_database_path} \
@@ -79,6 +78,7 @@ for start in {1..32..1}; do
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
 
+    #        --db_preset="${PRESET}" \
 wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"
