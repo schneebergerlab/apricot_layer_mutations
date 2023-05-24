@@ -40,4 +40,18 @@ for b in 00{1..9} ; do
 done
 
 
-# Submit prediction job
+# Submit prediction job with GPU nodes
+## Create test job mRNA list
+head -12 mrna.fa.list.txt > test.fa.list
+## Run test job with 3 nodes and 4 tasks per node
+cd /ptmp/mgoel/cur_proteins
+ sbatch -J test.predict \
+        -o output_%x.txt -e error_%x.txt \
+        /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
+        /raven/u/mgoel/apricot/cur_protein/test.fa.list
+
+
+
+
+
+split -l 100 --numeric-suffixes=1 --additional-suffix=.txt -a 3 mrna.fa.list.txt fa.list.

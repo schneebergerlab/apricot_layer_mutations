@@ -1,15 +1,15 @@
 #!/bin/bash -l
 #SBATCH -J AF2-GPU
 #SBATCH --constraint="gpu"
-#SBATCH --nodes=16
-#SBATCH --ntasks=64
+#SBATCH --nodes=3
+#SBATCH --ntasks=12
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=18
 ##SBATCH --mem=120000
 #SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=24:00:00
+#SBATCH --time=6:00:00
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
@@ -83,7 +83,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..64..1}; do
+for start in {1..12..1}; do
     end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''
@@ -94,7 +94,7 @@ for start in {1..64..1}; do
     echo $FASTA_PATHS
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=125000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \
@@ -115,27 +115,6 @@ done
 wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"
-
-
-
-# run the application
-srun ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
-        --output_dir="${OUTPUT_DIR}" \
-        --fasta_paths="${FASTA_PATHS}" \
-        --db_preset="${PRESET}" \
-        --data_dir="${ALPHAFOLD_DATA}" \
-        --bfd_database_path=${bfd_database_path} \
-        --uniref30_database_path=${uniref30_database_path} \
-        --uniref90_database_path=${uniref90_database_path} \
-        --mgnify_database_path=${mgnify_database_path} \
-        --pdb70_database_path=${pdb70_database_path} \
-        --template_mmcif_dir=${template_mmcif_dir} \
-        --obsolete_pdbs_path=${obsolete_pdbs_path} \
-        --max_template_date="2022-12-31" \
-        --use_gpu_relax \
-        --use_precomputed_msas
-#       ^^^ start from the MSAs and templates already computed on the CPU
-
 
 
 # AF2 2.3.0 complete output of '--helpfull' below
