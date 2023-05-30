@@ -72,8 +72,16 @@ find_athal_ortho_genes_in_cur.py -> filter_orthologs()
 ################################################################################
 ## Find orthologs between thaliana and apricot using structural similarity
 
-### Athal protein database
+### Create protein structure database
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/
 cd $cwd
+#### Athal structure DB
 foldseek createdb athal_proteins/*pdb.gz athalprodb --threads 32
+foldseek createindex athalprodb athalproindex --threads 32
+#### P_armeniaca protein database
+foldseek createdb prunus_armeniaca/*tar parmeniacaprodb --threads 32
+foldseek createindex parmeniacaprodb parmeniacaproindex --threads 32
 
+# TAIR UNIPROT ID MAPPING :  /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/TAIR2UniprotMapping-JAN2023.txt
+# Example alignment
+foldseek easy-search ~/Downloads/ranked_0.pdb /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/parmeniacaprodb out2.txt .
