@@ -454,6 +454,7 @@ def layer_specific_sm_calling_all_samples(cwd, bname, scov, nc=1):
     sample_syri_snp = {}
     sample_syri_indel = {}
     SAMPLES = ('l1', 'l2', 'l3')
+    BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
     for sample in SAMPLES:
         filename = f'{indir}{sample}/filtered_low_ref_al_bam_read_counts_b30_q10.bt2.txt'
         sample_noise, snp_alfrq, indel_alfrq, sm_pos = readfilteredbamreadcount(filename, scov[sample][0], scov[sample][1], noise_pos, syri_snp_list, syri_indel_list)
@@ -599,21 +600,21 @@ def layer_specific_sm_calling_all_samples(cwd, bname, scov, nc=1):
     bgsnpscnt = Counter([k for v in bgsnps.values() for k, v1 in v.items() if v1[0] >= 5])
     bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == 7])
     snppos_bgfilt = snppos - bgsnpsuni
-    # len(snppos_bgfilt)
+    # print(len(snppos_bgfilt))
 
     # Filter positions supported by at least 5 reads in the illumina libraries (this removes library specific noisy reads)
     slist = set([v for v in sample_ids.values() if v in {'WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'}])
     bgsnpscnt = Counter([k for s in slist for k, v1 in bgsnps[s].items() if v1[0] >= 5])
     bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == len(slist)])
     snppos_bgfilt = snppos_bgfilt - bgsnpsuni
-    # len(snppos_bgfilt)
+    # print(len(snppos_bgfilt))
 
     # Filter positions supported by at least 5 reads in the illumina libraries (this removes library specific noisy reads)
     slist = set([v for v in sample_ids.values() if v in {'wt7', 'wt18', 'mut4', 'mut11_2'}])
     bgsnpscnt = Counter([k for s in slist for k, v1 in bgsnps[s].items() if v1[0] >= 5])
     bgsnpsuni = set([k for k, v in bgsnpscnt.items() if v == len(slist)])
     snppos_bgfilt = snppos_bgfilt - bgsnpsuni
-    # len(snppos_bgfilt)
+    # print(len(snppos_bgfilt))
 
     # Select high conf candidates
     hcsm = {}        # High conf somatic mutations

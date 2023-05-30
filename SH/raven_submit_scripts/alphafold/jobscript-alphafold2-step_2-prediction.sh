@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=24:00:00
+#SBATCH --time=8:00:00
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
@@ -83,8 +83,8 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..960..15}; do
-    end=$((start + 14))
+for start in {1..64..1}; do
+    end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''
     for prot in ${PROT_NAME[@]}; do
