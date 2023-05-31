@@ -92,7 +92,7 @@ done < mrna_msa.txt
 split -l 16 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_predict.txt failed.predict.
 
 cd /ptmp/mgoel/cur_proteins
-for b in 00{1..9} 0{10..26} ; do
+for b in 00{1..9} 0{10..19} ; do
     sbatch -J predict.${b} \
         -o out_%x.txt -e err_%x.txt \
         /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_2-prediction.sh \
