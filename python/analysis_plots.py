@@ -168,6 +168,7 @@ def merge_all_SM():
     from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
     from hometools.hometools import readfasta, revcomp, canonical_kmers, Namespace, cntkmer, cleanax
     from multiprocessing import Pool
+    import scipy as sp
 
     # Set colours
     colour = {('L1', 'SNP'): '#3274a1',
@@ -586,13 +587,12 @@ def merge_all_SM():
     ## mut_15 leaf ('CUR3G', 8510980, '-GAG'): Found because it is present in both L1 and L2
 
 
-    # <editor-fold desc="Calculate mutation rate: Consider each sample as separate lineage and divide by the diploid genome size">
-    # TODO: calculate mutation rate per branch
-    fig = plt.figure(figsize=[6, 4])
+    # <editor-fold desc="Calculate mutation load: Consider each sample as separate lineage and divide by the diploid genome size">
+    fig = plt.figure(figsize=[6, 3])
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     mrates = pd.DataFrame(allsmmat.apply(sum, axis=0)/480000000)
     mrates.columns = ['value']
-    mrates['mrate'] = 'Mutation Rate'
+    mrates['mrate'] = 'Mutation load'
     mrates['Tissue'] = [i.rsplit('_', 1)[1] for i in mrates.index.values]
     ax = fig.add_subplot(1, 2, 1)
     ax = sns.violinplot(data=mrates, x="mrate", y="value", color='lightgrey', inner=None, ax=ax)
@@ -601,7 +601,12 @@ def merge_all_SM():
     ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, zorder=1, ax=ax, hue='Tissue')
     ax.set_ylim(ylim)
     ax.set_xlabel('')
-    ax.set_ylabel('')
+    ax.set_ylabel('SM per 10Mbp')
+    ax.ticklabel_format(axis='y', useOffset=False, style='plain')
+    yticks = ax.get_yticks()
+    yticksl = yticks*10000000
+    ax.set_yticks(yticks[1:-1])
+    ax.set_yticklabels(yticksl[1:-1])
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     ax.legend(frameon=False)
@@ -609,10 +614,9 @@ def merge_all_SM():
     plt.tight_layout(pad=0)
 
     mutsinallL1 = allsmmat.loc[:, [b+'_L1' for b in branches]]
-    # mutsinallL1 = mutsinallL1.loc[mutsinallL1.apply(sum, axis=1) != 7]
     mrates = pd.DataFrame(allsmmat.loc[mutsinallL1.apply(sum, axis=1) != 7].apply(sum, axis=0)/480000000)
     mrates.columns = ['value']
-    mrates['mrate'] = 'Mutation Rate'
+    mrates['mrate'] = 'Mutation load'
     mrates['Tissue'] = [i.rsplit('_', 1)[1] for i in mrates.index.values]
     ax = fig.add_subplot(1, 2, 2)
     ax = sns.violinplot(data=mrates, x="mrate", y="value", color='lightgrey', inner=None, ax=ax)
@@ -621,20 +625,21 @@ def merge_all_SM():
     ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, zorder=1, ax=ax, hue='Tissue')
     ax.set_ylim(ylim)
     ax.set_xlabel('')
-    ax.set_ylabel('')
+    ax.set_ylabel('SM per 10Mbp')
+    ax.ticklabel_format(axis='y', useOffset=False, style='plain')
+    yticks = ax.get_yticks()
+    yticksl = yticks*10000000
+    ax.set_yticks(yticks[1:-1])
+    ax.set_yticklabels(yticksl[1:-1])
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     plt.tight_layout(pad=0)
     ax.legend(frameon=False)
     ax.set_title("Filtered SMs in all L1")
     plt.tight_layout(pad=0)
-    plt.savefig(f'{cwd}/mutation_rate_differences.png', dpi=300)
+    plt.savefig(f'{cwd}/mutation_load_differences.png', dpi=300)
     plt.close()
-
     # </editor-fold>
-
-
-    # TODO: distance distribution between SMs
 
 
     # <editor-fold desc="Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
@@ -721,6 +726,7 @@ def merge_all_SM():
                    'mut_11_2': 4,
                    'mut_15': 4}
     branchsmcnt = dict()
+    layersmcount = defaultdict(dict)
 
     mutsinallL1 = allsmmat.loc[:, [b+'_L1' for b in branches]]              # Get all positions that are in L1
     allsmmatfilt = allsmmat.loc[mutsinallL1.apply(sum, axis=1) != 7]       # Filter positions that are in all L1
@@ -730,17 +736,43 @@ def merge_all_SM():
         bdf = allsmmatfilt.loc[:, [f'{branch}_{l}' for l in ['L1', 'L2', 'leaf']]]
         bdf = bdf.loc[(bdf != 0).any(axis=1)]
         branchsmcnt[branch] = bdf.shape[0]
-    fig = plt.figure(figsize=[5, 2])
-    ax = fig.add_subplot(1, 2, 1)
-    ax.scatter([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+        layersmcount['L1'][branch] = sum(allsmmatfilt[f'{branch}_L1'])
+        layersmcount['L2'][branch] = sum(allsmmatfilt[f'{branch}_L2'])
+        layersmcount['leaf'][branch] = sum(allsmmatfilt[f'{branch}_leaf'])
+
+    fig = plt.figure(figsize=[6, 10])
+    ax = fig.add_subplot(4, 2, 1)
+    ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All')
+    r, p = sp.stats.pearsonr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
     ax.set_xlabel('branch length (in m)')
     ax.set_ylabel('Number of SM')
     ax = cleanax(ax)
-    ax = fig.add_subplot(1, 2, 2)
-    ax.scatter([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax = fig.add_subplot(4, 2, 2)
+    ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All')
+    r, p = sp.stats.pearsonr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
     ax.set_xlabel('Number of branching event')
-    ax.set_ylabel('Number of SM')
+    ax.set_ylabel('Number of SM (total)')
     ax = cleanax(ax)
+    i=3
+    for l in ['L1', 'L2', 'leaf']:
+        ax = fig.add_subplot(4, 2, i)
+        ax = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l)
+        r, p = sp.stats.pearsonr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+        ax.set_xlabel('branch length (in m)')
+        ax.set_ylabel(f'Number of SM in {l}')
+        ax = cleanax(ax)
+        i+=1
+        ax = fig.add_subplot(4, 2, i)
+        ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l)
+        r, p = sp.stats.pearsonr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+        ax.set_xlabel('Number of branching event')
+        ax.set_ylabel(f'Number of SM in {l}')
+        ax = cleanax(ax)
+        i+=1
     plt.tight_layout(pad=0.1, w_pad=2)
     plt.savefig(f'{cwd}/branching_stat_vs_sm_count.png', dpi=300)
     plt.close()
@@ -890,7 +922,7 @@ def mutation_spectra():
 
     # Indel size distribution
     # TODO: Add distinction between L1 and L2
-    inddf = datafilter.loc[datafilter['type']=='Indel'].copy()
+    inddf = datafilter.loc[datafilter['type'] == 'Indel'].copy()
     inddf.drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele'], inplace=True)
     inddf['size'] = [len(a)-1 if '+' in a else 1-len(a) for a in inddf.alt_allele]
     fig = plt.figure(figsize=[5, 3])
