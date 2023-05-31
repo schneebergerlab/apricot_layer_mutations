@@ -2,9 +2,9 @@
 #SBATCH -J AF2-GPU
 #SBATCH --constraint="gpu"
 #SBATCH --nodes=16
-#SBATCH --ntasks=64
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=18
+#SBATCH --ntasks=16
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=72
 ##SBATCH --mem=120000
 #SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
@@ -83,7 +83,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 # run the application
 OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..64..1}; do
+for start in {1..16..1}; do
     end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''
@@ -94,7 +94,7 @@ for start in {1..64..1}; do
     echo $FASTA_PATHS
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-    srun --exclusive --gres=gpu:a100:1 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=125000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+    srun --exclusive --gres=gpu:a100:4 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=500000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --db_preset="${PRESET}" \

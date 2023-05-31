@@ -166,7 +166,8 @@ def merge_all_SM():
     import pybedtools as bt
     from matplotlib_venn import venn2
     from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
-    from hometools.hometools import readfasta, revcomp
+    from hometools.hometools import readfasta, revcomp, canonical_kmers, Namespace, cntkmer
+    from multiprocessing import Pool
 
     # Set colours
     colour = {('L1', 'SNP'): '#3274a1',
@@ -261,6 +262,7 @@ def merge_all_SM():
 
     ####################################################################################################################
     allsmmat = pd.read_csv(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv', index_col=[0, 1, 2])
+
     # <editor-fold desc="Read the cleaned allsmmat file and create summary stats">
 
     print("Number of SMs: ", allsmmat.shape[0])
@@ -635,13 +637,11 @@ def merge_all_SM():
     # TODO: distance distribution between SMs
 
 
-
-    # TODO: Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?
-
-    refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+    # <editor-fold desc="Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
+    refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
     smvars = allsmmat.reset_index()
     smvars['type'] = ['SNP' if i[0] not in '+-' else 'indel' for i in smvars['alt_allele']]
-    snppos = smvars.loc[smvars.type == 'SNP']   # 1 based positions
+    snppos = smvars.loc[smvars.type == 'SNP'].copy()   # 1 based positions
 
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     l1 = set()
@@ -660,6 +660,12 @@ def merge_all_SM():
     l1 = l1.difference(shared)
     l2 = l2.difference(shared)
 
+    # Count the total number of
+    threemers = sorted(canonical_kmers(3))
+    args_list = [Namespace(fasta=Namespace(name=refcur), kmer=kmer, canonical=True) for kmer in threemers]
+    with Pool(processes=4) as pool:
+        kmercnts = pool.map(cntkmer, args_list)
+    kmercnts = dict(zip(threemers, kmercnts))
 
     refseq = readfasta(refcur)
     trip = deque()
@@ -668,7 +674,7 @@ def merge_all_SM():
     snppos['trip_reg'] = trip
     tripcnt = Counter(trip)
     tripkeys = list(tripcnt.keys())
-    tripcntclean = dict()
+    tripcntclean = defaultdict(int)
     for k in tripkeys:
         kr = revcomp(k)
         kmin = min(k, kr)
@@ -685,10 +691,19 @@ def merge_all_SM():
             tripcnt.pop(kr)
         except KeyError:
             pass
-    tripkeys = sorted(tripcntclean, key=lambda k: tripcntclean[k], reverse=True)
-    plt.bar(tripkeys, [tripcntclean[k] for k in tripkeys])
+    tripcntnorm = {k: tripcntclean[k]/kmercnts[k] for k in kmercnts}
+    tripkeys = sorted(kmercnts, key=lambda k: tripcntnorm[k], reverse=True)
+    fig = plt.figure(figsize=[8, 3])
+    ax = fig.add_subplot()
+    ax.bar(tripkeys, [tripcntnorm[k] for k in tripkeys], width=0.5)
+    ax.set_xlabel('Triplet context for somatic mutations')
+    ax.set_ylabel('Mutation ratio')
+    ax.tick_params(axis='x', rotation=45)
+    ax = cleanax(ax)
+    plt.savefig(f'{cwd}/snp_ratio_in_genomic_triplets.png', dpi=300)
     plt.close()
 
+    # </editor-fold >
 
     # TODO: Correlation of SM count against branch length from the primary branching
 

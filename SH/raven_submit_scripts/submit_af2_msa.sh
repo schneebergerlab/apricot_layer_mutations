@@ -80,7 +80,7 @@ done
 ## Code to check if any of the msa jobs are unfinished/crashed.
 cd /u/mgoel/apricot/cur_protein
 indir=/ptmp/mgoel/cur_proteins/af2_msa/
-touch failed_predict.txt
+rm failed_predict.txt; touch failed_predict.txt
 while read m; do
     mrna=$(basename $m .fa)
     if [ -f ${indir}/${mrna}/ranked_0.pdb ]; then
@@ -89,7 +89,7 @@ while read m; do
         echo $m >> failed_predict.txt
     fi
 done < mrna_msa.txt
-split -l 64 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_predict.txt failed.predict.
+split -l 16 --numeric-suffixes=1 --additional-suffix=.txt -a 3 failed_predict.txt failed.predict.
 
 cd /ptmp/mgoel/cur_proteins
 for b in 00{1..9} 0{10..26} ; do
