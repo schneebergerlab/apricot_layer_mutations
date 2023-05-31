@@ -166,7 +166,7 @@ def merge_all_SM():
     import pybedtools as bt
     from matplotlib_venn import venn2
     from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
-    from hometools.hometools import readfasta, revcomp, canonical_kmers, Namespace, cntkmer
+    from hometools.hometools import readfasta, revcomp, canonical_kmers, Namespace, cntkmer, cleanax
     from multiprocessing import Pool
 
     # Set colours
@@ -705,13 +705,46 @@ def merge_all_SM():
 
     # </editor-fold >
 
-    # TODO: Correlation of SM count against branch length from the primary branching
+    # <editor-fold desc="Correlation of SM count against branch length and branching events count from the primary branching">
+    branchlength = {'wt_1': (0.93 + 1.25 + 1.5),
+                    'wt_7': (0.93 + 1.25 + 1.0),
+                    'wt_18': (0.93 + 2.25),
+                    'wt_19': (3.13),
+                    'mut_11_1': (0.77 + 0.92 + 1.51 + 0.1),
+                    'mut_11_2': (0.77 + 0.92 + 1.51 + 0.2),
+                    'mut_15': (0.77 + 0.92 + 0.08 + 1.45)}
+    branchcount = {'wt_1': 3,
+                   'wt_7': 3,
+                   'wt_18': 3,
+                   'wt_19': 2,
+                   'mut_11_1': 4,
+                   'mut_11_2': 4,
+                   'mut_15': 4}
+    branchsmcnt = dict()
 
+    mutsinallL1 = allsmmat.loc[:, [b+'_L1' for b in branches]]              # Get all positions that are in L1
+    allsmmatfilt = allsmmat.loc[mutsinallL1.apply(sum, axis=1) != 7]       # Filter positions that are in all L1
 
-    # TODO: Correlation of SM count against nu,ber of branching events after primary branching
-
-
-
+    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    for branch in branches:
+        bdf = allsmmatfilt.loc[:, [f'{branch}_{l}' for l in ['L1', 'L2', 'leaf']]]
+        bdf = bdf.loc[(bdf != 0).any(axis=1)]
+        branchsmcnt[branch] = bdf.shape[0]
+    fig = plt.figure(figsize=[5, 2])
+    ax = fig.add_subplot(1, 2, 1)
+    ax.scatter([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax.set_xlabel('branch length (in m)')
+    ax.set_ylabel('Number of SM')
+    ax = cleanax(ax)
+    ax = fig.add_subplot(1, 2, 2)
+    ax.scatter([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax.set_xlabel('Number of branching event')
+    ax.set_ylabel('Number of SM')
+    ax = cleanax(ax)
+    plt.tight_layout(pad=0.1, w_pad=2)
+    plt.savefig(f'{cwd}/branching_stat_vs_sm_count.png', dpi=300)
+    plt.close()
+    # </editor-fold>
 
     return
 # END
