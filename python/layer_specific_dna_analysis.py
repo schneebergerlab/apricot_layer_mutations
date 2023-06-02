@@ -1155,6 +1155,102 @@ layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apric
 layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/', 'mut_15', {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)}, nc=6)
 
 
+def merge_variant_calls():
+    '''
+    This function reads the somatic variants lists from different analysis of the
+    layer data and generates one output.
+    Variants list included:
+
+    Layer specific somatic mutations (Data 1):
+    output from layer_specific_sm_calling_all_samples(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/*/high_conf_layer_specific_somatic_mutations.selected.tsv
+
+    Layer 3 specific somatic mutations:
+    Output from layer_3_variant_calling(), Single position was found in mut_11_1. But it is also supported by very few reads and hence not considered here.
+
+    Layer specific somatic mutations conserved in multiple samples (Data 2):
+    Output from layer_conserved_variants(),
+        general output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
+
+        L2 sensitive output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
+
+
+    Layer specific somatic mutations using only fold-change cutoff and without leaf background noise removal (Data 3):
+    Output from layer_specific_fc_check(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv
+    '''
+
+    import pandas as pd
+    import numpy as np
+    branches = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
+
+    # Read variants selected for each branch
+    data1 = pd.DataFrame()
+    path = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/{bname}/high_conf_layer_specific_somatic_mutations.selected.tsv'
+    for bname in branches:
+        df = pd.read_table(path.format(bname=bname))
+        df = df.loc[df.Selected == 'Y']
+        df['branch'] = bname
+        data1 = pd.concat([data1, df])
+    data1.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele'] + list(data1.columns[4:])
+
+    # Read variants conserved in branches
+    data2 = pd.DataFrame()
+    for f in ['conserved_layer_specific_candidate.selected.tsv', 'conserved_layer_specific_candidate.l2_sensitive.selected.tsv']:
+        df = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/{f}')
+        df = df.loc[df.layer.notna()]
+        chridx = np.where(df.chromosome.notna())[0] # Rows stating chromosome position
+        chrrep = chridx[1:] - chridx[:-1]
+        chrrep = np.append(chrrep, df.shape[0]-chridx[-1])
+        df.branch = np.repeat(df.branch.loc[df.branch.notna()], 3).tolist()
+        # df.Layer = np.repeat(df.Layer.loc[df.chromosome.notna()], chrrep).tolist()
+        df.Ploidy = np.repeat(df.Ploidy.loc[df.chromosome.notna()], chrrep).tolist()
+        df.Remarks = np.repeat(df.Remarks.loc[df.chromosome.notna()], chrrep).tolist()
+        df.chromosome = np.repeat(df.chromosome.loc[df.chromosome.notna()], chrrep).astype(str).tolist()
+        df.position = np.repeat(df.position.loc[df.position.notna()], chrrep).astype(int).tolist()
+        df = df.loc[df.Selected == 'Y']
+        df.layer = df.layer.str.upper()
+        df = df.loc[[row.layer in row.Layer for row in df.itertuples(index=False)]]
+        data2 = pd.concat([data2, df])
+
+    # Read variants identified based on allele frequency fold-chance
+    data3 = pd.DataFrame()
+    df = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv')
+    df = df.loc[df.layer.notna()]
+    chridx = np.where(df.chromosome.notna())[0] # Rows stating chromosome position
+    chrrep = chridx[1:] - chridx[:-1]
+    chrrep = np.append(chrrep, df.shape[0]-chridx[-1])
+    df.branch = np.repeat(df.branch.loc[df.branch.notna()], 3).tolist()
+    # df.selected = np.repeat(df.selected.loc[df.chromosome.notna()], chrrep).tolist()
+    # df.Layer = np.repeat(df.Layer.loc[df.chromosome.notna()], chrrep).tolist()
+    df.Ploidy = np.repeat(df.Ploidy.loc[df.chromosome.notna()], chrrep).tolist()
+    df.Remarks = np.repeat(df.Remarks.loc[df.chromosome.notna()], chrrep).tolist()
+    df.chromosome = np.repeat(df.chromosome.loc[df.chromosome.notna()], chrrep).astype(str).tolist()
+    df.position = np.repeat(df.position.loc[df.position.notna()], chrrep).astype(int).tolist()
+    df = df.loc[df.Selected == 'Y'].copy()
+    df.layer = df.layer.str.upper()
+    df = df.loc[[row.layer in row.Layer for row in df.itertuples(index=False)]]
+    ## SNP at CUR3G:11723303 is present in mut_11_2 as well. Adding it manually.
+    # a = dict(zip(df.columns, ['CUR3G', 11723303,   'mut_11_2', 'L1', 'T', 'G', 43, 0.216, 'Y', 'L1', 2.0, 'Also present in mut_11_2']))   # Added it in the .tsv itself
+    # df = pd.concat([df, pd.DataFrame(a, index=[0])])
+    data3 = pd.concat([data3, df])
+
+    # Merge the data set and remove any duplicates
+    data1.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele', 'L1_RC', 'L1_AF', 'L2_RC', 'L2_AF', 'L3_RC', 'L3_AF', 'Selected', 'Layer', 'Ploidy', 'In_leaf', 'Remarks', 'branch']
+    data2.columns = ['chromosome', 'position', 'branch', 'layer', 'ref_allele','alt_allele', 'read_count', 'allele_freq', 'Selected', 'Layer', 'Ploidy', 'Remarks']
+    data3.columns = ['chromosome', 'position', 'branch', 'layer', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Selected', 'Layer', 'Ploidy', 'Remarks']
+
+    data = pd.concat([data1, data2, data3])
+    data = data[['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer', 'Ploidy', 'In_leaf', 'Remarks', 'layer', 'L1_RC', 'L1_AF', 'L2_RC', 'L2_AF', 'L3_RC', 'L3_AF', 'read_count', 'allele_freq', 'Selected']]
+    # data.Ploidy = data.Ploidy.astype(int)
+    # Add L1 specific mutation at CUR6G:21020736 identified during the gene-conversion identification analysis
+    tmpdf = pd.DataFrame(['CUR6G 21020736 wt_18 T -T L1    L1       26 0.4194 Y'.split(' ')], columns=data.columns)
+    data = pd.concat([data, tmpdf])
+    # Change the indel from L3 at CUR4G:7685330 to L2. Reason: The region has low sequencing depth in L2 and no SM can be called directly. Given that L3 is not informative, it implies that the identified indel is actually from L2.
+    data.loc[data.position == 7685330, 'Layer'] = 'L2'
+    data.sort_values(['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer'], inplace=True)
+    data.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_specific_somatic_variants.txt', index=False, header=True, sep='\t')
+# END
+
+
 def sm_after_masking_layers():
     """
     Calling layer-specific SMs would miss SMs that are shared between layers.
@@ -1434,7 +1530,7 @@ def sm_after_masking_layers():
 
 
     # Filter out positions that are already selected as layer-specific
-    layerpos = read_table(f'{cwd}/all_layer_somatic_variants.filtered.txt')
+    layerpos = read_table(f'{cwd}/all_layer_specific_somatic_variants.txt')
     to_pop = set([(r[0], r[1]) for r in layerpos.itertuples(index=False)])
     for p in to_pop:
         try:
@@ -1508,102 +1604,6 @@ def sm_after_masking_layers():
     """
 
     return
-# END
-
-
-def merge_variant_calls():
-    '''
-    This function reads the somatic variants lists from different analysis of the
-    layer data and generates one output.
-    Variants list included:
-
-    Layer specific somatic mutations (Data 1):
-    output from layer_specific_sm_calling_all_samples(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/*/high_conf_layer_specific_somatic_mutations.selected.tsv
-
-    Layer 3 specific somatic mutations:
-    Output from layer_3_variant_calling(), Single position was found in mut_11_1. But it is also supported by very few reads and hence not considered here.
-
-    Layer specific somatic mutations conserved in multiple samples (Data 2):
-    Output from layer_conserved_variants(),
-        general output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
-
-        L2 sensitive output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
-
-
-    Layer specific somatic mutations using only fold-change cutoff and without leaf background noise removal (Data 3):
-    Output from layer_specific_fc_check(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv
-    '''
-
-    import pandas as pd
-    import numpy as np
-    branches = ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15')
-
-    # Read variants selected for each branch
-    data1 = pd.DataFrame()
-    path = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/{bname}/high_conf_layer_specific_somatic_mutations.selected.tsv'
-    for bname in branches:
-        df = pd.read_table(path.format(bname=bname))
-        df = df.loc[df.Selected == 'Y']
-        df['branch'] = bname
-        data1 = pd.concat([data1, df])
-    data1.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele'] + list(data1.columns[4:])
-
-    # Read variants conserved in branches
-    data2 = pd.DataFrame()
-    for f in ['conserved_layer_specific_candidate.selected.tsv', 'conserved_layer_specific_candidate.l2_sensitive.selected.tsv']:
-        df = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/{f}')
-        df = df.loc[df.layer.notna()]
-        chridx = np.where(df.chromosome.notna())[0] # Rows stating chromosome position
-        chrrep = chridx[1:] - chridx[:-1]
-        chrrep = np.append(chrrep, df.shape[0]-chridx[-1])
-        df.branch = np.repeat(df.branch.loc[df.branch.notna()], 3).tolist()
-        # df.Layer = np.repeat(df.Layer.loc[df.chromosome.notna()], chrrep).tolist()
-        df.Ploidy = np.repeat(df.Ploidy.loc[df.chromosome.notna()], chrrep).tolist()
-        df.Remarks = np.repeat(df.Remarks.loc[df.chromosome.notna()], chrrep).tolist()
-        df.chromosome = np.repeat(df.chromosome.loc[df.chromosome.notna()], chrrep).astype(str).tolist()
-        df.position = np.repeat(df.position.loc[df.position.notna()], chrrep).astype(int).tolist()
-        df = df.loc[df.Selected == 'Y']
-        df.layer = df.layer.str.upper()
-        df = df.loc[[row.layer in row.Layer for row in df.itertuples(index=False)]]
-        data2 = pd.concat([data2, df])
-
-    # Read variants identified based on allele frequency fold-chance
-    data3 = pd.DataFrame()
-    df = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv')
-    df = df.loc[df.layer.notna()]
-    chridx = np.where(df.chromosome.notna())[0] # Rows stating chromosome position
-    chrrep = chridx[1:] - chridx[:-1]
-    chrrep = np.append(chrrep, df.shape[0]-chridx[-1])
-    df.branch = np.repeat(df.branch.loc[df.branch.notna()], 3).tolist()
-    # df.selected = np.repeat(df.selected.loc[df.chromosome.notna()], chrrep).tolist()
-    # df.Layer = np.repeat(df.Layer.loc[df.chromosome.notna()], chrrep).tolist()
-    df.Ploidy = np.repeat(df.Ploidy.loc[df.chromosome.notna()], chrrep).tolist()
-    df.Remarks = np.repeat(df.Remarks.loc[df.chromosome.notna()], chrrep).tolist()
-    df.chromosome = np.repeat(df.chromosome.loc[df.chromosome.notna()], chrrep).astype(str).tolist()
-    df.position = np.repeat(df.position.loc[df.position.notna()], chrrep).astype(int).tolist()
-    df = df.loc[df.Selected == 'Y'].copy()
-    df.layer = df.layer.str.upper()
-    df = df.loc[[row.layer in row.Layer for row in df.itertuples(index=False)]]
-    ## SNP at CUR3G:11723303 is present in mut_11_2 as well. Adding it manually.
-    # a = dict(zip(df.columns, ['CUR3G', 11723303,   'mut_11_2', 'L1', 'T', 'G', 43, 0.216, 'Y', 'L1', 2.0, 'Also present in mut_11_2']))   # Added it in the .tsv itself
-    # df = pd.concat([df, pd.DataFrame(a, index=[0])])
-    data3 = pd.concat([data3, df])
-
-    # Merge the data set and remove any duplicates
-    data1.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele', 'L1_RC', 'L1_AF', 'L2_RC', 'L2_AF', 'L3_RC', 'L3_AF', 'Selected', 'Layer', 'Ploidy', 'In_leaf', 'Remarks', 'branch']
-    data2.columns = ['chromosome', 'position', 'branch', 'layer', 'ref_allele','alt_allele', 'read_count', 'allele_freq', 'Selected', 'Layer', 'Ploidy', 'Remarks']
-    data3.columns = ['chromosome', 'position', 'branch', 'layer', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Selected', 'Layer', 'Ploidy', 'Remarks']
-
-    data = pd.concat([data1, data2, data3])
-    data = data[['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer', 'Ploidy', 'In_leaf', 'Remarks', 'layer', 'L1_RC', 'L1_AF', 'L2_RC', 'L2_AF', 'L3_RC', 'L3_AF', 'read_count', 'allele_freq', 'Selected']]
-    # data.Ploidy = data.Ploidy.astype(int)
-    # Add L1 specific mutation at CUR6G:21020736 identified during the gene-conversion identification analysis
-    tmpdf = pd.DataFrame(['CUR6G 21020736 wt_18 T -T L1    L1       26 0.4194 Y'.split(' ')], columns=data.columns)
-    data = pd.concat([data, tmpdf])
-    # Change the indel from L3 at CUR4G:7685330 to L2. Reason: The region has low sequencing depth in L2 and no SM can be called directly. Given that L3 is not informative, it implies that the identified indel is actually from L2.
-    data.loc[data.position == 7685330, 'Layer'] = 'L2'
-    data.sort_values(['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer'], inplace=True)
-    data.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.txt', index=False, header=True, sep='\t')
 # END
 
 

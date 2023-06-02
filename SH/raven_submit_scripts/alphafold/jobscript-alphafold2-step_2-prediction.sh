@@ -97,10 +97,9 @@ for start in {1..16..1}; do
     srun --exclusive --gres=gpu:a100:4 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=500000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
-        --db_preset="${PRESET}" \
         --data_dir="${ALPHAFOLD_DATA}" \
-        --bfd_database_path=${bfd_database_path} \
-        --uniref30_database_path=${uniref30_database_path} \
+        --db_preset="reduced_dbs" \
+        --small_bfd_database_path=${small_bfd_database_path} \
         --uniref90_database_path=${uniref90_database_path} \
         --mgnify_database_path=${mgnify_database_path} \
         --pdb70_database_path=${pdb70_database_path} \
@@ -111,7 +110,8 @@ for start in {1..16..1}; do
         --use_precomputed_msas &
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
-
+#        --bfd_database_path=${bfd_database_path} \
+#        --uniref30_database_path=${uniref30_database_path} \
 wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"
