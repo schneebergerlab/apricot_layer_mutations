@@ -82,6 +82,37 @@ foldseek createindex athalprodb athalproindex --threads 32
 foldseek createdb prunus_armeniaca/*tar parmeniacaprodb --threads 32
 foldseek createindex parmeniacaprodb parmeniacaproindex --threads 32
 
-# TAIR UNIPROT ID MAPPING :  /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/TAIR2UniprotMapping-JAN2023.txt
-# Example alignment
-foldseek easy-search ~/Downloads/ranked_0.pdb /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/parmeniacaprodb out2.txt .
+#### Apricot protein database
+## Select highest scoring PDB model for each mRNA
+## python.find_athal_ortho_genes_in_cur.select_pdb_from_af2
+
+foldseek createdb currot_pdbs/selected_pdb.tar curdb --threads 32
+foldseek createindex curdb tmp --threads 32
+
+# align currot to athal
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/structurome/
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/
+cd $cwd
+bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo athal_cur.log -eo athal_cur.err "
+    foldseek search --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db tmp -c 0.5 -a -e 0.001
+    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db athal_cur_search.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
+    foldseek rbh --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db tmp -c 0.5 -a -e 0.001
+    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db athal_cur_rbh.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
+"
+
+
+# Test script/commands
+cd /srv/netscratch/dep_mercier/grp_schneeberger/projects/SynSearch/tests/foldseek_test
+foldseek createdb athal/ athalDB
+foldseek createdb prunus/ prunusDB
+foldseek createindex prunusDB tmp
+foldseek createindex athalDB tmp
+foldseek search prunusDB athalDB alnDB tmp -c 0.5 -a -e 0.001
+foldseek convertalis prunusDB athalDB alnDB aln.tsv --format-output "query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen" --format-mode 4
+foldseek rbh prunusDB athalDB rbhDB tmp -c 0.5 -a -e 0.001
+foldseek convertalis prunusDB athalDB rbhDB rbh.tsv --format-output "query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen" --format-mode 4
+
+
+
+foldseek result2msa prunusDB athalDB alnDB msa --msa-format-mode 6  # Generate MSA
+foldseek unpackdb msa msa_output --unpack-suffix a3m --unpack-name-mode 0

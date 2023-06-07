@@ -80,3 +80,22 @@ def get_cluster_marker_orthologs():
     return
 # END
 
+
+def select_pdb_from_af2():
+    """
+    For each mRNA, select the highest scoring PDB (ranked_0) and save into a .tar file
+    """
+    import tarfile
+    from tqdm import tqdm
+    import os
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/currot_pdbs/'
+    with tarfile.open(f'{cwd}/selected_pdbs.tar', "w") as fout:
+        mrnas = os.listdir(f'{cwd}/pdbs/')
+        for mrna in tqdm(mrnas):
+            try:
+                fout.add(f'{cwd}/pdbs/{mrna}/ranked_0.pdb', arcname=f'{mrna}.pdb') # ranked 0 corresponds to the PDB with the highest score.
+            except FileNotFoundError:
+                pass
+    return
+# END
+
