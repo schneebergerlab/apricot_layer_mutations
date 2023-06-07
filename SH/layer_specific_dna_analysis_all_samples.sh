@@ -213,7 +213,7 @@ done
 # Get allele frequency of all_sm_in_all_sample in leaf, L1, and L2 samples
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples_readcounts/
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
-muts=${indir}/all_sm_in_all_samples.regions
+muts=${indir}/all_sm_in_all_samples.manually_selected.cleaned.regions
 # Leaf scdna
 cd $cwd
 for s in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do

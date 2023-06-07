@@ -7,7 +7,7 @@ ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/pro
 ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4954/4954_A_run545_CCS.bam MUT_15.iso_seq.ccs.bam
 
 ################################################################################
-############ Cluster Iso-seq reads into individual barcodes ###################
+############ Cluster Iso-seq reads into individual barcodes ####################
 ################################################################################
 
 ## Select reads having good primer orientation
