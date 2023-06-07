@@ -14,6 +14,26 @@ import pathlib
 from itertools import product
 from matplotlib import colors as mcolors
 
+colour = {('L1', 'SNP'): '#1f77b4',
+          ('L1', 'Indel'): '#84b4d6',
+          ('L2', 'SNP'): '#ff7f0e',
+          ('L2', 'Indel'): '#ffb97a',
+          ('shared', 'SNP'): '#9467bd',
+          ('shared', 'Indel'): '#c4abdb',
+          ('leaf', 'SNP'): '#2ca02c',
+          ('leaf', 'Indel'): '#8bcb8b',
+          'L1': '#1f77b4',
+          'L2': '#ff7f0e',
+          'shared': '#9467bd',
+          'both': '#9467bd',
+          'fruit': '#c8cc92',
+          'leaf': '#2ca02c',
+          'theme1': '#540d6e',
+          'theme2': '#ee4266',
+          'theme3': '#ffd23f',
+          'theme4': '#3bceac',
+          'theme5': '#0ead69'}
+
 
 def get_transcriptome_variants():
     """
@@ -187,8 +207,8 @@ def get_allele_freq_at_sm_pos_plot():
         Reads the cluster information from the scRNA analysis as done by Anshupa
         and then plots the RC and AF information for SMs in the iso-seq data
     """
+    # <editor-fold desc="Define import">
     from hometools.hometools import revcomp
-    import pysam
     from subprocess import Popen, PIPE
     import os
     from collections import defaultdict
@@ -197,14 +217,19 @@ def get_allele_freq_at_sm_pos_plot():
     from matplotlib import colors as mcolors
     from scipy.cluster.hierarchy import linkage, optimal_leaf_ordering, leaves_list
     from scipy.spatial.distance import pdist
+    # </editor-fold>
 
+
+    # <editor-fold desc="Define constants and defaults">
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
     sdict = {'WT_1': 'wt1',
              'WT_19': 'wt19',
              'MUT_11_1': 'mut_11_1',
              'MUT_15': 'mut_15'}
+    # </editor-fold>
 
-    # Filter iso-seq reads from each cluster and separate them into indiviudal BAM files
+
+    # <editor-fold desc="RUN ONCE ONLY: Filter iso-seq reads from each cluster and separate them into indiviudal BAM files">
     for i, (k, v) in enumerate(sdict.items()):
         bcclt = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bcs_clstr_id.txt', delimiter=' ')
         bcclt.columns = ['clst', 'bc']
@@ -217,24 +242,20 @@ def get_allele_freq_at_sm_pos_plot():
                 print(f"error in get reads for sample: {k}, cluster: {grp[0]}")
             p = Popen(f'/srv/netscratch/dep_mercier/grp_schneeberger/bin/bin_manish/samtools fasta -0 {cwd}/{k}/clstrs_{grp[0]}_reads.fa.gz -T CB {cwd}/{k}/clstrs_{grp[0]}_reads.bam'.split(), stdout=PIPE, stderr=PIPE)
             o = p.communicate()
+    # </editor-fold>
 
     # Align the above reads and get read-counts at SM positions
     # using code in iso_seq_analysis.sh
 
-    # Plot Alt-readcount frequency
+    # <editor-fold desc="Plot Alt-readcount frequency">
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
-    # muts = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
-    muts = pd.read_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv')
-
     sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
     basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-    # muts.sort_values(['branch', 'chromosome', 'position'], inplace=True)
+    muts = pd.read_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv', sep='\t')
+    muts.sort_values(['branch', 'chromosome', 'position'], inplace=True)
     pos = set(zip(muts.chromosome, muts.position, muts.alt_allele))
-    # posdict = {}
-    # for g in muts.groupby(['chromosome', 'position', 'alt_allele']):
-    #     posdict[g[0]] = g[1].branch.to_list()
-    # snps['af'] = ['high' if af > 0.2 else 'low' for af in snps[6]]
 
+    # Read AF in isoseq reads
     mutsrc = pd.DataFrame()
     for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
         clsrc = sorted([i for i in os.listdir('{}/{}'.format(cwd, bname)) if 'iso_seq.rc.txt' in i])
@@ -286,32 +307,33 @@ def get_allele_freq_at_sm_pos_plot():
     mutsfilt = mutsfilt.loc[mutsfilt.p.isin(mutsrc.p)]
     mutsfilt.index = mutsfilt.p
     mutsfilt.drop('chromosome position alt_allele p'.split(), inplace=True, axis=1)
-    mutsfilt = mutsfilt.T
-    samids = list(map(lambda x: f'{x[1]}_{x[0]}', product('leaf L1 L2'.split(), ['wt_1', 'wt_19', 'mut_11_1', 'mut_15'])))
-    mutsfilt = mutsfilt.loc[mutsfilt.index.isin(samids)]
-    mutsfilt = mutsfilt.loc[samids]
-    mutsfilt = mutsfilt.loc[:, (mutsfilt != 0).any(axis=0)]
+    mutsfilt = mutsfilt.loc[mutsfilt.branch.isin(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'])]
+    mutsfilt['sample'] = mutsfilt.branch.astype(str) + '_' + mutsfilt.tissue.astype(str)
+    mutsfilt['value'] = 1
+    mutsfilt = mutsfilt.pivot(columns='sample', values='value')
+    mutsfilt.fillna(0, inplace=True)
+    samids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], 'leaf L2'.split()))) + 'wt_1_L1 wt_19_L1 mut_11_1_L1 mut_15_L1'.split()
+    mutsfilt = mutsfilt.loc[:, samids]
+    mutsfilt = mutsfilt.loc[(mutsfilt != 0).any(axis=1)]
 
-    distance_matrix = pdist(mutsfilt.T)
+    # Cluster SMs together
+    distance_matrix = pdist(mutsfilt)
     linkage_matrix = linkage(distance_matrix, method='single')
-    smids = mutsfilt.columns[leaves_list(optimal_leaf_ordering(linkage_matrix, distance_matrix))]
-    mutsfilt = mutsfilt.loc[:, smids]
+    mutsfilt = mutsfilt.iloc[leaves_list(optimal_leaf_ordering(linkage_matrix, distance_matrix))]
+    mutsfilt = mutsfilt.T
 
-    fig = plt.figure(figsize=[8, 14])
+    cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
+    fig = plt.figure(figsize=[8, 14], dpi=300)
     ax1 = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1)
-    # ax1 = sns.clustermap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap="Greens", xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
-    ax1 = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap="Greens", xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
+    ax1 = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
     ax1.set_ylabel('')
     ax1.set_xlabel('')
-
-    # cmap = [(1, 1, 1, 1) for i in np.linspace(0.1, 0, 10)] + [(1, 1-i, 1-i, 1) for i in np.linspace(0, 1, 110)]
-    # cmap = mcolors.ListedColormap(cmap) # make color map
 
     ax = plt.subplot2grid((7, 1), (1, 0), rowspan=3, colspan=1)
     rchm = allpos.pivot(index='c', columns='p')['rc']
     rchm = rchm.loc[clstids]
-    rchm = rchm.loc[:, smids]
-    ax = sns.heatmap(rchm, linewidths=0.1, linecolor='lightgrey', cmap="Greens", xticklabels=False, yticklabels=rchm.index, cbar_kws={'label': 'Read count', 'fraction': 0.05}, ax=ax)
+    rchm = rchm.loc[:, mutsfilt.columns]
+    ax = sns.heatmap(rchm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=rchm.index, cbar_kws={'label': 'Read count', 'fraction': 0.05}, ax=ax)
     ax.hlines([12, 24, 36], *ax.get_xlim(), color='k')
     ax.set_ylabel('')
     ax.set_xlabel('')
@@ -319,27 +341,23 @@ def get_allele_freq_at_sm_pos_plot():
     ax = plt.subplot2grid((7, 1), (4, 0), rowspan=3, colspan=1)
     afhm = allpos.pivot(index='c', columns='p')['af']
     afhm = afhm.loc[clstids]
-    afhm = afhm.loc[:, smids]
-    ax = sns.heatmap(afhm, linewidths=0.1, linecolor='lightgrey', cmap="Greens", yticklabels=afhm.index, cbar_kws={'label': 'Allele Frequency', 'fraction': 0.05}, ax=ax, vmin=0)
+    afhm = afhm.loc[:, mutsfilt.columns]
+    ax = sns.heatmap(afhm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, yticklabels=afhm.index, cbar_kws={'label': 'Allele Frequency', 'fraction': 0.05}, ax=ax, vmin=0)
     ax.hlines([12, 24, 36], *ax.get_xlim(), color='k')
     ax.set_ylabel('')
     ax.set_xlabel('')
     plt.tight_layout()
-    plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.pdf')
-    plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.png', dpi=300)
+    # plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.pdf')
+    plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.png')
     plt.close()
 
     # List of SMs not matching the branch specificity:
     # CUR6G 3442340
     # CUR1G 17488551
     # CUR1G 29471732
-
-
-
-
+    # </editor-fold>
     return
 # END
-
 
 
 # Get cluster-specific read stats

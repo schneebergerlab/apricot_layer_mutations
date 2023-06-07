@@ -91,13 +91,13 @@ done
 # Get readcount at all SM positions
 ## convert SM positions to regions files usable with bam-readcount
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
-fin=${indir}/all_sm_in_all_samples.csv
-tail +2 $fin \
-| cut -f1,2 -d',' \
-| awk -F ',' '{print $1"\t"$2"\t"$2}' > ${indir}/all_sm_in_all_samples.regions
+#fin=${indir}/all_sm_in_all_samples.csv
+#tail +2 $fin \
+#| cut -f1,2 -d',' \
+#| awk -F ',' '{print $1"\t"$2"\t"$2}' > ${indir}/all_sm_in_all_samples.regions
 
 # All sample somatic mutations
-muts=${indir}/all_sm_in_all_samples.regions
+muts=${indir}/all_sm_in_all_samples.manually_selected.cleaned.regions
 for sample in WT_1 WT_19 MUT_15 MUT_11_1 ; do
     cd $cwd; cd $sample
     {

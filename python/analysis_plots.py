@@ -1466,7 +1466,7 @@ def merge_all_SM():
 
 
     # Check the presence of somatic mutations in the scRNA data
-    ## Done in iso_seq_analysis.py
+    ## Done in python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot
 
 
 
