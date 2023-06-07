@@ -99,3 +99,19 @@ for b in 00{1..9} 0{10..19} ; do
         /raven/u/mgoel/apricot/cur_protein/failed.predict.${b}.txt
 done
 
+## Copy results from /ptm to /u/
+cd /u/mgoel/apricot/cur_protein/pdbs
+indir=/ptmp/mgoel/cur_proteins/af2_msa/
+while read m; do
+    mrna=$(basename $m .fa)
+    mkdir $mrna
+    cp ${indir}/${mrna}/ranked_*.pdb ${mrna}/.
+    cp ${indir}/${mrna}/ranking_debug.json ${mrna}/.
+done < ../mrna.fa.list.txt
+
+## Remove .pkl files
+indir=/ptmp/mgoel/cur_proteins/af2_msa/
+while read m; do
+    mrna=$(basename $m .fa)
+    rm ${indir}/${mrna}/result_model_*pkl
+done < /u/mgoel/apricot/cur_protein/mrna.fa.list.txt
