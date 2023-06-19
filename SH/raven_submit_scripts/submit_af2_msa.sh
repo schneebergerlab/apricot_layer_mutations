@@ -115,3 +115,6 @@ while read m; do
     mrna=$(basename $m .fa)
     rm ${indir}/${mrna}/result_model_*pkl
 done < /u/mgoel/apricot/cur_protein/mrna.fa.list.txt
+
+
+## submit jobs for getting structures for proteins affected by SMs

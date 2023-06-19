@@ -1,14 +1,14 @@
 #!/bin/bash -l
 ###SBATCH --array=1-5
 #SBATCH -J AF2-MS
-#SBATCH --nodes=12
-#SBATCH --ntasks=12
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=72
+#SBATCH --nodes=3
+#SBATCH --ntasks=6
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=36
 ##SBATCH --mem=120000
 #SBATCH --mail-type=none
 #SBATCH --mail-user=goel@mpipz.mpg.de
-#SBATCH --time=24:00:00
+#SBATCH --time=8:00:00
 #SBATCH --output=output_%x_%a.txt  # Set the output file name
 #SBATCH --error=error_%x_%a.txt  # Set the error file name
 
@@ -49,13 +49,15 @@ export CUDA_VISIBLE_DEVICES=""
 
 
 # run the application
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..12..1}; do
+#OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
+OUTPUT_DIR=/u/mgoel/apricot/data/sm_affected_proteins/
+for start in {1..6..1}; do
     end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''
     for prot in ${PROT_NAME[@]}; do
-        FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+#        FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+        FASTA_PATHS=${FASTA_PATHS},/u/mgoel/apricot/data/sm_affected_proteins/${prot}
     done
     FASTA_PATHS=${FASTA_PATHS/,}
     echo $FASTA_PATHS
@@ -66,9 +68,10 @@ for start in {1..12..1}; do
     srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
             --output_dir="${OUTPUT_DIR}" \
             --fasta_paths="${FASTA_PATHS}" \
-            --db_preset="reduced_dbs" \
+            --db_preset="${PRESET}" \
             --data_dir="${ALPHAFOLD_DATA}" \
-            --small_bfd_database_path=${small_bfd_database_path} \
+            --uniref30_database_path=${uniref30_database_path} \
+            --bfd_database_path=${bfd_database_path} \
             --uniref90_database_path=${uniref90_database_path} \
             --mgnify_database_path=${mgnify_database_path} \
             --pdb70_database_path=${pdb70_database_path} \
@@ -78,6 +81,8 @@ for start in {1..12..1}; do
             --run_msa_and_templates_only --nouse_gpu_relax &
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
+#            --db_preset="reduced_dbs" \
+#            --small_bfd_database_path=${small_bfd_database_path} \
 
 #            --uniref30_database_path=${uniref30_database_path} \
 #            --bfd_database_path=${bfd_database_path} \
