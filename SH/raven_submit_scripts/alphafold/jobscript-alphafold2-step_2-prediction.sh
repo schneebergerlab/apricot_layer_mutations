@@ -54,7 +54,7 @@ module load alphafold/2.3.1
 
 
 # include parameters common to the CPU and the GPU steps
-source user_parameters.inc
+source /u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/user_parameters.inc
 
 
 # check if the directories set by the alphafold module do exist
