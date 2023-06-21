@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH -J AF2-GPU
 #SBATCH --constraint="gpu"
-#SBATCH --nodes=16
-#SBATCH --ntasks=16
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=72
+#SBATCH --nodes=3
+#SBATCH --ntasks=6
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=36
 ##SBATCH --mem=120000
 #SBATCH --gres=gpu:a100:4
 #SBATCH --mail-type=none
@@ -82,24 +82,27 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 
 # run the application
-OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
-for start in {1..16..1}; do
+#OUTPUT_DIR=/ptmp/mgoel/cur_proteins/af2_msa/
+OUTPUT_DIR=/u/mgoel/apricot/data/sm_affected_proteins/
+for start in {1..6..1}; do
     end=$((start + 0))
     PROT_NAME=$(sed -n ${start},${end}p ${1})
     FASTA_PATHS=''
     for prot in ${PROT_NAME[@]}; do
-        FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+#        FASTA_PATHS=${FASTA_PATHS},/raven/u/mgoel/apricot/cur_protein/${prot}
+        FASTA_PATHS=${FASTA_PATHS},/u/mgoel/apricot/data/sm_affected_proteins/${prot}
     done
     FASTA_PATHS=${FASTA_PATHS/,}
     echo $FASTA_PATHS
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
-    srun --exclusive --gres=gpu:a100:4 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=500000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+    srun --exclusive --gres=gpu:a100:2 --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=250000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
         --output_dir="${OUTPUT_DIR}" \
         --fasta_paths="${FASTA_PATHS}" \
         --data_dir="${ALPHAFOLD_DATA}" \
-        --db_preset="reduced_dbs" \
-        --small_bfd_database_path=${small_bfd_database_path} \
+        --db_preset="${PRESET}" \
+        --bfd_database_path=${bfd_database_path} \
+        --uniref30_database_path=${uniref30_database_path} \
         --uniref90_database_path=${uniref90_database_path} \
         --mgnify_database_path=${mgnify_database_path} \
         --pdb70_database_path=${pdb70_database_path} \
@@ -110,8 +113,7 @@ for start in {1..16..1}; do
         --use_precomputed_msas &
     #       ^^^ last line: limit to msa and templates on the CPU, then STOP
 done
-#        --bfd_database_path=${bfd_database_path} \
-#        --uniref30_database_path=${uniref30_database_path} \
+#        --small_bfd_database_path=${small_bfd_database_path} \
 wait
 
 echo "Finished ${SLURM_ARRAY_TASK_ID}"

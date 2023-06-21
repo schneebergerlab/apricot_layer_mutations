@@ -64,8 +64,8 @@ for start in {1..6..1}; do
     export NUM_THREADS=${SLURM_CPUS_PER_TASK}
     export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
     # Changed the database as some proteins crashed with full database
-    #    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
-    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} --mem=120000 ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
+#    srun --exclusive --ntasks 1 --cpus-per-task ${SLURM_CPUS_PER_TASK} ${ALPHAFOLD_HOME}/bin/python3 ${ALPHAFOLD_HOME}/app/alphafold/run_alphafold.py \
             --output_dir="${OUTPUT_DIR}" \
             --fasta_paths="${FASTA_PATHS}" \
             --db_preset="${PRESET}" \

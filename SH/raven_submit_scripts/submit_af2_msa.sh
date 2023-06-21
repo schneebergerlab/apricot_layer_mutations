@@ -118,3 +118,9 @@ done < /u/mgoel/apricot/cur_protein/mrna.fa.list.txt
 
 
 ## submit jobs for getting structures for proteins affected by SMs
+cwd=/u/mgoel/apricot/data/sm_affected_proteins/
+cd $cwd
+sbatch -J sm_prot \
+    -o out_%x.txt -e err_%x.txt \
+    /raven/u/mgoel/apricot/scripts/SH/raven_submit_scripts/alphafold/jobscript-alphafold2-step_1-msa.sh \
+    mrna.list.txt
