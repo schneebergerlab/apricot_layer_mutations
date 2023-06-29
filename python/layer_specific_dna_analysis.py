@@ -2105,8 +2105,6 @@ layer_specific_gene_conversion()
 
 def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
     '''
-    NOT FINISHED YET
-
     This function analysis the layer-specific whole genome sequencing of the apricot
     fruits and calls gene conversions.
     Only SNP positions that are identified by syri by the CUR vs ORA comparison
