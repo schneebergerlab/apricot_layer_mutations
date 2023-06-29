@@ -248,7 +248,6 @@ def get_allele_freq_at_sm_pos_plot():
     # using code in iso_seq_analysis.sh
 
     # <editor-fold desc="Plot Alt-readcount frequency">
-    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
     sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
     basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
     muts = pd.read_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv', sep='\t')
@@ -323,8 +322,8 @@ def get_allele_freq_at_sm_pos_plot():
     mutsfilt = mutsfilt.T
 
     cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
-    fig = plt.figure(figsize=[8, 14], dpi=300)
-    ax1 = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1)
+    fig = plt.figure(figsize=[5, 14], dpi=300)
+    ax1 = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1, fig=fig)
     ax1 = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax1)
     ax1.set_ylabel('')
     ax1.set_xlabel('')
