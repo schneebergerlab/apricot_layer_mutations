@@ -45,16 +45,7 @@ blastp -query athal_cell_specific_genes.prot.fa \
 cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology
 nohup orthofinder -t 40 -a 40 -f cur_athal &
 # Get cur genes orthologous to A.thaliana marker genes
-find_athal_ortho_genes_in_cur.py -> filter_orthologs()
-#geneids="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/athal_cell_specific_genes.geneids"
-#orthogroups="/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology/cur_athal/OrthoFinder/Results_Sep29/Orthogroups/Orthogroups.txt"
-#python -c "
-#import sys;
-#sys.path.insert(0, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/');
-#from find_athal_ortho_genes_in_cur import filter_orthologs;
-#filter_orthologs(\"$geneids\", \"$orthogroups\")
-#" > cur_ortho_genes.txt
-#
+python.find_athal_ortho_genes_in_cur.filter_orthologs
 ## Ortho Gene Functions
 #grep -Ff cur_ortho_genes.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/function/cur.pasa_out.prot.fasta.eggnog_mapper.tsv > cur_ortho_genes.func.txt
 
@@ -66,7 +57,7 @@ find_athal_ortho_genes_in_cur.py -> filter_orthologs()
 # list and then we can check the expression of "sequence orthologous" genes for
 # the RP scRNA seq data
 
-# Commands to find orthologous genes in find_athal_ortho_genes_in_cur.py -> get_cluster_marker_orthologs()
+# Commands to find orthologous genes in python.find_athal_ortho_genes_in_cur.filter_orthologs
 
 
 ################################################################################
@@ -94,25 +85,15 @@ cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/struc
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/
 cd $cwd
 bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo athal_cur.log -eo athal_cur.err "
-    foldseek search --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db tmp -c 0.5 -a -e 0.001
-    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db athal_cur_search.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
-    foldseek rbh --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db tmp -c 0.5 -a -e 0.001
-    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db athal_cur_rbh.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
+#    foldseek search --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db tmp -c 0.5 -a -e 0.001
+#    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_search_db athal_cur_search.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
+
+    foldseek search --threads 40 ${indir}/athalprodb ${indir}/curdb cur_athal_search_db tmp -c 0.5 -a -e 0.001
+    foldseek convertalis --threads 40 ${indir}/athalprodb ${indir}/curdb cur_athal_search_db cur_athal_search.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
+
+#    foldseek rbh --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db tmp -c 0.5 -a -e 0.001
+#    foldseek convertalis --threads 40 ${indir}/curdb ${indir}/athalprodb athal_cur_rbh_db athal_cur_rbh.tsv --format-output \"query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen\" --format-mode 4
 "
 
-
-# Test script/commands
-cd /srv/netscratch/dep_mercier/grp_schneeberger/projects/SynSearch/tests/foldseek_test
-foldseek createdb athal/ athalDB
-foldseek createdb prunus/ prunusDB
-foldseek createindex prunusDB tmp
-foldseek createindex athalDB tmp
-foldseek search prunusDB athalDB alnDB tmp -c 0.5 -a -e 0.001
-foldseek convertalis prunusDB athalDB alnDB aln.tsv --format-output "query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen" --format-mode 4
-foldseek rbh prunusDB athalDB rbhDB tmp -c 0.5 -a -e 0.001
-foldseek convertalis prunusDB athalDB rbhDB rbh.tsv --format-output "query,target,fident,nident,alnlen,qcov,tcov,qstart,qend,tstart,tend,evalue,prob,bits,mismatch,gapopen" --format-mode 4
-
-
-
-foldseek result2msa prunusDB athalDB alnDB msa --msa-format-mode 6  # Generate MSA
-foldseek unpackdb msa msa_output --unpack-suffix a3m --unpack-name-mode 0
+#foldseek result2msa prunusDB athalDB alnDB msa --msa-format-mode 6  # Generate MSAs
+#foldseek unpackdb msa msa_output --unpack-suffix a3m --unpack-name-mode 0 # Unpack MSAs
