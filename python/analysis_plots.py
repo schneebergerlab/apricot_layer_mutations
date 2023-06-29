@@ -8,14 +8,17 @@ colour = {('L1', 'SNP'): '#1f77b4',
           ('L2', 'Indel'): '#ffb97a',
           ('shared', 'SNP'): '#9467bd',
           ('shared', 'Indel'): '#c4abdb',
+          ('fruit', 'SNP'): '#003399',
+          ('fruit', 'Indel'): '#6699ff',
           ('leaf', 'SNP'): '#2ca02c',
           ('leaf', 'Indel'): '#8bcb8b',
           'L1': '#1f77b4',
           'L2': '#ff7f0e',
           'shared': '#9467bd',
           'both': '#9467bd',
-          'fruit': '#c8cc92',
+          'fruit': '#003399',
           'leaf': '#2ca02c',
+          'any': '#540d6e',
           'theme1': '#540d6e',
           'theme2': '#ee4266',
           'theme3': '#ffd23f',
@@ -198,7 +201,7 @@ def mutation_spectra():
     from scipy.sparse.csgraph import minimum_spanning_tree
     from scipy.sparse import triu, csr_matrix
     from hometools.plot import plot2emf, cleanax
-    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta
+    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges
     from multiprocessing import Pool
     import json
     # </editor-fold>
@@ -206,7 +209,10 @@ def mutation_spectra():
 
     # <editor-fold desc="Define default values">
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+    syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    branchorder = ['wt_7', 'wt_1', 'wt_18', 'wt_19', 'mut_15', 'mut_11_1', 'mut_11_2']
     SMALL_SIZE = 8
     MEDIUM_SIZE = 10
     BIGGER_SIZE = 12
@@ -220,7 +226,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Read the layer_specific SM as well as SMs shared between layers, and generate one layer SM object">
+    # <editor-fold desc="Read the layer_specific SM as well as SMs shared between layers and generate one layer SM object">
     layersp = pd.read_table(f'{cwd}all_layer_specific_somatic_variants.txt')    # layer_specific_variations
     ## Because reads L3 are not enriched for L3 and are mostly L2, removing them
     layersp.loc[layersp.Layer == 'L1,L3', 'Layer'] = 'L1'
@@ -243,11 +249,22 @@ def mutation_spectra():
     sharedsm = pd.read_table(f'{cwd}/all_samples_candidate_high_cov_sms3.only_selected.csv', header=None)
     sharedsm.columns = ['chromosome', 'position', 'branch', 'Layer', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Selected', 'Ploidy', 'Remarks']
     sharedsm.Layer = sharedsm.Layer.str.upper()
+    # TODO: ADD THESE POSITIONS TO GENE CONVERSIONS
+    # filtering positions that are present in all but one sample as they are probably gene conversions
+    sharedsm = sharedsm.loc[sharedsm.position != 367749]
+    sharedsm = sharedsm.loc[sharedsm.position != 16736100]
 
     data = pd.concat([layersp, sharedsm])
     data['type'] = 'SNP'
     data.loc[[a[0] in '+-' for a in data.alt_allele], 'type'] = 'Indel'
     datafilter = data.loc[:, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'read_count', 'allele_freq', 'Layer', 'type']].drop_duplicates(subset=['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer', 'type']).copy()    # Filtered dataframe to be used for generating statistics
+    datafilter.sort_values('chromosome position'.split(), inplace=True)
+    datafilter.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt', index=False, header=True, sep='\t')
+
+    # </editor-fold>
+
+
+    datafilter = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
     # Annotate SMs as L1, L2 or shared
     l1sms = datafilter.loc[datafilter.Layer == 'L1', 'chromosome position ref_allele alt_allele'.split()].to_numpy()
     l1pos = set(list(map(tuple, l1sms)))
@@ -256,18 +273,11 @@ def mutation_spectra():
     sharedpos = l1pos.intersection(l2pos)
     smtype = ['shared' if (row[0], row[1], row[3], row[4]) in sharedpos else row[7] for row in datafilter.itertuples(index=False)]
     datafilter.Layer = smtype
-    datafilter.sort_values('chromosome position'.split(), inplace=True)
-    # Old all_layer_somatic_variants.filtered.txt file is saved as BKP_all_layer_somatic_variants.filtered.txt
-    datafilter.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt', index=False, header=True, sep='\t')
-
-    # </editor-fold>
-
-    datafilter = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
+    datafilter.drop_duplicates(subset=['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele', 'Layer', 'type'], inplace=True)
 
 
     # <editor-fold desc="Get stats/counts">
 
-    datafilter = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
     layerjsondata = dict()
     layerjsondata['Number of SM events'] = datafilter.shape[0]
     layerjsondata['Number of unique SNPs'] = datafilter.loc[datafilter.type == "SNP"].drop_duplicates(subset=["chromosome", "position", "ref_allele", "alt_allele"]).shape[0]
@@ -293,31 +303,90 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Plot for number of SMs per branch">
-
-    branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
-
-    plt.rc('font', size=9)
-    fig, ax = plt.subplots(figsize=[6, 3], dpi=300)
-    y_bottom = [0]*7
-    bar_width = 0.5
-    for l in ('L1', 'L2', 'shared'):
-        for t in ('SNP', 'Indel'):
-            y = [branchscnt[(l, t)][b] for b in branches]
-            print(y)
-            # y = [cnts[x] if x in cnts else 0 for x in xticks]
-            ax.bar(np.arange(1, 8), y, label=f'{l} {t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
-            y_bottom = [y_bottom[i] + y[i] for i in range(7)]
-    ax.set_xlabel("Branch")
+    # <editor-fold desc="Number of SMs per layer">
+    fig, ax = plt.subplots(figsize=[3, 3], dpi=300)
+    y_bottom = [0]*3
+    for t in ('SNP', 'Indel'):
+        layercnts = datafilter.loc[datafilter.type == t] \
+            .drop_duplicates(subset='chromosome position alt_allele'.split()) \
+            .Layer.value_counts().to_dict()
+        ax.bar(['L1', 'L2', 'shared'], [layercnts[l] for l in ('L1', 'L2', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('L1', 'L2', 'shared')])
+        y_bottom = [layercnts[l] for l in ('L1', 'L2', 'shared')]
+        print(y_bottom)
+    ax.set_xlabel("Layer")
     ax.set_ylabel("Number of SMs")
-    ax.set_xticks(np.arange(1, 8))
-    # ax.set_xticklabels(['w1', 'w2', 'w3', 'w4', 'm1', 'm2', 'm3'])
-    ax.set_xticklabels(branches)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.legend(bbox_to_anchor=(1.01, 1), frameon=False)
+    ax = cleanax(ax)
+    # ax.legend(bbox_to_anchor=(1.01, 1), frameon=False)
     plt.tight_layout(pad=0.1)
-    plt.savefig(f'{cwd}/sm_counts_in_branches.png')
+    plt.savefig(f'{cwd}/sm_counts_in_layers.png')
+    plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get syri plot with SMs">
+    df = datafilter.drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele'])
+    for grp in df.groupby('Layer'):
+        pos = grp[1].copy()
+        pos = pos['chromosome position'.split()]
+        pos.columns = 'chromosome end'.split()
+        pos['start'] = pos.end - 1
+        pos = pos['chromosome start end'.split()]
+        pos.to_csv(f'{cwd}/{grp[0]}_sm_pos.bed', index=False, header=False, sep='\t')
+
+    ## Run plotsr using the above BED files as tracks (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run)
+    ## plotsr command:
+    ## plotsr --sr syri.out --genomes genomes.txt --tracks tracks.txt -o syri_sm_tracks.png -S 0.3 -R -W 6 -H 8 -s 25000 -f 10
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get syntenic and SR regions from syri.out for sm_overlap_with_structural_annotation">
+
+    curanno = deque()
+    with open(syriout, 'r') as f:
+        for line in f:
+            line = line.strip().split()
+            if line[10] in {'SYN', 'INV', 'TRANS', 'INVTR', 'DUP', 'INVDP'}:
+                curanno.append(line[:3] + [line[10]])
+                continue
+            if line[10] == 'NOTAL':
+                if line[0] != '-':
+                    curanno.append(line[:3] + [line[10]])
+                # break
+    curanno = pd.DataFrame(curanno)
+    curanno.columns = 'chromosome start end anno'.split()
+    curanno.loc[:, 'start end'.split()] = curanno.loc[:, 'start end'.split()].astype(int)
+    cursyn = curanno.loc[curanno['anno'] == 'SYN']
+    cursyn = bt.BedTool.from_dataframe(cursyn)
+    cursr = curanno.loc[curanno['anno'] != 'SYN']
+    cursr = bt.BedTool.from_dataframe(cursr)
+    cursynlen = 0
+    cursrlen = 0
+    for grp in curanno.groupby('chromosome'):
+        cursynlen += sumranges(mergeRanges(np.array(grp[1].loc[grp[1]['anno'] == 'SYN']['start end'.split()])))
+        cursrlen += sumranges(mergeRanges(np.array(grp[1].loc[grp[1]['anno'] != 'SYN']['start end'.split()])))
+
+    smdist = deque()
+    for tissue in 'L1 L2 shared'.split():
+        sms = bt.BedTool(f'{cwd}/{tissue}_sm_pos.bed').saveas()
+        sms = sms.filter(func=lambda x: 'cur' not in x[0]).saveas()
+        synpos = sms.intersect(cursyn, u=True)
+        srpos = sms.intersect(cursr, u=True)
+        smdist.append([tissue, round(len(synpos)/len(sms), 2), round(len(srpos)/len(sms), 2), np.format_float_scientific((len(synpos)/len(sms))/cursynlen, unique=False, precision=3), np.format_float_scientific((len(srpos)/len(sms))/cursrlen, unique=False, precision=3)])
+    smdist = pd.DataFrame(smdist)
+    smdist = smdist[[0, 3, 4]]
+    smdist.columns = 'tissue syntenic rearranged'.split()
+    smdist = pd.melt(smdist, id_vars='tissue')
+    smdist.value = smdist.value.astype('float')
+    fig = plt.figure(figsize=[2, 2], dpi=300)
+    ax = fig.add_subplot()
+    ax = sns.barplot(data=smdist, x='variable', y='value', hue='tissue', hue_order='L1 L2 shared'.split(), palette=colour, ax=ax)
+    ax.set_ylim([0, 1.e-8])
+    ax.set_xlabel('')
+    ax.set_ylabel('Ratio of SMs')
+    ax = cleanax(ax)
+    ax.legend(frameon=False, title='')
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/sm_overlap_with_structural_annotation.png')
     plt.close()
     # </editor-fold>
 
@@ -340,16 +409,30 @@ def mutation_spectra():
     df.reset_index(drop=True, inplace=True)
     df.loc[:, 'L1'] = round(df.loc[:, 'L1']*100/sum(df.L1), 2)
     df.loc[:, 'L2'] = round(df.loc[:, 'L2']*100/sum(df.L2), 2)
+    df.loc[:, 'shared'] = round(df.loc[:, 'shared']*100/sum(df.shared), 2)
     df = df.melt(id_vars=['var'])
+    df.columns = ['SNP', 'Layer', 'p']
+    garb = deque()
+    for grp in df.groupby('Layer'):
+        d = grp[1]
+        # print(d)
+        garb.append(['A,T>G,C', grp[0], sum(d.loc[d.SNP.isin(('A>G', 'T>C')), 'p'])])
+        garb.append(['C,G>T,A', grp[0], sum(d.loc[d.SNP.isin(('G>A', 'C>T')), 'p'])])
+        garb.append(['A,T>C,G', grp[0], sum(d.loc[d.SNP.isin(('A>C', 'T>G')), 'p'])])
+        garb.append(['A,T>T,A', grp[0], sum(d.loc[d.SNP.isin(('A>T', 'T>A')), 'p'])])
+        garb.append(['C,G>A,T', grp[0], sum(d.loc[d.SNP.isin(('C>A', 'G>T')), 'p'])])
+        garb.append(['C,G>G,C', grp[0], sum(d.loc[d.SNP.isin(('C>G', 'G>C')), 'p'])])
+    df = pd.DataFrame(garb)
     df.columns = ['SNP type', 'Layer', 'Percentage of variants']
     fig = plt.figure(figsize=[3, 3], dpi=300)
     ax = fig.add_subplot()
-    sns.barplot(data=df, x='SNP type', y='Percentage of variants', hue='Layer', palette=colour, order=['A>G', 'T>C', 'G>A', 'C>T', 'A>C', 'T>G', 'A>T', 'T>A', 'G>T', 'C>A', 'G>C', 'C>G'], ax=ax, width=0.9)
-    ax.legend(frameon=False, title='Layer')
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.tick_params(axis='x', rotation=45)
-    plt.tight_layout(pad=0)
+    # sns.barplot(data=df, x='SNP type', y='Percentage of variants', hue='Layer', palette=colour, order=['A>G', 'T>C', 'G>A', 'C>T', 'A>C', 'T>G', 'A>T', 'T>A', 'G>T', 'C>A', 'G>C', 'C>G'], ax=ax, width=0.9)
+    sns.barplot(data=df, x='SNP type', y='Percentage of variants', hue='Layer', palette=colour, order=['A,T>G,C', 'C,G>T,A', 'A,T>C,G', 'A,T>T,A', 'C,G>A,T', 'C,G>G,C'], ax=ax, width=0.75)
+    ax.axvline(1.5, linestyle='dashed', color='black', linewidth=0.75)
+    ax.set_ylim([0, 100])
+    ax.legend(frameon=False)
+    ax.tick_params(axis='x', rotation=30)
+    ax = cleanax(ax)
     plt.savefig(f'{cwd}/snps_mutation_spectra.png')
     # plt.savefig(f'{cwd}/snps_mutation_spectra.pdf')
     # plot2emf(f'{cwd}/snps_mutation_spectra.pdf', f'{cwd}/snps_mutation_spectra.emf')
@@ -358,15 +441,10 @@ def mutation_spectra():
 
 
     # <editor-fold desc="Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
-    refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
     snppos = datafilter.loc[datafilter.type == 'SNP'].drop_duplicates(subset='chromosome position alt_allele'.split())
     # smvars = allsmmat.reset_index()
     # smvars['type'] = ['SNP' if i[0] not in '+-' else 'indel' for i in smvars['alt_allele']]
     # snppos = smvars.loc[smvars.type == 'SNP'].copy()   # 1 based positions
-
-    l1 = snppos.loc[snppos.Layer == 'L1', 'chromosome position alt_allele'.split()]
-    l2 = snppos.loc[snppos.Layer == 'L2', 'chromosome position alt_allele'.split()]
-    shared = snppos.loc[snppos.Layer == 'shared', 'chromosome position alt_allele'.split()]
 
     # Count the total number of
     threemers = sorted(canonical_kmers(3))
@@ -380,6 +458,7 @@ def mutation_spectra():
     for p in snppos.itertuples(index=False):
         trip.append(refseq[p.chromosome][p.position-2: p.position+1])
     snppos['trip_reg'] = trip
+    tripcntabs = defaultdict()
     tripcntnorm = defaultdict()
     for l in 'L1 L2 shared'.split():
         trip = snppos.loc[snppos.Layer == l, 'trip_reg']
@@ -402,8 +481,17 @@ def mutation_spectra():
                 tripcnt.pop(kr)
             except KeyError:
                 pass
+        tripcntabs[l] = {k: tripcntclean[k] for k in kmercnts}
         tripcntnorm[l] = {k: tripcntclean[k]/kmercnts[k] for k in kmercnts}
-    tripkeys = sorted(kmercnts, key=lambda k: sum([tripcntnorm[l][k] for l in 'L1 L2 shared'.split()]), reverse=True)
+    cpgkeys = set([k for v in tripcntnorm.values() for k in v.keys() if 'CG' in k])
+    tripletjson = defaultdict()
+    tripletjson['triplet counts'] = tripcntabs
+    tripletjson['triplet count normalised'] = {k: {k1: np.format_float_scientific(v1, unique=False, precision=3) for k1, v1 in v.items()} for k, v in tripcntnorm.items()}
+    tripletjson['cgsnpcnt'] = {l: sum([tripcntabs[l][c] for c in cpgkeys]) for l in 'L1 L2 shared'.split()}
+    tripletjson['othersnpcnt'] = {l: sum([v for k, v in tripcntabs[l].items() if k not in cpgkeys]) for l in 'L1 L2 shared'.split()}
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/triplet_sm_stats.json', 'w') as fout:
+        json.dump(tripletjson, fout, indent=2)
+    tripkeys = sorted(kmercnts, key=lambda x: sum([tripcntnorm[l][x] for l in 'L1 L2 shared'.split()]), reverse=True)
     fig = plt.figure(figsize=[6, 3], dpi=300)
     ax = fig.add_subplot()
     ybottom = np.zeros_like(tripkeys, dtype='float')
@@ -419,6 +507,31 @@ def mutation_spectra():
     plt.savefig(f'{cwd}/snp_ratio_in_genomic_triplets.png')
     plt.close()
 
+    # </editor-fold>
+
+
+    # <editor-fold desc="Plot for number of SMs per branch">
+
+    branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
+    plt.rc('font', size=9)
+    fig, ax = plt.subplots(figsize=[6, 3], dpi=300)
+    y_bottom = [0]*7
+    bar_width = 0.5
+    for l in ('L1', 'L2', 'shared'):
+        for t in ('SNP', 'Indel'):
+            y = [branchscnt[(l, t)][b] for b in branches]
+            ax.bar(np.arange(1, 8), y, label=f'{l} {t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
+            y_bottom = [y_bottom[i] + y[i] for i in range(7)]
+    ax.set_xlabel("Branch")
+    ax.set_ylabel("Number of SMs")
+    ax.set_xticks(np.arange(1, 8))
+    ax.set_xticklabels(branches)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.legend(bbox_to_anchor=(1.01, 1), frameon=False)
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/sm_counts_in_branches.png')
+    plt.close()
     # </editor-fold>
 
 
@@ -450,7 +563,7 @@ def mutation_spectra():
 
     # <editor-fold desc="SMs overlapping genes, TEs, and intergenic, annotations">
     ## TODO: Permutation test for the distribution of ShVs?
-    ## TODO: Create a third plot normalised by the number of identified SM in each layer
+    ## TODO: Get SM distributions between different TE/repeat types
     gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
     te_rep = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.ann.gff3').saveas()
 
@@ -498,12 +611,11 @@ def mutation_spectra():
     regsize['intergenic'] = 233151598 - sum(regsize.values())
 
 
-    # plt.rc('font', size=15)
-
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
     bar_width = 0.3
     fig = plt.figure(figsize=[4, 6], dpi=300)
     ax = fig.add_subplot(3, 1, 1)
+
     for i, l in enumerate('L1 L2 shared'.split()):
         y_bottom = [0]*5
         for t in 'SNP Indel'.split():
@@ -538,7 +650,6 @@ def mutation_spectra():
         for t in 'SNP Indel'.split():
             cnts = pos.loc[(pos.Layer == l) & (pos.type == t), 'anno'].value_counts()
             cnts = (cnts/pos.Layer.value_counts()[l])*100
-            # y = [(cnts[x]*1000000)/regsize[x] if x in cnts else 0 for x in xticks]
             y = [cnts[x] if x in cnts else 0 for x in xticks]
             ax.bar(np.arange(5) - (bar_width*(1-i)), y, label=f'{l} {t}', bottom=y_bottom, color=colour[l, t], width=bar_width)
             y_bottom = y
@@ -615,6 +726,57 @@ def mutation_spectra():
     ax = cleanax(ax)
     plt.savefig(f"{cwd}/layer_conserved_somatic_mutation_allele_frequency.png")
     plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="Grouping of SMs based on branching">
+    # Generate the Figure 5 from Tomimoto and Satake, 2023
+    l1cnts = defaultdict(int)
+    l2cnts = defaultdict(int)
+    shcnts = defaultdict(int)
+    for grp in datafilter.groupby('chromosome position alt_allele Layer'.split()):
+        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
+        if grp[0][3] == 'L1':
+            l1cnts[selb] += 1
+        elif grp[0][3] == 'L2':
+            l2cnts[selb] += 1
+        elif grp[0][3] == 'shared':
+            shcnts[selb] += 1
+
+    bkeys = set(list(l1cnts) + list(l2cnts) + list(shcnts))
+    bkeys = sorted(sorted(bkeys), key=lambda x: sum(x))
+
+    cnts = {'L1': l1cnts, 'L2': l2cnts, 'shared': shcnts}
+    fig = plt.figure(figsize=[4, 6], dpi=300)
+    for i, l in enumerate('L1 L2 shared'.split()):
+        data = cnts[l]
+        ax = fig.add_subplot(3, 1, i+1)
+        ax.bar(x=[str(b) for b in bkeys], height = [data[k] for k in bkeys], color=colour[l], width=0.5)
+        ax.tick_params(axis='x',
+                       which='both',
+                       bottom=False,
+                       top=False,
+                       labelbottom=False)
+        ax.set_ylim([0, 25])
+        plt.ylabel(f'SM count in {l}')
+        ax.vlines(x=6.5, ymin=0, ymax=25, color='black', linestyle='dotted')
+        ax=cleanax(ax)
+        ax.grid(which='major', axis='x')
+        ax.set_axisbelow(True)
+    ax.tick_params(axis='x',
+                   which='both',
+                   bottom=True,
+                   top=False,
+                   labelbottom=True, rotation=90)
+    ax.set_xlabel('Selected branch indices')
+    ax = cleanax(ax)
+    plt.savefig(f'{cwd}/sm_grouping_over_branches.png')
+    plt.close()
+
+
+
+
+
     # </editor-fold>
 
 
@@ -709,6 +871,55 @@ def mutation_spectra():
     # </editor-fold>
 
 
+    # <editor-fold desc="Get correlation of mappability and SM. Ideally, this should not be different than the background distribution">
+    # TODO: Fix it to work with the updated SM list
+    # Read smpos same way as in repeat/gene overlap section above
+    genmap = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph'
+    smindex = 0
+    smanno1 = deque()
+    c, p = -1, -1
+    with open(genmap, 'r') as fin:
+        while smindex < smpos.shape[0]:
+            while tuple(smpos.iloc[smindex, [0, 1]]) == (c, p):
+                smindex += 1
+            c, p = smpos.iloc[smindex, [0, 1]]
+            for line in fin:
+                line = line.strip().split()
+                if line[0] != c: continue
+                if int(line[1])-25 > p: continue
+                if int(line[2])-25 < p: continue
+                smanno1.append((c, p, round(float(line[3]), 2)))
+                break
+            smindex += 1
+    genmap = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.genmap.E1_K51.map.bedgraph'
+    smindex = 0
+    smanno2 = deque()
+    c, p = -1, -1
+    with open(genmap, 'r') as fin:
+        while smindex < smpos.shape[0]:
+            while tuple(smpos.iloc[smindex, [0, 1]]) == (c, p):
+                smindex += 1
+            c, p = smpos.iloc[smindex, [0, 1]]
+            for line in fin:
+                line = line.strip().split()
+                if line[0] != c: continue
+                if int(line[1])-25 > p: continue
+                if int(line[2])-25 < p: continue
+                smanno2.append((c, p, round(float(line[3]), 2)))
+                break
+            smindex += 1
+    smanno1 = pd.DataFrame(smanno1)
+    smanno1.columns = ['chr', 'pos', 'genmap_E0']
+    smanno2 = pd.DataFrame(smanno2)
+    smanno2.columns = ['chr', 'pos', 'genmap_E1']
+    smanno = smanno1.merge(smanno2, how='left', on=['chr', 'pos'])
+    smanno = smpos.merge(smanno, how='left', on=['chr', 'pos'])
+    smanno.fillna('-', inplace=True)
+    smanno.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutation_genome_mappability.txt", index=False, sep='\t')
+    # </editor-fold>
+
+
+
     return
 # END
 
@@ -742,6 +953,7 @@ def merge_all_SM():
 
     # <editor-fold desc="Define default values">
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     SMALL_SIZE = 8
     MEDIUM_SIZE = 10
@@ -774,12 +986,13 @@ def merge_all_SM():
     leafsm['type'] = 'SNP'
     leafsm.loc[[a[0] in '+-' for a in leafsm.alt_allele], 'type'] = 'Indel'
 
-    # Read all sample SM
-    allsam = pd.read_table(allfin, header=None)
-    allsam.columns = 'chromosome position branch tissue ref_allele alt_allele read_count allele_freq selected ploidy remark'.split()
-    allsam.tissue = allsam.tissue.str.upper()
+    # # Read all sample SM
+    # allsam = pd.read_table(allfin, header=None)
+    # allsam.columns = 'chromosome position branch tissue ref_allele alt_allele read_count allele_freq selected ploidy remark'.split()
+    # allsam.tissue = allsam.tissue.str.upper()
 
-    allsm = pd.concat([leafsm, layersm, allsam])
+    # allsm = pd.concat([leafsm, layersm, allsam])
+    allsm = pd.concat([leafsm, layersm])
     allsm.sort_values(['chromosome', 'position'], inplace=True)
 
     # Change the annotation at positions incorrectly aligned manually
@@ -803,8 +1016,8 @@ def merge_all_SM():
     allsm['branch_tissue'] = allsm.branch + '_' + allsm.tissue
     # Create table for the presence and absence of SM in different tissues
     tissues = ['leaf', 'L1', 'L2']
-    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15', 'mut_4']
-    btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    allbranches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15', 'mut_4']
+    btiss = ['_'.join([b, a]) for a in tissues for b in allbranches]
     btiss.remove('mut_4_L1')
     btiss.remove('mut_4_L2')
     allsmmat = dict()          # All somatic mutation matrix
@@ -820,9 +1033,10 @@ def merge_all_SM():
         else:
             leafl2mis.append(0)
     allsmmat['leafl2mis'] = leafl2mis
-    allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.csv', sep=',', index=False, header=True)
+    # allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.csv', sep=',', index=False, header=True)
     # Analyse manually to select positions that are FN in other tissues
     # Read the manually curated file and update the allsmat mat
+    # Removed SMs at CUR2G:367749 and CUR7G:16736100
     allsmmat = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.csv', sep=',')
     colname = list(allsmmat.columns.values)
     for i in range(allsmmat.shape[0]):
@@ -845,7 +1059,7 @@ def merge_all_SM():
     leafsms = allsmmat.loc[allsmmat.organ == 'leaf', 'chromosome position alt_allele'.split()].to_numpy()
     leafpos = set(list(map(tuple, leafsms)))
     sharedpos = fruitpos.intersection(leafpos)
-    smtype = ['both' if (row[0], row[1], row[2]) in sharedpos else row[5] for row in allsmmat.itertuples(index=False)]
+    smtype = ['shared' if (row[0], row[1], row[2]) in sharedpos else row[5] for row in allsmmat.itertuples(index=False)]
     allsmmat.organ = smtype
     allsmmat.sort_values('chromosome position'.split(), inplace=True)
     # allsmmat.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv', sep='\t', index=False)
@@ -855,7 +1069,7 @@ def merge_all_SM():
     allsmmat = pd.read_table(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv')
 
 
-    # <editor-fold desc="Read the cleaned allsmmat file and create summary stats">
+    # <editor-fold desc="Create summary stats">
     allsmjsondata = dict()
     allsmjsondata["Number of events"] = allsmmat.shape[0]
     allsmjsondata["Total number of unique SMs"] = allsmmat.drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
@@ -864,16 +1078,38 @@ def merge_all_SM():
     allsmjsondata["Number of SMs in leaf"] = allsmmat.loc[allsmmat.tissue == 'leaf'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
     allsmjsondata["Number of SMs in only fruit"] = allsmmat.loc[allsmmat.organ == 'fruit'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
     allsmjsondata["Number of SMs in only leaf"] = allsmmat.loc[allsmmat.organ == 'leaf'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
-    allsmjsondata["Number of SMs shared"] = allsmmat.loc[allsmmat.organ == 'both'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
+    allsmjsondata["Number of SMs shared"] = allsmmat.loc[allsmmat.organ == 'shared'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
+    allsmjsondata['Number of branches for each SM'] = OrderedDict(sorted(Counter([len(set(grp[1].branch)) for grp in allsmmat.groupby(['chromosome', 'position', 'alt_allele'])]).items()))
     with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/all_sm_stats.json', 'w') as fout:
         json.dump(allsmjsondata, fout, indent=2)
 
     # </editor-fold>
 
 
+    # <editor-fold desc="Number of SMs per organ">
+    df = allsmmat.copy()
+    df['type'] = ['SNP' if row[2][0] not in '+-' else 'Indel' for row in df.itertuples(index=False)]
+    fig, ax = plt.subplots(figsize=[2, 3], dpi=300)
+    y_bottom = [0]*3
+    for t in ('SNP', 'Indel'):
+        cnts = df.loc[df.type == t] \
+            .drop_duplicates(subset='chromosome position alt_allele'.split()) \
+            .organ.value_counts().to_dict()
+        ax.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('fruit', 'leaf', 'shared')])
+        y_bottom = [cnts[l] for l in ('fruit', 'leaf', 'shared')]
+        print(y_bottom)
+    ax.set_xlabel("Organ")
+    ax.set_ylabel("Number of SMs")
+    ax = cleanax(ax)
+    # ax.legend(bbox_to_anchor=(1.01, 1), frameon=False)
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'{cwd}/sm_counts_in_layers.png')
+    plt.close()
+    # </editor-fold>
+
+
     # <editor-fold desc="Get syri plot with SMs">
-    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
-    for grp in allsmmat.groupby('tissue'):
+    for grp in allsmmat.groupby('organ'):
         pos = grp[1].drop_duplicates(subset='chromosome position alt_allele'.split())
         pos = pos['chromosome position'.split()]
         pos.columns = 'chromosome end'.split()
@@ -883,14 +1119,13 @@ def merge_all_SM():
 
     ## Run plotsr using the above BED files as tracks (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run)
     ## plotsr command:
-    ## plotsr --sr syri.out --genomes genomes.txt --tracks tracks.txt -o syri_sm_tracks.png -S 0.3 -R -W 7 -H 8 -s 25000 -f 10
+    ## plotsr --sr syri.out --genomes genomes.txt --tracks tracks.txt -o syri_sm_tracks.png -S 0.3 -R -W 6 -H 8 -s 25000 -f 10
     # </editor-fold>
 
 
     # <editor-fold desc="Get syntenic and SR regions from syri.out for sm_overlap_with_structural_annotation">
-    fin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
     curanno = deque()
-    with open(fin, 'r') as f:
+    with open(syriout, 'r') as f:
         for line in f:
             line = line.strip().split()
             if line[10] in {'SYN', 'INV', 'TRANS', 'INVTR', 'DUP', 'INVDP'}:
@@ -902,30 +1137,40 @@ def merge_all_SM():
                 # break
     curanno = pd.DataFrame(curanno)
     curanno.columns = 'chromosome start end anno'.split()
+    curanno.loc[:, 'start end'.split()] = curanno.loc[:, 'start end'.split()].astype(int)
     cursyn = curanno.loc[curanno['anno'] == 'SYN']
     cursyn = bt.BedTool.from_dataframe(cursyn)
     cursr = curanno.loc[curanno['anno'] != 'SYN']
     cursr = bt.BedTool.from_dataframe(cursr)
+
+    cursynlen = 0
+    cursrlen = 0
+    for grp in curanno.groupby('chromosome'):
+        cursynlen += sumranges(mergeRanges(np.array(grp[1].loc[grp[1]['anno'] == 'SYN']['start end'.split()])))
+        cursrlen += sumranges(mergeRanges(np.array(grp[1].loc[grp[1]['anno'] != 'SYN']['start end'.split()])))
+
     smdist = deque()
-    for tissue in 'leaf L1 L2'.split():
-        sms = bt.BedTool(f'{cwd}/{tissue}_sm_pos.bed').saveas()
+    for organ in 'fruit leaf shared'.split():
+        sms = bt.BedTool(f'{cwd}/{organ}_sm_pos.bed').saveas()
+        sms = sms.filter(func=lambda x: 'cur' not in x[0]).saveas()
         synpos = sms.intersect(cursyn, u=True)
         srpos = sms.intersect(cursr, u=True)
-        smdist.append([tissue, round(len(synpos)/len(sms), 2), round(len(srpos)/len(sms), 2)])
-    smdist = pd.DataFrame(smdist)
-    smdist.columns = 'tissue syntenic rearranged'.split()
-    smdist = pd.melt(smdist, id_vars='tissue')
+        smdist.append([organ, round(len(synpos)/len(sms), 2), round(len(srpos)/len(sms), 2), np.format_float_scientific((len(synpos)/len(sms))/cursynlen, unique=False, precision=3), np.format_float_scientific((len(srpos)/len(sms))/cursrlen, unique=False, precision=3)])
 
-    # plt.rc('font', size=15)
+    smdist = pd.DataFrame(smdist)
+    smdist = smdist[[0, 3, 4]]
+    smdist.columns = 'organ syntenic rearranged'.split()
+    smdist = pd.melt(smdist, id_vars='organ')
+    smdist.value = smdist.value.astype('float')
+
     fig = plt.figure(figsize=[2, 2], dpi=300)
     ax = fig.add_subplot()
-    ax = sns.barplot(data=smdist, x='variable', y='value', hue='tissue', hue_order='L1 L2 leaf'.split(), palette=colour, ax=ax)
-    ax.set_ylim([0, 1])
+    ax = sns.barplot(data=smdist, x='variable', y='value', hue='organ', hue_order='fruit leaf shared'.split(), palette=colour, ax=ax)
+    ax.set_ylim([0, 1.e-8])
     ax.set_xlabel('')
     ax.set_ylabel('Ratio of SMs')
     ax = cleanax(ax)
     ax.legend(frameon=False, title='')
-    ax.tick_params(axis='x', rotation=45)
     plt.tight_layout(pad=0.1)
     plt.savefig(f'{cwd}/sm_overlap_with_structural_annotation.png')
     plt.close()
@@ -933,9 +1178,20 @@ def merge_all_SM():
 
 
     # <editor-fold desc="Venn diagram showing organ specificity of SMs">
-    leafsms = bt.BedTool(f'{cwd}/leaf_sm_pos.bed').saveas()
-    l1sms = bt.BedTool(f'{cwd}/L1_sm_pos.bed').saveas()
-    l2sms = bt.BedTool(f'{cwd}/L2_sm_pos.bed').saveas()
+    def tobed(df):
+        df = df['chromosome position'.split()].copy()
+        df.columns = 'chromosome end'.split()
+        df['start'] = df.end - 1
+        df = df['chromosome start end'.split()]
+        return bt.BedTool.from_dataframe(df)
+
+    leafsms = allsmmat.loc[allsmmat.tissue == 'leaf'].drop_duplicates(subset='chromosome position alt_allele'.split()).copy()
+    leafsms = tobed(leafsms)
+    l1sms = allsmmat.loc[allsmmat.tissue == 'L1'].drop_duplicates(subset='chromosome position alt_allele'.split())
+    l1sms = tobed(l1sms)
+    l2sms = allsmmat.loc[allsmmat.tissue == 'L2'].drop_duplicates(subset='chromosome position alt_allele'.split())
+    l2sms = tobed(l2sms)
+
     fig = plt.figure(figsize=(2, 3), dpi=300)
     ax = fig.add_subplot()
     leafcnt = len(leafsms.subtract(l1sms).subtract(l2sms))
@@ -1025,8 +1281,8 @@ def merge_all_SM():
     assert all(rcvalues.index.values == afvalues.index.values)
     afvalues['var_type'] = rcvalues['var_type'].copy()
     afvalues['Organ'] = rcvalues['Organ'].copy()
-    rcvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=False)
-    afvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=False)
+    rcvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=True)
+    afvalues.sort_values(['Organ', 'var_type'], inplace=True, ascending=True)
 
     annocol = pd.DataFrame({
         'branch': list(rcvalues.columns[:7]) + [c.rsplit('_', maxsplit=1)[0] for c in rcvalues.columns[7:21]],
@@ -1134,9 +1390,8 @@ def merge_all_SM():
     # </editor-fold>
 
 
-    # <editor-fold desc="Heatmap and clustering of different samples based on shareed SMs">
+    # <editor-fold desc="Heatmap and clustering of different samples based on shared SMs">
     tissues = ['leaf', 'L1', 'L2']
-    branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     btissm = dict()
     for c in allsmpivot.columns:
@@ -1222,7 +1477,7 @@ def merge_all_SM():
 
 
     # <editor-fold desc="Calculate mutation load: Consider each sample as separate lineage and divide by the diploid genome size">
-    fig = plt.figure(figsize=[6, 3])
+    fig = plt.figure(figsize=[4, 2])
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     mrates = pd.DataFrame(allsmpivot.apply(sum, axis=0)/480000000)
     mrates.columns = ['value']
@@ -1232,18 +1487,16 @@ def merge_all_SM():
     ax = sns.violinplot(data=mrates, x="mrate", y="value", color=colour['theme1'], linewidth=0, inner=None, ax=ax)
     plt.setp(ax.collections, alpha=.2)
     ylim = ax.get_ylim()
-    ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=ax, hue='Tissue')
+    ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=ax, hue='Tissue', legend=False)
     ax.set_ylim(ylim)
-    ax.set_xlabel('Mutation load')
-    ax.set_ylabel('SM per 10Mbp')
+    ax.set_xlabel("All SMs")
+    ax.set_ylabel('Mutation load')
     ax.ticklabel_format(axis='y', useOffset=False, style='plain')
     yticks = ax.get_yticks()
     yticksl = yticks*10000000
     ax.set_yticks(yticks[1:-1])
     ax.set_yticklabels(yticksl[1:-1])
     ax = cleanax(ax)
-    ax.legend(frameon=False)
-    ax.set_title("All SMs")
     plt.tick_params(axis='x', bottom=False, labelbottom=False)
 
     mutsinallL1 = allsmpivot.loc[:, [b+'_L1' for b in branches]]
@@ -1256,8 +1509,9 @@ def merge_all_SM():
     plt.setp(ax.collections, alpha=.2)
     ax = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=ax, hue='Tissue')
     ax.set_ylim(ylim)
-    ax.set_xlabel('Mutation load')
-    ax.set_ylabel('SM per 10Mbp')
+    ax.set_xlabel("Filtered SMs in all L1")
+    ax.set_ylabel('')
+    # ax.set_ylabel('Mutation load')
     ax.ticklabel_format(axis='y', useOffset=False, style='plain')
     yticks = ax.get_yticks()
     yticksl = yticks*10000000
@@ -1265,7 +1519,6 @@ def merge_all_SM():
     ax.set_yticklabels(yticksl[1:-1])
     ax = cleanax(ax)
     ax.legend(frameon=False)
-    ax.set_title("Filtered SMs in all L1")
     plt.tick_params(axis='x', bottom=False, labelbottom=False)
 
     plt.tight_layout(pad=0)
@@ -1292,7 +1545,7 @@ def merge_all_SM():
         trip.append(refseq[p.chromosome][p.position-2: p.position+1])
     snppos['trip_reg'] = trip
     tripcntnorm = defaultdict()
-    for l in 'leaf fruit both'.split():
+    for l in 'leaf fruit shared'.split():
         trip = snppos.loc[snppos.organ == l, 'trip_reg']
         tripcnt = Counter(trip)
         tripkeys = list(tripcnt.keys())
@@ -1314,11 +1567,11 @@ def merge_all_SM():
             except KeyError:
                 pass
         tripcntnorm[l] = {k: tripcntclean[k]/kmercnts[k] for k in kmercnts}
-    tripkeys = sorted(kmercnts, key=lambda k: sum([tripcntnorm[l][k] for l in 'leaf fruit both'.split()]), reverse=True)
+    tripkeys = sorted(kmercnts, key=lambda k: sum([tripcntnorm[l][k] for l in 'leaf fruit shared'.split()]), reverse=True)
     fig = plt.figure(figsize=[6, 3], dpi=300)
     ax = fig.add_subplot()
     ybottom = np.zeros_like(tripkeys, dtype='float')
-    for l in 'leaf fruit both'.split():
+    for l in 'leaf fruit shared'.split():
         y = [tripcntnorm[l][k] for k in tripkeys]
         ax.bar(tripkeys, y, bottom=ybottom, width=0.9, label=l, color=colour[l])
         ybottom += y
@@ -1361,25 +1614,25 @@ def merge_all_SM():
         layersmcount['L2'][branch] = sum(allsmmatfilt[f'{branch}_L2'])
         layersmcount['leaf'][branch] = sum(allsmmatfilt[f'{branch}_leaf'])
 
-    fig = plt.figure(figsize=[6, 10])
+    fig = plt.figure(figsize=[6, 10], dpi=300)
     ax = fig.add_subplot(4, 2, 1)
-    ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All')
-    r, p = sp.stats.pearsonr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    r, p = sp.stats.spearmanr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
     ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
     # ax.set_xlabel('branch length (in m)')
     ax.set_ylabel('Total number of SM')
     ax = cleanax(ax)
     ax = fig.add_subplot(4, 2, 2)
-    ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All')
-    r, p = sp.stats.pearsonr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
     ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
     # ax.set_xlabel('Number of branching event')
     ax = cleanax(ax)
     i=3
     for l in ['L1', 'L2', 'leaf']:
         ax = fig.add_subplot(4, 2, i)
-        ax = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l)
-        r, p = sp.stats.pearsonr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
+        ax = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l, color=colour[l])
+        r, p = sp.stats.spearmanr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
         ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
         ax.set_ylabel(f'Number of SM in {l}')
         if l == 'leaf':
@@ -1387,8 +1640,8 @@ def merge_all_SM():
         ax = cleanax(ax)
         i+=1
         ax = fig.add_subplot(4, 2, i)
-        ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l)
-        r, p = sp.stats.pearsonr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
+        ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l, color=colour[l])
+        r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
         ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
         ax = cleanax(ax)
         i+=1
@@ -1396,37 +1649,31 @@ def merge_all_SM():
         if l == 'leaf':
             ax.set_xlabel('Number of branching event')
     plt.tight_layout(h_pad=2, w_pad=2)
-    plt.savefig(f'{cwd}/branching_stat_vs_sm_count.png', dpi=300)
+    plt.savefig(f'{cwd}/branching_stat_vs_sm_count.png')
     plt.close()
     # </editor-fold>
 
 
-    # Check the relationships between branching/branch lengths to SMs
+    # <editor-fold desc="Check the relationships between branching/branch lengths to SMs">
     df = allsmmat.copy()
     df.branch = pd.Categorical(df.branch)
     hassm = dict()
     for grp in df.groupby(['chromosome', 'position', 'alt_allele']):
         hassm[grp[0]] = {b: (1 if b in set(grp[1].branch) else 0) for b in branches}
     hassm = pd.DataFrame(hassm).T.reset_index(level=[0, 1, 2])
-    # hassm = pd.DataFrame(hassm)
     hassm.fillna(0, inplace=True)
-    ##  Get number of SM differences between different branch points
-    ### mut11.1 vs mut11.2
-    sum(abs(hassm.mut_11_1 - hassm.mut_11_2)) ## 35 SMs
-    ### (mut11.1 & mut11.2) vs mut15
-    sum(abs((hassm.mut_11_1 * hassm.mut_11_2) - hassm.mut_15)) ## 37 SMs
-    ### wt19 vs mut
-    sum(hassm.wt_19 != (hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15)) ## 51 SMs
-    ### wt1 vs wt7
-    sum(abs(hassm.wt_1 - hassm.wt_7)) ## 48 SMs
-    ### (wt1 & wt7) vs wt18
-    sum(abs((hassm.wt_1 * hassm.wt_7) - hassm.wt_18)) ## 12 SMs
-    ### wt19 vs wt
-    sum((hassm.wt_1 * hassm.wt_7 * hassm.wt_18) != hassm.wt_19) ## 55 SMs
-    ### wt vs mut
-    sum( (hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15) != (hassm.wt_1 * hassm.wt_7 * hassm.wt_18)) ## 24 SMs
-    ### Shared by all
-    root = abs(hassm.wt_1 * hassm.wt_7 * hassm.wt_18 * hassm.wt_19 * hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15)
+
+    branchingjson = defaultdict()
+    branchingjson['mut11.1 vs mut11.2'] = sum(abs(hassm.mut_11_1 - hassm.mut_11_2))
+    branchingjson['(mut11.1 & mut11.2) vs mut15'] = sum(abs((hassm.mut_11_1 * hassm.mut_11_2) - hassm.mut_15))
+    branchingjson['wt1 vs wt7'] = sum(abs(hassm.wt_1 - hassm.wt_7))
+    branchingjson['(wt1 & wt7) vs wt18'] = sum(abs((hassm.wt_1 * hassm.wt_7) - hassm.wt_18))
+    branchingjson['(wt1 & wt7 & wt18) vs wt19'] = sum((hassm.wt_1 * hassm.wt_7 * hassm.wt_18) != hassm.wt_19)
+    branchingjson['(mut11.1 & mut11.2 & mut15) vs wt19'] = sum(hassm.wt_19 != (hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15))
+    branchingjson['(mut11.1 & mut11.2 & mut15) vs (wt1 & wt7 & wt18)'] = sum( (hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15) != (hassm.wt_1 * hassm.wt_7 * hassm.wt_18))
+    branchingjson['All'] = sum(hassm.wt_1 * hassm.wt_7 * hassm.wt_18 * hassm.wt_19 * hassm.mut_11_1 * hassm.mut_11_2 * hassm.mut_15)
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/branching_sm_stats.json', 'w') as fout:
+        json.dump(branchingjson, fout, indent=2)
 
     # newick_string = "(((wt_1:24,wt_7:24):6,wt_18:6):9,wt_19:48,((mut_11_1:17.5,mut_11_2:17.5):18.5,mut_15:18.5):15)"
     # tree = Phylo.read(StringIO(newick_string), "newick")
@@ -1440,8 +1687,87 @@ def merge_all_SM():
     # ax.spines['left'].set_visible(False)
     # plt.tick_params(axis='y', left=False, labelleft=False)
 
+    # </editor-fold>
 
-    # Get mutations that are different between Leaf and paired L2
+
+    # <editor-fold desc="Check the presence of somatic mutations in the scRNA data">
+    ## Done in python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot
+    # </editor-fold>
+
+
+    # <editor-fold desc="Grouping of SMs based on branching">
+    # Generate the Figure 5 from Tomimoto and Satake, 2023
+    l1cnts = defaultdict(int)
+    l2cnts = defaultdict(int)
+    leafcnts = defaultdict(int)
+    anycnts = defaultdict(int)
+    for grp in allsmmat.groupby('chromosome position alt_allele tissue'.split()):
+        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
+        if selb == (0, 0, 0, 0, 1, 0, 1):
+            print(grp[0], selb)
+        if selb == (1, 1, 1, 1, 0, 1, 1):
+            print(grp[0], selb)
+        if selb == (0, 1, 1, 0, 0, 0, 0):
+            print(grp[0], selb)
+        if grp[0][3] == 'L1':
+            l1cnts[selb] += 1
+        elif grp[0][3] == 'L2':
+            l2cnts[selb] += 1
+        elif grp[0][3] == 'leaf':
+            leafcnts[selb] += 1
+    for grp in allsmmat.groupby('chromosome position alt_allele'.split()):
+        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
+        if selb == (1, 0, 0, 1, 0, 0, 0):
+            print(grp[0], selb)
+        anycnts[selb] += 1
+
+    bkeys = set(list(l1cnts) + list(l2cnts) + list(leafcnts) + list(anycnts))
+    bkeys = sorted(sorted(bkeys), key=lambda x: sum(x))
+
+    cnts = {'L1': l1cnts, 'L2': l2cnts, 'leaf': leafcnts, 'any': anycnts}
+    fig = plt.figure(figsize=[4, 6], dpi=300)
+    for i, l in enumerate('L1 L2 leaf any'.split()):
+        data = cnts[l]
+        ax = fig.add_subplot(4, 1, i+1)
+        ax.bar(x=[str(b) for b in bkeys], height=[data[k] for k in bkeys], color=colour[l], width=0.5)
+        ax.tick_params(axis='x',
+                       which='both',
+                       bottom=False,
+                       top=False,
+                       labelbottom=False)
+        ax.set_ylim([0, 45])
+        plt.ylabel(f'SM count in {l}')
+        ax.vlines(x=6.5, ymin=0, ymax=45, color='black', linestyle='dotted')
+        ax=cleanax(ax)
+        ax.grid(which='major', axis='x')
+        ax.set_axisbelow(True)
+    ax.tick_params(axis='x',
+                   which='both',
+                   bottom=True,
+                   top=False,
+                   labelbottom=True, rotation=90)
+    ax.set_xlabel('Selected branch indices')
+    ax = cleanax(ax)
+    plt.savefig(f'{cwd}/sm_grouping_over_branches.png')
+    plt.close()
+
+
+
+
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Check consistency to the dPCR results">
+    dpcrpos = (('CUR5G',8809170), ('CUR1G',11957090), ('CUR1G',38054316), ('CUR1G',40001832), ('CUR2G',15761922), ('CUR5G',8809170), ('CUR6G',5258652), ('CUR6G',12539473), ('CUR6G',15553688), ('CUR6G',15729031), ('CUR6G',19101663), ('CUR6G',20953708), ('CUR7G',3760829), ('CUR7G',10743342), ('CUR7G',14411927), ('CUR8G',2951392), ('CUR1G',22927063), ('CUR7G',722256), ('CUR2G',15095953), ('cur_utg000166l_pilon',133594))
+    for pos in dpcrpos:
+        print(pos, allsmmat.loc[(allsmmat.chromosome == pos[0]) & (allsmmat.position == pos[1])].shape)
+        print(pos)
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Not Used: Get mutations that are different between Leaf and paired L2">
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     for b in branches:
         pos = defaultdict(set)
@@ -1463,12 +1789,7 @@ def merge_all_SM():
     ## This found two positions
     ## mut_11_1 leaf ('CUR2G', 367749, '+TA'): Present in all samples expect mut_11_1_l2
     ## mut_15 leaf ('CUR3G', 8510980, '-GAG'): Found because it is present in both L1 and L2
-
-
-    # Check the presence of somatic mutations in the scRNA data
-    ## Done in python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot
-
-
+    # </editor-fold>
 
     return
 # END
@@ -1488,7 +1809,6 @@ def gene_conversion_spectra():
     # Reformat the dataframe
     dffilter = pd.DataFrame()
     for grp in df.groupby('position'):
-        # TODO: Add this position to de novo mutation list
         if grp[0] == 'CUR6G 21020736 ': continue
         for grp2 in grp[1].groupby('branch'):
             outdict = {}
@@ -1770,7 +2090,6 @@ def axillary_stats_plots():
         df.to_csv(f'{outdir}/leaf_sequencing_stats.tsv', sep='\t', index=False, header=True)
         return
     # END
-
 
     return
 # END
