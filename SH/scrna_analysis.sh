@@ -78,7 +78,7 @@ for sample in ${SAMPLES[@]}; do
 done
 
 # READ THE INDIVIDUAL BAM FILES AND COUNT HOW MANY UMI ARE THERE FOR EACH BC. SELECT A LOGICAL CUTOFF FOR MINIMUM NUMBER OF UMI and mapping ratio.
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/scrna_analysis_func.py
+/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/scrna_analysis.py
 # Number of barcodes selected
 # {'WT_1': 2566, 'WT_19': 2813, 'MUT_11_1': 2965, 'MUT_15': 3047}
 
@@ -115,3 +115,50 @@ STAR --runThreadN 30 \
     --outFilterMismatchNmax 5 > rp_leaf.sorted.bam
 
 
+# <editor-fold desc="Separate cellranger output BAM to clusters and get check for SMs">
+indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/
+refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
+muts=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.regions
+
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $cwd
+    cd $s
+    bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
+#        samtools view -@ 40 -F 1024 -O BAM ${indir}/${s}/${s}/outs/possorted_genome_bam.bam \
+#        | samtools sort -@ 40 -t CB -O BAM -o ${s}.dedup.cb_sorted.bam -
+#        for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+#            samtools view -@ 40 -D CB:clstrs_\${i}_bcs.txt -O BAM ${s}.dedup.cb_sorted.bam \
+#            | samtools sort -@ 40 - \
+#            > clstrs_\${i}_bcs.bam
+#            samtools index -@ 40 clstrs_\${i}_bcs.bam
+#            /srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts clstrs_\${i}_bcs.bam clstrs_\${i}.rna.rc.txt &
+#        done
+#        wait
+        samtools sort -@ 40 -O BAM -o ${s}.dedup.pos_sorted.bam ${s}.dedup.cb_sorted.bam
+    "
+done
+
+# </editor-fold>
+
+
+# <editor-fold desc="Get upregulated and downregulated genes in cluster">
+cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/'
+cd cwd
+hometools xls2csv cluster_markers_res0.5.xlsx cluster_markers_res0.5.tsv -s all -n
+
+tail +2 cluster_markers_res0.5.tsv \
+| awk '{if($6 <0.05 && $3>0.5) {print $0}}' \
+> cluster_markers_res0.5.upregulated.tsv
+
+tail +2 cluster_markers_res0.5.tsv \
+| awk '{if($6 <0.05 && $3<-0.5) {print $0}}' \
+> cluster_markers_res0.5.downregulated.tsv
+
+for c in 0 7 9; do
+    grep 'cluster '${c} cluster_markers_res0.5.upregulated.tsv | cut -f1 > cluster${c}_upregulated.txt
+    grep -Ff cluster${c}_upregulated.txt /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/structurome/structural_orthologs_cur_athal.geneids.tsv |
+    cut -f 2 > cluster${c}_upregulated.ortho.txt
+done
+
+# </editor-fold>
