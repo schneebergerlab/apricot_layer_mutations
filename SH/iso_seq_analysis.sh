@@ -73,13 +73,15 @@ python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot()
 # at SM positions
 refcur='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+cd $cwd
+paftools.js gff2bed /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gtf > cur.pasa_out.sort.protein_coding.3utr.bed
 for s in WT_1 WT_19 MUT_11_1 MUT_15; do
     cd $cwd; cd $s
     clst=$(ls clstrs*reads.fa.gz)
     for c in ${clst[@]}; do
         cls=$(echo $c | sed 's/_reads.fa.gz//g')
         bsub -q multicore20 -n 10 -R "span[hosts=1] rusage[mem=20000]" -M 25000 -oo ${cls}.log -eo ${cls}.err "
-            minimap2 -ax splice:hq -t 10 -R '@RG\tID:${cls}\tSM:1' --secondary=no -uf -C5 -O6,24 -B4 -Y $refcur $c \
+            minimap2 -ax splice:hq -t 10 -R '@RG\tID:${cls}\tSM:1' --secondary=no --junc-bed ../cur.pasa_out.sort.protein_coding.3utr.bed $refcur $c \
             | samtools view -F 2048 -h - \
             | samtools sort -O BAM -@ 10 - \
             > ${cls}.iso_seq.bam
@@ -91,19 +93,20 @@ done
 # Get readcount at all SM positions
 ## convert SM positions to regions files usable with bam-readcount
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/
-#fin=${indir}/all_sm_in_all_samples.csv
-#tail +2 $fin \
-#| cut -f1,2 -d',' \
-#| awk -F ',' '{print $1"\t"$2"\t"$2}' > ${indir}/all_sm_in_all_samples.regions
 
 # All sample somatic mutations
 muts=${indir}/all_sm_in_all_samples.manually_selected.cleaned.regions
-for sample in WT_1 WT_19 MUT_15 MUT_11_1 ; do
-    cd $cwd; cd $sample
+for s in WT_1 WT_19 MUT_15 MUT_11_1 ; do
+    cd $cwd; cd $s
     {
     for i in {1..12}; do
         hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts clstrs_${i}.iso_seq.bam clstrs_${i}.iso_seq.rc.txt
+        hometools pbamrc -n 1 -b 30 -q 60 -w 0 -I -f $refcur -l $muts clstrs_${i}.iso_seq.bam clstrs_${i}.iso_seq.b30.q60.rc.txt
     done
+    } &
+    {
+    samtools merge -f -O BAM ${s}.iso_seq.bam clstrs_*.iso_seq.bam
+    samtools index ${s}.iso_seq.bam &
     } &
 done
 
@@ -207,9 +210,4 @@ done
 
 # Now check if there are any genes with clear difference in the transcriptome
 iso_seq_analysis.py -> get_transcriptome_variants()
-
-
-############ OLD STUFF BEFORE REANALYSIS OF ISO-SEQ READS ######################
-
-/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/iso_seq_analysis.py
 
