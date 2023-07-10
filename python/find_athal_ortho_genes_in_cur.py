@@ -1,6 +1,8 @@
 import sys
+
+import numpy as np
+
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools')
-from myUsefulFunctions import readfasta, readblast
 
 def filter_orthologs():
     """
@@ -22,6 +24,9 @@ def filter_orthologs():
     orthogroups = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/orthology/cur_athal/OrthoFinder/Results_Sep29/Orthogroups/Orthogroups.txt"
     kkgenefin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/athal_cell_specific_genes.csv" # Cell-type gene ids identified by Kristin
     lagenefin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/leaf_cell_type_markers/tpc.00751.2020-s03.csv'     # Leaf atlas cell type markers
+    la2genefin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/leaf_cell_type_markers2/table1.csv'     # Leaf atlas cell type markers 2
+    la2layerfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/leaf_cell_type_markers2/Supplemental_dataset_3.xlsx'
+    la2epidermfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/annotations/leaf_cell_type_markers2/Supplemental_dataset_6.xlsx'
     uniprot2tairfin = '/srv/biodata/dep_mercier/grp_schneeberger/data/Athal/TAIR10.1/TAIR2UniprotMapping-JAN2023.txt'
     curmrnafin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/currot_pdbs/all_pdbs.txt'
     allathaluni = '/srv/biodata/dep_mercier/grp_schneeberger/data/Athal/TAIR10.1/uniprot-compressed_true_download_true_fields_accession_2Creviewed_2C-2023.06.07-13.09.58.00.tsv'
@@ -50,6 +55,7 @@ def filter_orthologs():
 
 
     # <editor-fold desc="Get orthologs for Leaf atlas marker genes">
+    # Markers from https://doi.org/10.1093/plcell/koaa060
     genesdf = pd.read_table(lagenefin, skiprows=2)
     genesdf.drop_duplicates(keep=False, inplace=True)
     genes = deque()
@@ -76,6 +82,84 @@ def filter_orthologs():
     outgene = genes.merge(ortho, how='outer', on=['athal_gene'])
     outgene = outgene.explode('cur_genes')
     outgene.to_csv(f'{cwd}/leafatlas_orthology_marker_genes.txt', header=True, sep='\t', index=False)
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get orthologs for Leaf atlas marker genes 2">
+    # Markers from https://doi.org/10.1093/plphys/kiab489
+    genesdf = pd.read_csv(la2genefin)
+    population = genesdf.Population
+    for i in range(len(population)):
+        if population[i] is np.nan:
+            population[i] = population[i-1]
+    genesdf.Population = population
+    genes = genesdf['Population TAIR'.split()].copy()
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    ortho = defaultdict(deque)
+    for l in open(orthogroups, 'r'):
+        for gene in genesids:
+            if len(re.findall(gene+'.', l)) > 0:
+                l2 = l.strip().split()
+                for g in l2[1:]:
+                    if g[:2] != 'AT':
+                        ortho[gene].append(g.replace('mRNA', 'Gene').rsplit('.', maxsplit=1)[0])
+    for k, v in ortho.items():
+        ortho[k] = list(set(v))
+    ortho = pd.DataFrame({'athal_gene': ortho.keys(), 'cur_genes': ortho.values()})
+    outgene = genes.merge(ortho, how='outer', on=['athal_gene'])
+    outgene = outgene.explode('cur_genes')
+    outgene.to_csv(f'{cwd}/leafatlas2_orthology_marker_genes.txt', header=True, sep='\t', index=False)
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get orthologs for three layers defined by Leaf atlas marker genes 2">
+    # Markers from https://doi.org/10.1093/plphys/kiab489
+    genes = pd.read_excel(la2layerfin, skiprows=1)
+    genes = genes.melt()
+    genes = genes.loc[~pd.isna(genes.value)]
+    genes.value = [v.split('-')[0] for v in genes.value]
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    ortho = defaultdict(deque)
+    for l in open(orthogroups, 'r'):
+        for gene in genesids:
+            if len(re.findall(gene+'.', l)) > 0:
+                l2 = l.strip().split()
+                for g in l2[1:]:
+                    if g[:2] != 'AT':
+                        ortho[gene].append(g.replace('mRNA', 'Gene').rsplit('.', maxsplit=1)[0])
+    for k, v in ortho.items():
+        ortho[k] = list(set(v))
+    ortho = pd.DataFrame({'athal_gene': ortho.keys(), 'cur_genes': ortho.values()})
+    outgene = genes.merge(ortho, how='outer', on=['athal_gene'])
+    outgene = outgene.explode('cur_genes')
+    outgene.to_csv(f'{cwd}/leafatlas2_layer_orthology_marker_genes.txt', header=True, sep='\t', index=False)
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get orthologs for adaxial and abaxial epidermis defined by Leaf atlas marker genes 2">
+    # Markers from https://doi.org/10.1093/plphys/kiab489
+    genes = pd.read_excel(la2epidermfin, skiprows=1)
+    genes = genes.melt()
+    genes = genes.loc[~pd.isna(genes.value)]
+    genes.value = [v.split('-')[0] for v in genes.value]
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    ortho = defaultdict(deque)
+    for l in open(orthogroups, 'r'):
+        for gene in genesids:
+            if len(re.findall(gene+'.', l)) > 0:
+                l2 = l.strip().split()
+                for g in l2[1:]:
+                    if g[:2] != 'AT':
+                        ortho[gene].append(g.replace('mRNA', 'Gene').rsplit('.', maxsplit=1)[0])
+    for k, v in ortho.items():
+        ortho[k] = list(set(v))
+    ortho = pd.DataFrame({'athal_gene': ortho.keys(), 'cur_genes': ortho.values()})
+    outgene = genes.merge(ortho, how='outer', on=['athal_gene'])
+    outgene = outgene.explode('cur_genes')
+    outgene.to_csv(f'{cwd}/leafatlas2_epiderm_orthology_marker_genes.txt', header=True, sep='\t', index=False)
     # </editor-fold>
 
 
@@ -248,6 +332,76 @@ def filter_orthologs():
     df = df['cell_type athal_gene currot_id reciprocal_match'.split()]
     df.sort_values(by='cell_type athal_gene currot_id reciprocal_match'.split(), inplace=True)
     df.to_csv(f'{cwd}/leafatlas_structure_orthology_marker_genes.txt', index=False, sep='\t')
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get structural orthologs for leaf-atlas marker genes 2 ">
+    strortho = pd.read_table(strorthofin)
+    genesdf = pd.read_csv(la2genefin)
+    population = genesdf.Population
+    for i in range(len(population)):
+        if population[i] is np.nan:
+            population[i] = population[i-1]
+    genesdf.Population = population
+    genes = genesdf['Population TAIR'.split()].copy()
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    df = strortho.loc[strortho.athal_id.isin(genesids)].copy()
+    df = df.merge(genes, left_on="athal_id", right_on="athal_gene", how='outer')
+    df = df['cell_type athal_gene currot_id reciprocal_match'.split()]
+    df.sort_values(by='cell_type athal_gene currot_id reciprocal_match'.split(), inplace=True)
+    df.to_csv(f'{cwd}/leafatlas2_structure_orthology_marker_genes.txt', index=False, sep='\t')
+    # </editor-fold>\
+
+
+    # <editor-fold desc="Get structural orthologs for leaf-atlas marker genes 2 ">
+    strortho = pd.read_table(strorthofin)
+    genesdf = pd.read_csv(la2genefin)
+    population = genesdf.Population
+    for i in range(len(population)):
+        if population[i] is np.nan:
+            population[i] = population[i-1]
+    genesdf.Population = population
+    genes = genesdf['Population TAIR'.split()].copy()
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    df = strortho.loc[strortho.athal_id.isin(genesids)].copy()
+    df = df.merge(genes, left_on="athal_id", right_on="athal_gene", how='outer')
+    df = df['cell_type athal_gene currot_id reciprocal_match'.split()]
+    df.sort_values(by='cell_type athal_gene currot_id reciprocal_match'.split(), inplace=True)
+    df.to_csv(f'{cwd}/leafatlas2_structure_orthology_marker_genes.txt', index=False, sep='\t')
+    # </editor-fold>\
+
+
+    # <editor-fold desc="Get structural orthologs for three layers defined by Leaf atlas marker genes 2">
+    strortho = pd.read_table(strorthofin)
+    genes = pd.read_excel(la2layerfin, skiprows=1)
+    genes = genes.melt()
+    genes = genes.loc[~pd.isna(genes.value)]
+    genes.value = [v.split('-')[0] for v in genes.value]
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    df = strortho.loc[strortho.athal_id.isin(genesids)].copy()
+    df = df.merge(genes, left_on="athal_id", right_on="athal_gene", how='outer')
+    df = df['cell_type athal_gene currot_id reciprocal_match'.split()]
+    df.sort_values(by='cell_type athal_gene currot_id reciprocal_match'.split(), inplace=True)
+    df.to_csv(f'{cwd}/leafatlas2_layer_structure_orthology_marker_genes.txt', index=False, sep='\t')
+    # </editor-fold>\
+
+
+    # <editor-fold desc="Get structural orthologs for adaxial and abaxial epidermis defined by Leaf atlas marker genes 2">
+    strortho = pd.read_table(strorthofin)
+    genes = pd.read_excel(la2epidermfin, skiprows=1)
+    genes = genes.melt()
+    genes = genes.loc[~pd.isna(genes.value)]
+    genes.value = [v.split('-')[0] for v in genes.value]
+    genes.columns = 'cell_type athal_gene'.split()
+    genesids = set(genes.athal_gene)
+    df = strortho.loc[strortho.athal_id.isin(genesids)].copy()
+    df = df.merge(genes, left_on="athal_id", right_on="athal_gene", how='outer')
+    df = df['cell_type athal_gene currot_id reciprocal_match'.split()]
+    df.sort_values(by='cell_type athal_gene currot_id reciprocal_match'.split(), inplace=True)
+    df.to_csv(f'{cwd}/leafatlas2_epiderm_structure_orthology_marker_genes.txt', index=False, sep='\t')
     # </editor-fold>
 
 
