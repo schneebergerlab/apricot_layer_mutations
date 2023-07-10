@@ -459,13 +459,6 @@ for(s in SAMPLES){
 
 
 
-head(bcs)
-head(clstrs)
-head(df)
-s<-'wt1'
-
-
-
 # Plot for poster
 plt1 <- FeaturePlot(wt1seuobj, features = "Gene.31380", min.cutoff = "q05", max.cutoff = "q95")
 plt1 <- plt1 + ggtitle("Branch 1") + theme_bw() + theme(text = element_text(size = 20))
@@ -688,3 +681,8 @@ for(s in samples){
   outdf['bc'] <- gsub('-.*', '', rownames(outdf))
   write.table(outdf, paste0('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/', s, '_bc_readcnts.txt'), quote=FALSE, row.names=FALSE, col.names=FALSE)
 }
+
+# Plot read count distribution at genes with SM
+geneids = c('Gene.10343', 'Gene.23204', 'Gene.27798', 'Gene.7081')
+plt <- VlnPlot(int.combinedClst, features = geneids, assay="RNA", split.by='orig.ident', combine=TRUE, ncol=2)
+ggsave("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_expression_in_clusters.png", width=12, height=8)
