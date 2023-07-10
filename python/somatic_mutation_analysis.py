@@ -4,10 +4,16 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import sys
 sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
-from myUsefulFunctions import Namespace, extractSeq, sampfa, readfasta
+from myUsefulFunctions import Namespace, extractSeq, sampfa
 from collections import deque, Counter, defaultdict
 import numpy as np
 from scipy.stats import ttest_ind
+from hometools.hometools import readfasta_iterator, writefasta
+
+
+################################################################################
+
+# <editor-fold desc="(OUTDATED) Select neighboring regions of somatic mutation and check whether they are enriched for transcription-finding motifs compared to regions without somatic mutations">
 
 def getsmpos():
     leafsm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
@@ -22,34 +28,6 @@ def getsmpos():
     smpos.reset_index(drop=True, inplace=True)
     return smpos
 #END
-
-def df2vcf(df, f, ref):
-    from datetime import date
-    df = smpos.drop_duplicates(['chr', 'pos', 'ref', 'alt'])
-    with open(f, 'w') as fout:
-        fout.write('##fileformat=VCFv4.3\n')
-        fout.write('##fileDate=' + str(date.today()).replace('-', '') + '\n')
-        fout.write('##source=syri\n')
-        fout.write('\t'.join(['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']) + '\n')
-        ref=readfasta(ref)
-        for row in df.itertuples(index=False):
-            if '-' in row[3]:
-                pos = row[1]-1
-                r = ref[row[0]][row[1] - 2] + row[3][1:]
-                a = ref[row[0]][row[1] - 2]
-            elif '+' in row[3]:
-                pos = row[1]
-                r = row[2]
-                a = row[2] + row[3][1:]
-            else:
-                pos = row[1]
-                r = row[2]
-                a = row[3]
-            fout.write('\t'.join(list(map(str, [row[0], pos, '.', r, a, '.', 'PASS', '.'])))+"\n")
-#END
-
-################################################################################
-# Select neighboring regions of somatic mutation and check whether they are enriched for transcription-finding motifs compared to regions without somatic mutations
 
 ## Get somatic-mutation locations and 5kb region around them : Read the somatic mutaion location in leafs and the layer-specific somatic mutations
 CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_20052022/'
@@ -135,8 +113,11 @@ ttest_ind(sm_motif_cnt, sample_motif_cnt, alternative="greater")
 plt.suptitle(f"Stats for transcription binding motifs in SM regions and randomly selected regions. Buff:{BUFF}")
 plt.tight_layout()
 
+# </editor-fold>
+
 ################################################################################
-# Get distribution of somatic mutations in genomic regions (gene vs repeat vs TE etc)
+
+# <editor-fold desc="(OUTDATED) Get distribution of somatic mutations in genomic regions (gene vs repeat vs TE etc)">
 
 ## Read somatic mutation list
 leafsm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
@@ -211,8 +192,10 @@ smanno = smpos.merge(smanno, how='left', on=['chr', 'pos'])
 smanno.fillna('-', inplace=True)
 smanno.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutation_genomic_region_annotation.txt", index=False, sep='\t')
 
+# </editor-fold>
+
 ################################################################################
-# Get distribution of somatic mutations in structural region between haplotypes (syntenic vs SR vs not_aligned/HDR) also, check overlap with genome mappability
+# <editor-fold desc="(OUTDATED) Get distribution of somatic mutations in structural region between haplotypes (syntenic vs SR vs not_aligned/HDR) also, check overlap with genome mappability">
 
 ## Read smpos same way as in repeat/gene overlap section above
 syripath = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/all_sv.syri.out'
@@ -291,99 +274,211 @@ smanno = smanno1.merge(smanno2, how='left', on=['chr', 'pos'])
 smanno = smpos.merge(smanno, how='left', on=['chr', 'pos'])
 smanno.fillna('-', inplace=True)
 smanno.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutation_genome_mappability.txt", index=False, sep='\t')
+# </editor-fold>
 
-################################################################################
-# Run snpEff to see the effect of mutations
-cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_20052022/snpeff_run/'
-f = f'{cwd}sm.vcf'
-df2vcf(smpos, f, REFCUR)
 
-################################################################################
-# Check whether the mutations are in CpG and dipyrimidine sites
-ref = readfasta(REFCUR)
-SNPs = smpos.loc[~smpos['alt'].str.contains('-|\+', regex=True)].copy()
-SNPs.drop_duplicates(['chr', 'pos', 'alt'], inplace=True)
-seq = deque()
-for row in SNPs.itertuples(index=False):
-    seq.append((ref[row[0]][row[1]-2: row[1]], ref[row[0]][row[1]-1: row[1]+1]))
-
-################################################################################
-################################################################################
-################################################################################
-
-## ReDo analysis with the mutations from all leaves and layer data (30.01.2023)
-## Read somatic mutation list
-sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
-refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-
-leafsm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
-layersm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt")
-leafsm = leafsm[[0, 1, 2, 3, 6]]
-leafsm.columns = ['chromosome', 'position', 'ref_allele', 'alt_allele', 'branch']
-leafsm['Layer'] = '-'
-layersm = layersm[['chromosome', 'position', 'ref_allele', 'alt_allele', 'branch', 'Layer']]
-leafsm['branch'] = [sdict[b] for b in leafsm['branch']]
-
-smpos = pd.concat([leafsm, layersm])
-smpos.sort_values(['chromosome', 'position'], inplace=True)
-smpos.reset_index(drop=True, inplace=True)
-f ='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/somatic_mutations.vcf'
-df2vcf(smpos, f, refcur)
+# <editor-fold desc="Run snpEff to see the effect of mutations">
 
 def df2vcf(df, f, ref):
     from datetime import date
     from hometools.hometools import readfasta
-    df = df.drop_duplicates(['chromosome', 'position', 'ref_allele', 'alt_allele'])
     with open(f, 'w') as fout:
         fout.write('##fileformat=VCFv4.3\n')
         fout.write('##fileDate=' + str(date.today()).replace('-', '') + '\n')
         fout.write('##source=syri\n')
         fout.write('\t'.join(['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']) + '\n')
-        ref=readfasta(ref)
-        print(df.shape)
+        ref = readfasta(ref)
         for row in df.itertuples(index=False):
-            if '-' in row[3]:
+            if '-' in row[2]:
                 pos = row[1]-1
-                r = ref[row[0]][row[1] - 2] + row[3][1:]
+                r = ref[row[0]][row[1] - 2] + row[2][1:]
                 a = ref[row[0]][row[1] - 2]
-            elif '+' in row[3]:
+            elif '+' in row[2]:
                 pos = row[1]
-                r = row[2]
-                a = row[2] + row[3][1:]
+                r = ref[row[0]][pos-1]
+                a = r + row[2][1:]
             else:
                 pos = row[1]
-                r = row[2]
-                a = row[3]
+                r = ref[row[0]][pos-1]
+                a = row[2]
             fout.write('\t'.join(list(map(str, [row[0], pos, '.', r, a, '.', 'PASS', '.'])))+"\n")
-#END
-## Run snpeff with command:
-## java -jar /srv/netscratch/dep_mercier/grp_schneeberger/bin/snpEff/snpEff5.1d/snpEff.jar currot.v1 somatic_mutations.vcf > somatic_mutations.ann.vcf
+    return
+# END
 
-# Get SMs in mutant branches
-smmut = smpos.loc[smpos.branch.isin(['mut_11_1', 'mut_11_2', 'mut_15'])]
-samplecnt = {grp[0]: grp[1].shape[0] for grp in smmut.groupby(['chromosome', 'position', 'alt_allele'])}
-smmut.drop_duplicates(['chromosome', 'position', 'ref_allele', 'alt_allele'], inplace=True)
-# Read snpeff output VCF and select mutant SMs
-# pos = set(zip(smmut.chromosome, smmut.position))
-pos = set([(k[0], k[1]) for k, v in samplecnt.items() if v == 3])
-posann = deque()
-with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/snpeff_run/somatic_mutations.ann.vcf', 'r') as fin:
-    for line in fin:
-        if line[0] == '#': continue
-        line = line.strip().split()
-        if (line[0], int(line[1])) in pos:
-            posann.append(line)
-# Get list of affected/nearby genes
-genesann = deque()
-for p in posann:
-    a = p[7].split('=')[1].split(',')
-    for a1 in a:
-        b = a1.split('|')[3]
-        if b == '': continue
-        if '-' in b:
-            genesann.extend(b.split('-'))
-        else:
-            genesann.append(b)
-genesann = set(genesann)
-with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/smlist_30012023/snpeff_run/somatic_mutations.affected_genes.txt', 'w') as fout:
-    fout.write('\n'.join(genesann))
+
+cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/snpeff_run/'
+refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+f = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.vcf'
+allsmmat = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv')
+allsmmat = allsmmat['chromosome position alt_allele'.split()].drop_duplicates()
+
+df2vcf(allsmmat, f, refcur)
+
+## Run snpeff with command:
+## java -jar /srv/netscratch/dep_mercier/grp_schneeberger/bin/snpEff/snpEff5.1d/snpEff.jar currot.v1 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.vcf > all_sm_in_all_samples.manually_selected.cleaned.ann.vcf
+grep -P "LOW|MODERATE|HIGH" all_sm_in_all_samples.manually_selected.cleaned.ann.vcf  | cut -f 1,2,4,5 > affected_snps.txt
+
+# TODO: There are 7 SMs in exons: Catalog them.
+genelist = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/snpeff_run/snpEff_genes.txt", skiprows=1)
+genelist = genelist.loc[(genelist.variants_impact_HIGH == 1) |
+                        (genelist.variants_impact_LOW == 1) |
+                        (genelist.variants_impact_MODERATE == 1)]
+
+genelist = genelist[['GeneId'] + 'variants_impact_HIGH  variants_impact_LOW  variants_impact_MODERATE'.split()]
+
+# GeneId  variants_impact_HIGH  variants_impact_LOW  variants_impact_MODERATE   variants_impact_MODIFIER
+# Gene.10343                     0                    0                         1   Encodes a microtubule-associated kinase-like protein RUNKEL (RUK). Contains a putative serine/threonine kinase domain and a microtubule-binding domain. RUK directly binds to microtubules in vitro and colocalizes with mitotic preprophase band, spindle, and phragmoplast in vivo. Required for cell plate expansion in cytokinesis.
+# Gene.23204                     0                    0                         1   transmembrane protein C9orf5 protein;(source:Araport11)
+# Gene.26196                     0                    0                         1   NO ortholog in Thaliana. Blasts only to Prunus Dulcia
+# Gene.27798                     0                    0                         1   potassium transporter
+# Gene.7081                     0                    1                         0    Anion channel protein family member. Involved in negative regulation of pattern triggered immunity.
+# Gene.7258                     1                    0                         0    Encodes a DNA binding protein that promotes re-arrangements of mitochondrial genome. Mutations affects mitochondrial gene expression, and impairs mitochondrial function. Dual targeting of the protein to mitochondria and chloroplasts caused by alternative translation initiation. Plastid MSH1 depletion results in variegation, abiotic stress tolerance, variable growth rate, and delayed maturity.
+
+geneids = c('Gene.10343', 'Gene.23204', 'Gene.27798', 'Gene.7081')
+
+# Manually checked that all these positions over-lapped exons. Further, CUR4G:6760960 is in the first two bases of a new exon.
+# CUR1G	3268362	T	wt_7	L1	fruit
+# CUR1G	10916855	A	mut_11_1	L1	fruit
+# CUR1G	10916855	A	mut_11_2	L1	fruit
+# CUR1G	11957090	G	mut_15	leaf	both
+# CUR1G	11957090	G	mut_15	L2	both
+# CUR3G	25500813	G	wt_19	L1	fruit
+# CUR4G	6760960	G	wt_1	L1	fruit
+# CUR4G	6760960	G	wt_7	L1	fruit
+# CUR4G	6760960	G	wt_18	L1	fruit
+# CUR4G	6760960	G	wt_19	L1	fruit
+# CUR4G	6760960	G	mut_11_1	L1	fruit
+# CUR4G	6760960	G	mut_11_2	L1	fruit
+# CUR4G	6760960	G	mut_15	L1	fruit
+# CUR4G	22366515	A	wt_7	leaf	both
+# CUR4G	22366515	A	wt_7	L1	both
+# CUR4G	22366515	A	wt_7	L2	both
+
+
+# CUR1G	3268362	.	C	T	.	PASS	ANN=T|stop_gained|HIGH|mRNA.7258.1|Gene.7258|transcript|mRNA.7258.1|protein_coding|7/22|c.619C>T|p.Gln207*|619/3933|619/3432|207/1143||;LOF=(mRNA.7258.1|Gene.7258|1|1.00);NMD=(mRNA.7258.1|Gene.7258|1|1.00)
+# CUR1G	10916855	.	C	A	.	PASS	ANN=A|missense_variant|MODERATE|mRNA.10343.1|Gene.10343|transcript|mRNA.10343.1|protein_coding|8/11|c.1030G>T|p.Val344Phe|1143/4461|1030/4101|344/1366||,A|missense_variant|MODERATE|mRNA.10343.1|Gene.10343|transcript|mRNA.10343.2|protein_coding|8/10|c.1030G>T|p.Val344Phe|1143/4263|1030/4101|344/1366||
+# CUR1G	11957090	.	A	G	.	PASS	ANN=G|synonymous_variant|LOW|mRNA.7081.1|Gene.7081|transcript|mRNA.7081.1|protein_coding|22/22|c.2298A>G|p.Val766Val|2528/3560|2298/2343|766/780||,G|upstream_gene_variant|MODIFIER|mRNA.7833.1|Gene.7833|transcript|mRNA.7833.1|protein_coding||c.-1381A>G|||||1381|,G|downstream_gene_variant|MODIFIER|mRNA.9955.1|Gene.9955|transcript|mRNA.9955.1|protein_coding||c.*3218T>C|||||2994|
+# CUR3G	25500813	.	A	G	.	PASS	ANN=G|missense_variant|MODERATE|mRNA.23204.1|Gene.23204|transcript|mRNA.23204.1|protein_coding|1/2|c.613A>G|p.Ile205Val|818/2520|613/2169|205/722||,G|upstream_gene_variant|MODIFIER|mRNA.23590.1|Gene.23590|transcript|mRNA.23590.1|protein_coding||c.-1880T>C|||||1880|,G|downstream_gene_variant|MODIFIER|mRNA.19298.1|Gene.19298|transcript|mRNA.19298.1|protein_coding||c.*3777A>G|||||3139|
+# CUR4G	6760960	.	A	G	.	PASS	ANN=G|missense_variant&splice_region_variant|MODERATE|mRNA.27798.1|Gene.27798|transcript|mRNA.27798.1|protein_coding|8/8|c.1321A>G|p.Thr441Ala|1685/3235|1321/2370|441/789||,G|upstream_gene_variant|MODIFIER|mRNA.27664.2|Gene.27664|transcript|mRNA.27664.4|protein_coding||c.-3342A>G|||||2842|,G|upstream_gene_variant|MODIFIER|mRNA.27664.2|Gene.27664|transcript|mRNA.27664.1|protein_coding||c.-4680A>G|||||2926|,G|upstream_gene_variant|MODIFIER|mRNA.27664.2|Gene.27664|transcript|mRNA.27664.3|protein_coding||c.-4927A>G|||||2926|,G|intron_variant|MODIFIER|mRNA.27664.2|Gene.27664|transcript|mRNA.27664.2|protein_coding|2/7|c.-980-4299A>G||||||,G|intron_variant|MODIFIER|mRNA.27664.2|Gene.27664|transcript|mRNA.27664.5|protein_coding|7/8|c.657+427A>G||||||
+# CUR4G	22366515	.	G	A	.	PASS	ANN=A|missense_variant|MODERATE|mRNA.26196.1|Gene.26196|transcript|mRNA.26196.1|protein_coding|2/2|c.217C>T|p.Arg73Trp|217/810|217/309|73/102||
+
+# </editor-fold>
+
+def getsmeffect():
+    """
+        THIS DID NOT RESULT IN ANY CLEAR DIFFERENCE BETWEEN WT AND SM PROTEINS
+
+        SM affected mRNA for six transcripts. Here, I get AF2 structure for the
+        mutated transcripts and then compare the structure of WT and MUT transcripts
+    """
+    # <editor-fold desc="Define import">
+    import shutil as sh
+    import pandas as pd
+    import igraph as ig
+    from collections import OrderedDict, defaultdict
+    import numpy as np
+    from sknetwork.clustering import Louvain
+    from sknetwork.hierarchy import LouvainHierarchy
+    from sknetwork.data import from_edge_list #, from_adjacency_list, from_graphml, from_csv
+    # </editor-fold>
+
+    # <editor-fold desc="Define defaults and constants">
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/structurome/smeffect/'
+    allpdb = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/currot_pdbs/all_pdbs/'
+    smpdb = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/currot_pdbs/sm_affected_pdb/'
+    snpeffdir='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/snpeff_run/'
+    modifications = {'mRNA.7258.1':  (207, 'Q', '*'),        # Based on the list above: Gln == Q
+                     'mRNA.27798.1': (441, 'T', 'A'),
+                     'mRNA.10343.1': (344, 'V', 'F'),
+                     'mRNA.10343.2': (344, 'V', 'F'),
+                     'mRNA.23204.1': (205, 'I', 'V'),
+                     'mRNA.26196.1': (73, 'R', 'W')}
+    mrnaids = set(modifications.keys())
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get sequence and structure of proteins affected by SMs">
+    fin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.prot.fasta"
+    affectedprot = {}
+    for k, v in readfasta_iterator(open(fin, 'r'), False):
+        if k in modifications:
+            p = modifications[k][0] -1
+            if v[p] == modifications[k][1]:
+                if modifications[k][2] == '*':
+                    affectedprot[k] = v[:p]
+                else:
+                    affectedprot[k] = v[:p] + modifications[k][2] + v[p+1:]
+            else:
+                print(f'ERROR: {v[p]} {modifications[k][1]}')
+    writefasta(affectedprot, f'{snpeffdir}/affected_proteins.fasta')
+    # Next I run alphafold to predict the structure of these mutated proteins
+    # Predicted structures of mutated proteins saved here: /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/protein_structure/currot_pdbs/sm_affected_pdb/
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get structural of proteins affected by SMs and compare them to the unmutated structure">
+    # Move WT proteins and MUT proteins to working directory
+    for mrna in mrnaids:
+        for i in range(5):
+            sh.copy(f'{allpdb}/{mrna}/ranked_{i}.pdb', f'{cwd}/pdbs/wt_{mrna}_ranked_{i}.pdb')
+            sh.copy(f'{smpdb}/{mrna}/ranked_{i}.pdb', f'{cwd}/pdbs/sm_{mrna}_ranked_{i}.pdb')
+
+    # Align the unmutated and mutated protein structures and compare them
+    # Done here: SH/somatic_mutation_analysis.sh:54
+
+    # Read the alignment and draw clusters
+
+
+
+    aln = pd.read_table(f'{cwd}/search.m8', header=None)
+    nodes = [f'{s}_{mrna}_ranked_{i}.pdb' for s in 'wt sm'.split() for mrna in mrnaids for i in range(5)]
+    edges = OrderedDict()
+    selectmrna = '10343'
+    for row in aln.itertuples(index=False):
+        if row[0] == row[1]:
+            continue
+        if selectmrna in row[0] and selectmrna in row[1]:
+            edges[tuple(row[:2])] = 101 - row[11]
+
+
+    ## Get distances for hierarchical clustering
+    AM = deque()    # Adjacency matrix
+    for i, s in enumerate(nodes):
+        for j, e in enumerate(nodes):
+            if i >= j:
+                continue
+            if (s, e) in edges:
+                AM.append(edges[s,e])
+            else:
+                AM.append(1000)
+    AM = list(AM)
+
+    fig, ax = plt.subplots()
+    Z = linkage(AM, method='ward')
+    dendrogram(optimal_leaf_ordering(Z, AM), ax=ax, leaf_font_size=15)
+    ax.set_xticks(labels=[nodes[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=plt.xticks()[0], rotation=90)
+    # ax = plt.gca()
+    ax.spines[:].set_visible(False)
+    ax.tick_params(left=False, labelleft=False)
+    # ax.set_title("Clustering of branches based on SMs")
+    plt.tight_layout(pad=0.1)
+
+
+    selectednodes = [n for n in nodes if selectmrna in n]
+    G = ig.Graph(n=len(selectednodes))
+    G.add_edges([(selectednodes.index(k[0]), selectednodes.index(k[1])) for k in edges.keys()])
+    G.es['weights'] = [v for v in edges.values()]
+    G.vs['sample'] = ['red' if s[:2] == 'wt' else 'blue' for s in selectednodes]
+    fig, ax = plt.subplots()
+    ig.plot(G, layout=G.layout_kamada_kawai(), target=ax, vertex_color=G.vs["sample"], vertex_size=1)
+
+    adjacency = from_edge_list([(selectednodes.index(k[0]), selectednodes.index(k[1]), v)  for k,v in edges.items()])
+    louvain = Louvain()
+    louvain = LouvainHierarchy()
+    labels = louvain.fit_predict(adjacency)
+    # </editor-fold>
+
+    return
+# END
