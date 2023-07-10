@@ -204,6 +204,7 @@ def mutation_spectra():
     from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges
     from multiprocessing import Pool
     import json
+    from itertools import product
     # </editor-fold>
 
 
@@ -211,6 +212,8 @@ def mutation_spectra():
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
     refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
     syriout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out'
+    syrisnppath = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt'
+    syriindpath = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.indels.txt'
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     branchorder = ['wt_7', 'wt_1', 'wt_18', 'wt_19', 'mut_15', 'mut_11_1', 'mut_11_2']
     SMALL_SIZE = 8
@@ -297,6 +300,10 @@ def mutation_spectra():
     z = (g - np.mean(g))/np.std(g)  # Z-transform shows that No value is outside the 95% range
     layerjsondata["Dimeric indels"] = {i: Counter([grp[0][2] for grp in datafilter.loc[datafilter.type == 'Indel'].groupby('chromosome position alt_allele'.split())])[i] for i in ['-AT', '-TA', '+AT', '+TA']}
     layerjsondata["Dimeric indels total count"] = sum([Counter([grp[0][2] for grp in datafilter.loc[datafilter.type == 'Indel'].groupby('chromosome position alt_allele'.split())])[i] for i in ['-AT', '-TA', '+AT', '+TA']])
+
+    layerjsondata["Number of L1 SMs in all branches"] = Counter(datafilter.loc[datafilter.Layer == 'L1'].groupby('chromosome position alt_allele'.split()).alt_allele.value_counts().to_list())[7]
+    layerjsondata["Number of L2 SMs in all branches"] = Counter(datafilter.loc[datafilter.Layer == 'L2'].groupby('chromosome position alt_allele'.split()).alt_allele.value_counts().to_list())[7]
+    layerjsondata["Number of shared SMs in all branches"] = Counter(datafilter.loc[datafilter.Layer == 'shared'].groupby('chromosome position alt_allele'.split()).alt_allele.value_counts().to_list())[7]
     with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/layer_sm_stats.json', 'w') as fout:
         json.dump(layerjsondata, fout, indent=2)
 
@@ -437,6 +444,93 @@ def mutation_spectra():
     # plt.savefig(f'{cwd}/snps_mutation_spectra.pdf')
     # plot2emf(f'{cwd}/snps_mutation_spectra.pdf', f'{cwd}/snps_mutation_spectra.emf')
     plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get distibution of SMs SNPs in genomic doublets. Are CpGs enriched?">
+    snppos = datafilter.loc[datafilter.type == 'SNP'].drop_duplicates(subset='chromosome position alt_allele'.split())
+    # TODO: question: For the doublet context, it makes sense to select the haplotype in which the mutation actually happened? Relevant when there is a SNP/indel between the haplotypes adjacent to the SM SNP.
+    # Count the total number of 2-mers
+    twomers = sorted(map(''.join, product(*['ATGC']*2)))
+    args_list = [Namespace(fasta=Namespace(name=refcur), kmer=kmer, canonical=False) for kmer in twomers]
+    with Pool(processes=4) as pool:
+        kmercnts = pool.map(cntkmer, args_list)
+    kmercnts = dict(zip(twomers, kmercnts))
+
+    refseq = readfasta(refcur)
+    dup = deque()
+    for p in snppos.itertuples(index=False):
+        dup.append(refseq[p.chromosome][p.position-1: p.position+1])
+    snppos['dup_reg'] = dup
+    # read syri snps and indels
+    syrisnps = pd.read_table(syrisnppath, header=None)
+    syriindels = pd.read_table(syriindpath, header=None)
+    # Check position where the next position is heterozygous
+    printdf(snppos.loc[snppos.position.isin(syrisnps[1] - 1)])
+    #     chromosome  position    branch ref_allele alt_allele  read_count  allele_freq Layer type dup_reg
+    # 19       CUR1G   3423674  mut_11_2          T          A        44.0        0.253    L1  SNP      TG
+    # 257      CUR5G  10982419  mut_11_1          C          T        50.0        0.431    L1  SNP      CT
+    # 290      CUR6G   3442340      wt_1          A          G        27.0        0.403    L2  SNP      AG
+    # 399      CUR8G   9339930     wt_19          C          T        72.0        0.456    L1  SNP      CA
+    # 400      CUR8G   9696861     wt_18          A          T        51.0        0.586    L2  SNP      AT
+    # Doublet change in the orangered haplotype
+    # CUR5G:10982419 CG > TG
+    printdf(snppos.loc[(snppos.position.isin(syriindels[1] - 1)) | (snppos.position.isin(syriindels[1] - 2))])
+    #     chromosome  position branch ref_allele alt_allele  read_count  allele_freq   Layer type dup_reg
+    # 26       CUR1G   9846234   wt_1          A          T        24.0        0.343      L2  SNP      AT
+    # 235      CUR4G  22366515   wt_7          G          A        40.0        0.284  shared  SNP      GT
+    # No SM SNP adjacent to indels in orangered
+
+    # Change the dup_reg for CUR5G:10982419 manually
+    snppos.loc[(snppos.chromosome == "CUR5G") & (snppos.position == 10982419), 'dup_reg'] = 'CG'
+    snppos['dup_tar'] = [s[1] for s in snppos['dup_reg']]
+    snppos['dup_tar'] = snppos.alt_allele + snppos.dup_tar
+    snppos['change'] = snppos.dup_reg + u'\u279D' + snppos.dup_tar
+
+    allchange = deque()
+    for i in 'ACGT':
+        for j in 'ACGT':
+            if i == j:
+                 continue
+                for k in 'ACGT':
+                    allchange.append(''.join([i,k,u'\u279D',j,k]))
+
+
+    # dupcntabs = defaultdict()
+    dupcntnorm = defaultdict()
+    for l in 'L1 L2 shared'.split():
+        dup = snppos.loc[snppos.Layer == l, 'change']
+        dupcnt = Counter(dup)
+        # dupcntabs[l] = {k: dupcnt[k] for k in kmercnts}
+        dupcntnorm[l] = {k: dupcnt[k]/kmercnts[k.split(u'\u279D')[0]] for k in allchange}
+    # cpgkeys = set([k for v in dupcntnorm.values() for k in v.keys() if 'CG' in k])
+    # dupletjson = defaultdict()
+    # dupletjson['duplet counts'] = dupcntabs
+    # dupletjson['duplet count normalised'] = {k: {k1: np.format_float_scientific(v1, unique=False, precision=3) for k1, v1 in v.items()} for k, v in dupcntnorm.items()}
+    # dupletjson['cgsnpcnt'] = {l: sum([dupcntabs[l][c] for c in cpgkeys]) for l in 'L1 L2 shared'.split()}
+    # dupletjson['othersnpcnt'] = {l: sum([v for k, v in dupcntabs[l].items() if k not in cpgkeys]) for l in 'L1 L2 shared'.split()}
+    # with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/duplet_sm_stats.json', 'w') as fout:
+    #     json.dump(dupletjson, fout, indent=2)
+    # dupkeys = sorted(allchange, key=lambda x: sum([dupcntnorm[l][x] for l in 'L1 L2 shared'.split()]), reverse=True)
+    dupkeys = allchange
+    fig = plt.figure(figsize=[7.5, 2], dpi=300)
+    ax = fig.add_subplot()
+    ybottom = np.zeros_like(dupkeys, dtype='float')
+    xloc = [i*5 + j for i in range(12) for j in range(1,5)]
+    for l in 'L1 L2 shared'.split():
+        y = [dupcntnorm[l][k] for k in dupkeys]
+        ax.bar(xloc, y, bottom=ybottom, width=0.9, label=l, color=colour[l])
+        ybottom += y
+    ax.set_xlabel('doublet context for somatic mutations')
+    ax.set_ylabel('Mutation ratio')
+    ax.tick_params(axis='x', rotation=90)
+    ax.legend(frameon=False)
+    ax.set_xticks(ticks=xloc, label=dupkeys)
+    ax.set_xticklabels(dupkeys)
+    ax = cleanax(ax)
+    plt.savefig(f'{cwd}/snp_ratio_in_genomic_doublets.png')
+    plt.close()
+
     # </editor-fold>
 
 
@@ -934,7 +1028,7 @@ def merge_all_SM():
     from matplotlib import pyplot as plt
     import numpy as np
     import seaborn as sns
-    from collections import deque, defaultdict, Counter
+    from collections import deque, defaultdict, Counter, OrderedDict
     import pybedtools as bt
     from matplotlib_venn import venn3
     from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
@@ -1073,6 +1167,8 @@ def merge_all_SM():
     allsmjsondata = dict()
     allsmjsondata["Number of events"] = allsmmat.shape[0]
     allsmjsondata["Total number of unique SMs"] = allsmmat.drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
+    allsmjsondata["Number of SNPs"] = allsmmat.loc[[c[0] not in '+-' for c in allsmmat.alt_allele]].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
+    allsmjsondata["Number of Indels"] = allsmmat.loc[[c[0] in '+-' for c in allsmmat.alt_allele]].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
     allsmjsondata["Number of SMs in L1"] = allsmmat.loc[allsmmat.tissue == 'L1'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
     allsmjsondata["Number of SMs in L2"] = allsmmat.loc[allsmmat.tissue == 'L2'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
     allsmjsondata["Number of SMs in leaf"] = allsmmat.loc[allsmmat.tissue == 'leaf'].drop_duplicates(subset='chromosome position alt_allele'.split()).shape[0]
@@ -1790,6 +1886,296 @@ def merge_all_SM():
     ## mut_11_1 leaf ('CUR2G', 367749, '+TA'): Present in all samples expect mut_11_1_l2
     ## mut_15 leaf ('CUR3G', 8510980, '-GAG'): Found because it is present in both L1 and L2
     # </editor-fold>
+
+    return
+# END
+
+
+def expression_plots():
+    """
+        Collection of plots for visualising expression differences.
+    """
+    # <editor-fold desc="Define imports">
+    from matplotlib import pyplot as plt
+    import os
+    from glob import glob
+    from itertools import product
+    import pandas as pd
+    from hometools.strings import grepl
+    from collections import deque, Counter
+    import pybedtools as bt
+    import json
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Define defaults and constants">
+    basedict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+    sdict = dict(zip(('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'mut4', 'MUT_15'), ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_4', 'mut_15')))
+    rnadir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/'
+    isodir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    # </editor-fold>
+
+    muts = pd.read_table(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv')
+
+    # <editor-fold desc="Plot Alt-readcount frequency">
+    df = muts.sort_values(['branch', 'chromosome', 'position'])
+    # # Get gene coordinates
+    # gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
+    # genes = gff.filter(lambda x: x[2] == 'gene').saveas()
+    # pos = df.copy()
+    # pos['start'] = pos.position - 1001
+    # pos['end'] = pos.position + 1000
+    # pos = pos[['chromosome', 'start', 'end', 'position']].copy()
+    # pos.drop_duplicates(inplace=True)
+    # posbt = bt.BedTool.from_dataframe(pos)
+    # genepos = posbt.intersect(genes, u=True).to_dataframe()
+    # genepos.columns = ['chromosome', 'start', 'end', 'position']
+    # df = df.merge(genepos, on='chromosome position'.split(), how='inner')
+
+    df = df.loc[[True if alt[0] not in '+-' else False for alt in df.alt_allele]]
+    df = df.loc[df.branch.isin(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'])]
+    pos = set(zip(df.chromosome, df.position, df.alt_allele))
+    clstids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [f'clstrs_{i}' for i in range(0, 12)])))
+
+    # Read AF in rnaseq reads
+    rnarc = pd.DataFrame()
+    for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+        clsrc = sorted(glob(f'{rnadir}/{bname}/clstrs_*.rna.rc.txt'))
+        for cls in clsrc:
+            clsdf = defaultdict(dict)
+            with open(cls, 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    if len(line) == 0:
+                        continue
+                    alts = deque()
+                    for p in pos:
+                        if (line[0], int(line[1])) == (p[0], p[1]):
+                            alts.append(p[2])
+                    for alt in alts:
+                        if int(line[3]) == 0:
+                            clsdf[line[0], int(line[1]), alt] = {'rc': 0, 'ac': 0, 'af': 0}
+                            continue
+                        try:
+                            clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[basedict[alt]]), 'af': round(int(line[basedict[alt]])/int(line[3]), 2)}
+                        except KeyError:
+                            try:
+                                i = line.index(alt)
+                                clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[i+1]), 'af': round(int(line[i+1])/int(line[3]), 2)}
+                            except ValueError:
+                                clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': 0, 'af': 0}
+            clsdf = pd.DataFrame(clsdf).transpose()
+            clsname = cls.split('/')[-1].split(".")[0]
+            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            clsdf['cls'] = clsname
+            clsdf['branch'] = sdict[bname]
+            rnarc = pd.concat([rnarc, clsdf])
+    rnarc.reset_index(level=[0, 1, 2], inplace=True)
+    rnarc.columns = ['chromosome', 'position', 'alt_allele'] + list(rnarc.columns[3:])
+    rnatrans = rnarc.loc[rnarc.rc > 0].drop_duplicates(['chromosome', 'position', 'alt_allele'])
+    rnarc = rnarc.loc[~(rnarc.af == 0)]
+    rnarc['p'] = rnarc.chromosome.astype(str) + '_' + rnarc.position.astype(str) + '_' + rnarc.alt_allele.astype(str)
+    rnarc['c'] = rnarc.branch.astype(str) + '_' + rnarc.cls.astype(str)
+    # clstids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [f'clstrs_{i}' for i in range(1, 13)])))
+    rnapos = pd.DataFrame(product(rnarc.p.unique(), clstids))
+    rnapos.columns = ['p', 'c']
+    rnapos = rnapos.merge(rnarc, how='outer', on=['p', 'c'])
+    rnapos.loc[rnapos.rc.isna(), ['rc', 'ac', 'af']] = 0
+
+    # Read AF in isoseq reads
+    isorc = pd.DataFrame()
+    for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
+        clsrc = sorted(glob(f'{isodir}/{bname}/clstrs_*.iso_seq.rc.txt'))
+        for cls in clsrc:
+            clsdf = defaultdict(dict)
+            # with open('{}/{}/{}'.format(cwd, bname, cls), 'r') as fin:
+            with open(cls, 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    if len(line) == 0: continue
+                    alts = deque()
+                    for p in pos:
+                        if (line[0], int(line[1])) == (p[0], p[1]):
+                            alts.append(p[2])
+                    for alt in alts:
+                        if int(line[3]) == 0:
+                            clsdf[line[0], int(line[1]), alt] = {'rc': 0, 'ac': 0, 'af': 0}
+                            continue
+                        try:
+                            clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[basedict[alt]]), 'af': round(int(line[basedict[alt]])/int(line[3]), 2)}
+                        except KeyError:
+                            try:
+                                i = line.index(alt)
+                                clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': int(line[i+1]), 'af': round(int(line[i+1])/int(line[3]), 2)}
+                            except ValueError:
+                                clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': 0, 'af': 0}
+            clsdf = pd.DataFrame(clsdf).transpose()
+            clsname = cls.split('/')[-1].split(".")[0]
+            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            clsdf['cls'] = clsname
+            clsdf['branch'] = sdict[bname]
+            isorc = pd.concat([isorc, clsdf])
+    isorc.reset_index(level=[0, 1, 2], inplace=True)
+    isorc.columns = ['chromosome', 'position', 'alt_allele'] + list(isorc.columns[3:])
+    isotrans = isorc.loc[isorc.rc > 0].drop_duplicates(['chromosome', 'position', 'alt_allele'])
+    isorc = isorc.loc[~(isorc.af == 0)]
+    # isorc = isorc.loc[~(isorc.ac < 2)]
+    isorc['p'] = isorc.chromosome.astype(str) + '_' + isorc.position.astype(str) + '_' + isorc.alt_allele.astype(str)
+    isorc['c'] = isorc.branch.astype(str) + '_' + isorc.cls.astype(str)
+    # clstids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [f'clstrs_{i}' for i in range(1, 13)])))
+    isopos = pd.DataFrame(product(isorc.p.unique(), clstids))
+    isopos.columns = ['p', 'c']
+    isopos = isopos.merge(isorc, how='left', on=['p', 'c'])
+    isopos.loc[isopos.rc.isna(), ['rc', 'ac', 'af']] = 0
+
+    mutsfilt = df.copy()
+    mutsfilt['p'] = mutsfilt.chromosome.astype(str) + '_' + mutsfilt.position.astype(str) + '_' + mutsfilt.alt_allele.astype(str)
+    mutsfilt = mutsfilt.loc[mutsfilt.p.isin(set(isopos.p) | set(rnapos.p))]
+    mutsfilt.index = mutsfilt.p
+    mutsfilt.drop('chromosome position alt_allele p'.split(), inplace=True, axis=1)
+    mutsfilt = mutsfilt.loc[mutsfilt.branch.isin(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'])]
+    mutsfilt['sample'] = mutsfilt.branch.astype(str) + '_' + mutsfilt.tissue.astype(str)
+    mutsfilt['value'] = 1
+    mutsfilt = mutsfilt.pivot(columns='sample', values='value')
+    mutsfilt.fillna(0, inplace=True)
+    samids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], 'leaf L2'.split()))) + 'wt_1_L1 wt_19_L1 mut_11_1_L1 mut_15_L1'.split()
+    for s in samids:
+        if s not in mutsfilt.columns:
+            mutsfilt[s] = 0.0
+    mutsfilt = mutsfilt.loc[:, samids]
+    mutsfilt = mutsfilt.loc[(mutsfilt != 0).any(axis=1)]
+
+    # Cluster SMs together
+    distance_matrix = pdist(mutsfilt)
+    linkage_matrix = linkage(distance_matrix, method='single')
+    leaves = leaves_list(optimal_leaf_ordering(linkage_matrix, distance_matrix))
+    ind = mutsfilt.index.values
+    indorder = deque()
+    for i in leaves:
+        if len(grepl('L1', mutsfilt.columns[np.where(mutsfilt.loc[ind[i]] == 1)[0]].to_list())) > 0:
+            indorder.append(i)
+            continue
+    for i in leaves:
+        if len(grepl('L2', mutsfilt.columns[np.where(mutsfilt.loc[ind[i]] == 1)[0]].to_list())) > 0:
+            indorder.append(i)
+            continue
+        if len(grepl('leaf', mutsfilt.columns[np.where(mutsfilt.loc[ind[i]] == 1)[0]].to_list())) > 0:
+            indorder.append(i)
+            continue
+
+    # mutsfilt = mutsfilt.iloc[leaves_list(optimal_leaf_ordering(linkage_matrix, distance_matrix))]
+    mutsfilt = mutsfilt.iloc[indorder]
+    mutsfilt = mutsfilt.T
+
+    cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
+    plt.rc('font', size=6)
+    # Fig1 without splitting samples based on clusters
+    def getmutlist(df):
+        hassm = defaultdict(dict)
+        for grp in df.groupby('p branch'.split()):
+            if grp[1].shape[0] > 0:
+                hassm[grp[0][0]][grp[0][1]] = 1
+            else:
+                hassm[grp[0][0]][grp[0][1]] = 1
+        rnahm = pd.DataFrame.from_dict(hassm)
+        rnahm.fillna(0, inplace=True)
+        rnahm = rnahm.loc['wt_1 wt_19 mut_11_1 mut_15'.split()]
+        for c in mutsfilt.columns:
+            if c not in rnahm.columns:
+                rnahm[c] = 0
+        rnahm = rnahm.loc[:, mutsfilt.columns]
+        return rnahm
+    # END
+    fig = plt.figure(figsize=[4, 4], dpi=300)
+    ax = plt.subplot2grid((4, 1), (0, 0), rowspan=2, colspan=1, fig=fig)
+    ax = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, cbar=False, ax=ax)
+    ax.hlines([8], *ax.get_xlim(), color='k')
+    # ax.vlines([7], *ax.get_ylim(), color='k')
+    ax.set_ylabel('Somatic mutation')
+    ax.set_xlabel('')
+
+    rnahm = getmutlist(rnapos)
+    ax = plt.subplot2grid((4, 1), (2, 0), rowspan=1, colspan=1)
+    ax = sns.heatmap(rnahm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=rnahm.index, cbar_kws={'label': 'scRNA-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
+    ax.set_ylabel('scRNA-Seq')
+    ax.set_xlabel('')
+
+    isohm = getmutlist(isopos)
+    ax = plt.subplot2grid((4, 1), (3, 0), rowspan=1, colspan=1)
+    ax = sns.heatmap(isohm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, yticklabels=isohm.index, cbar_kws={'label': 'scIso-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
+    ax.set_ylabel('scIso-Seq')
+    ax.set_xlabel('')
+    plt.tight_layout()
+    plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_no_clusters.png')
+    plt.close()
+
+    # Fig2 splitting samples based on clusters
+    fig = plt.figure(figsize=[5, 12], dpi=300)
+    ax = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1, fig=fig)
+    ax = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax)
+    ax.hlines([8], *ax.get_xlim(), color='k')
+    # ax.vlines([7], *ax.get_ylim(), color='k')
+    ax.set_ylabel('')
+    ax.set_xlabel('')
+
+    ax = plt.subplot2grid((7, 1), (1, 0), rowspan=3, colspan=1)
+    rnahm = rnapos.pivot(index='c', columns='p')['af']
+    rnahm = rnahm.loc[clstids]
+    for c in mutsfilt.columns:
+        if c not in rnahm.columns:
+            rnahm[c] = 0
+    rnahm = rnahm.loc[:, mutsfilt.columns]
+    ax = sns.heatmap(rnahm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=rnahm.index, cbar_kws={'label': 'scRNA-Seq AF', 'fraction': 0.05}, ax=ax)
+    ax.hlines([12, 24, 36], *ax.get_xlim(), color='k')
+    # ax.vlines([7], *ax.get_ylim(), color='k')
+    ax.set_ylabel('')
+    ax.set_xlabel('')
+
+    ax = plt.subplot2grid((7, 1), (4, 0), rowspan=3, colspan=1)
+    isohm = isopos.pivot(index='c', columns='p')['af']
+    isohm = isohm.loc[clstids]
+    for c in mutsfilt.columns:
+        if c not in isohm.columns:
+            isohm[c] = 0
+    isohm = isohm.loc[:, mutsfilt.columns]
+    ax = sns.heatmap(isohm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, yticklabels=isohm.index, cbar_kws={'label': 'scIsoSeq AF', 'fraction': 0.05}, ax=ax, vmin=0)
+    ax.hlines([12, 24, 36], *ax.get_xlim(), color='k')
+    # ax.vlines([7], *ax.get_ylim(), color='k')
+    ax.set_ylabel('')
+    ax.set_xlabel('')
+    plt.tight_layout()
+    # plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.pdf')
+    plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.png')
+    plt.close()
+
+
+    # <editor-fold desc="Create summary stats">
+    isojsondata = dict()
+    isojsondata["Number of SNPs in the 4 branches"] = len(pos)
+    alltrans = pd.concat([rnatrans, isotrans]).drop_duplicates('chromosome position alt_allele'.split())
+    alltrans = alltrans.merge(df, on='chromosome position alt_allele'.split(), how='left')
+    alltransanno = {}
+    for grp in alltrans.groupby('chromosome position alt_allele'.split()):
+        alltransanno[grp[0]] = tuple(grp[1].tissue.unique())
+    isojsondata["SM counts with reads"] = len(alltransanno)
+    isojsondata["SM counts in tissue with reads"] = {'_'.join(k): v for k, v in Counter(alltransanno.values()).items()}
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/iso_seq_stats.json', 'w') as fout:
+        json.dump(isojsondata, fout, indent=2)
+    # </editor-fold>
+
+    ## Positions plotted:
+    # CUR7G 4335333 Intergene
+    # CUR1G 11957090    Exon
+    # CUR6G 20953708    Intron
+    # CUR6G 3442340 Intron
+    # CUR5G 8809170 Intergene
+    # CUR6G 19101663    Intergene
+    # CUR5G 14960198    Intron
+
+    # </editor-fold>
+
 
     return
 # END
