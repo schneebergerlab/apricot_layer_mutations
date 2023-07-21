@@ -170,7 +170,8 @@ layer_specific_dna_analysis.py -> layer_conserved_variants()
 layer_specific_dna_analysis.py -> layer_specific_fc_check()
 # Merge the different somatic mutations list
 layer_specific_dna_analysis.py -> merge_variant_calls()
-
+# Without considering layer information
+layer_specific_dna_analysis.py -> sm_after_masking_layers()
 
 ####################################################################
 #### Statistics
@@ -268,9 +269,9 @@ for s in ${samples[@]}; do
                 # Split from SNPs that are close (within 1kb) of other SNPs
 #                xargs -a $snps -P $N -I {} samtools mpileup -f $refcur -q 40 -E -Q 26 ${l}.deduped.bam -r {} -O --output-QNAME > snps_CUR${i}G.pileup 2> garb
 #                sort -k2,2n -o snps_CUR${i}G.pileup snps_CUR${i}G.pileup
+#                sort -k2,2n -o shvs_CUR${i}G.pileup shvs_CUR${i}G.pileup
 #                xargs -a $shvs -P $N -I {} samtools mpileup -f $refcur -q 10 -E -Q 30 ${l}.deduped.bam -r {} -O --output-QNAME > shvs_CUR${i}G.pileup 2> garb
                 samtools mpileup -f $refcur -q 10 -E -Q 30 ${l}.deduped.bam -l $shvs -O --output-QNAME > shvs.pileup
-#                sort -k2,2n -o shvs_CUR${i}G.pileup shvs_CUR${i}G.pileup
                 sort -k1,1 -k2,2n -o shvs.pileup shvs.pileup
         "
     done

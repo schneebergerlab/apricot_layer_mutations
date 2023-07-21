@@ -1,8 +1,4 @@
 # Functions to analyse the sequencing data from the sequencing of layer-enriched dna
-import subprocess
-
-import matplotlib.pyplot as plt
-
 def plot_snp_af():
     """
     This function plots the allele frequencies of the MUT_11_1 SNPs/indels in the corresponding layers
@@ -1156,27 +1152,27 @@ layer_3_variant_calling('/netscratch/dep_mercier/grp_schneeberger/projects/apric
 
 
 def merge_variant_calls():
-    '''
-    This function reads the somatic variants lists from different analysis of the
-    layer data and generates one output.
-    Variants list included:
+    """
+        This function reads the somatic variants lists from different analysis of the
+        layer data and generates one output.
+        Variants list included:
 
-    Layer specific somatic mutations (Data 1):
-    output from layer_specific_sm_calling_all_samples(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/*/high_conf_layer_specific_somatic_mutations.selected.tsv
+        Layer specific somatic mutations (Data 1):
+        output from layer_specific_sm_calling_all_samples(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/*/high_conf_layer_specific_somatic_mutations.selected.tsv
 
-    Layer 3 specific somatic mutations:
-    Output from layer_3_variant_calling(), Single position was found in mut_11_1. But it is also supported by very few reads and hence not considered here.
+        Layer 3 specific somatic mutations:
+        Output from layer_3_variant_calling(), Single position was found in mut_11_1. But it is also supported by very few reads and hence not considered here.
 
-    Layer specific somatic mutations conserved in multiple samples (Data 2):
-    Output from layer_conserved_variants(),
-        general output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
+        Layer specific somatic mutations conserved in multiple samples (Data 2):
+        Output from layer_conserved_variants(),
+            general output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
 
-        L2 sensitive output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
+            L2 sensitive output -> /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/conserved_layer_specific_candidate.selected.tsv
 
 
-    Layer specific somatic mutations using only fold-change cutoff and without leaf background noise removal (Data 3):
-    Output from layer_specific_fc_check(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv
-    '''
+        Layer specific somatic mutations using only fold-change cutoff and without leaf background noise removal (Data 3):
+        Output from layer_specific_fc_check(), saved at /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layer_specific_candidate.fc_only.selected.tsv
+    """
 
     import pandas as pd
     import numpy as np
@@ -1356,7 +1352,7 @@ def sm_after_masking_layers():
         break
     plt.hist(aflist) # This shows a peak at ~0.15 with the tail from 0.35. Therefore,
 
-    # Use the same cutoffs as used in "mutations_in_branches.py" for selecting
+    # Use the same cutoffs as used in "leaf_dna_analysis.py" for selecting
     # high coverage mutations.
     to_pop = deque()
     for k, v in posdict.items():
@@ -1607,500 +1603,502 @@ def sm_after_masking_layers():
 # END
 
 
-def layer_specific_gene_conversion():
-    import numpy as np
-    import pandas as pd
-    from collections import deque
-    from tqdm import tqdm
-    from matplotlib import pyplot as plt
-    import sys
-    sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
-    from hometools.classes import snvdata
-    S_COV = {'l1': (20, 150),
-             'l2': (20, 130),
-             'l3': (20, 180)}
-    SAMPLES = ('l1', 'l2', 'l3')
-    BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-
-    snpsdata = {}
-    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt", 'r') as fin: # Test with lower read depth
-        for line in fin:
-            line = line.strip().split()
-            snpsdata[(line[0], int(line[2]))] = (line[3], line[4])
-    # Get read-counts at SNP positions. code in layer_specific_dna_analysis.sh
-    # Check Allele frequency distribution at SNP positions
-    fig = plt.figure()
-    i = 1
-    snps = {}
-    for sample in SAMPLES:
-        af = deque()
-        f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
-        with open(f, 'r') as fin:
-            for line in tqdm(fin):
-                line = line.strip().split()
-                q = snpsdata[(line[0], int(line[1]))][1]
-                if int(line[3]) == 0:
-                    af.append(0)
-                    continue
-                af.append(round(int(line[BASE_DICT[q]])/int(line[3]), 4))
-        ax = fig.add_subplot(3, 1, i)
-        ax.hist(af, bins=[v/100 for v in range(101)], range=[0.01, 1])
-        ax.set_title(sample)
-        ax.grid(which='both', axis='both')
-        ax.set_axisbelow(True)
-        ax.set_xlabel("Allele Frequency")
-        snps[sample] = af
-        i += 1
-    plt.tight_layout()
-
-    snps = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt', header=None)
-    snps.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
-    for sample in SAMPLES:
-        f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
-        af = deque()
-        with open(f, 'r') as fin:
-            for line in tqdm(fin):
-                line = line.strip().split()
-                q = snpsdata[(line[0], int(line[1]))][1]
-                if int(line[3]) == 0:
-                    af.append((line[0], int(line[1]), 0, 0))
-                    continue
-                af.append((line[0], int(line[1]), round(int(line[BASE_DICT[q]])/int(line[3]), 4), int(line[3])))
-        afdict = pd.DataFrame(af)
-        afdict.columns = [0, 1, f'{sample}_af', f'{sample}_rc']
-        afdict.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
-        snps = snps.merge(afdict, how='left', on=[0, 1])
-        snps.reset_index(drop=True, inplace=True)
-
-    snps['type'] = 'transversions'
-    snps.loc[(snps[3] == 'A') & (snps[4] == 'G'), 'type'] = 'transitions'
-    snps.loc[(snps[3] == 'C') & (snps[4] == 'T'), 'type'] = 'transitions'
-    snps.loc[(snps[3] == 'G') & (snps[4] == 'A'), 'type'] = 'transitions'
-    snps.loc[(snps[3] == 'T') & (snps[4] == 'C'), 'type'] = 'transitions'
-    snps.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layers.syri_snps.allele_frequency.txt', sep='\t', index=False)
-
-    # Remove snps where allele frequency is in 0.35-0.6 for all layers
-    afdiff = deque()
-    for row in snps.itertuples(index=False):
-        afdiff.append(max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]))
-    snps['afdiff'] = afdiff
-    snps['mean_rc'] = (snps['l1_rc']+snps['l2_rc']+snps['l3_rc'])/3
-
-    filter = deque()
-    for row in snps.itertuples(index=False):
-        if 0.35 <= row[5] <= 0.6:
-            if 0.35 <= row[7] <= 0.6:
-                if 0.35 <= row[9] <= 0.6:
-                    filter.append(False)
-                    continue
-        if row[5] <= 0.1:
-            if row[7] <= 0.1:
-                if row[9] <= 0.1:
-                    filter.append(False)
-                    continue
-        if max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]) < 0.25:
-            filter.append(False)
-            continue
-        filter.append(True)
-    snpsfilt = snps.loc[list(filter)].copy()
-
-    ### Filter positions with low sequencing
-    snpsfilt = snpsfilt.loc[(snpsfilt['l1_rc'] >= S_COV['l1'][0]) &
-                            (snpsfilt['l2_rc'] >= S_COV['l2'][0]) &
-                            (snpsfilt['l3_rc'] >= S_COV['l3'][0])].copy()
-
-
-    def d(rs):
-        '''
-        This function calculates distance of a point from a line. Here, using it to calculate distance of gene conv candidates from the 3D-diagonal
-
-        Original answer: https://stackoverflow.com/a/50728570
-        '''
-        p = np.array([0, 0, 0])
-        q = np.array([1, 1, 1])
-        x = p-q
-        return np.linalg.norm(
-            np.outer(np.dot(rs-q, x)/np.dot(x, x), x)+q-rs,
-            axis=1)
-    rs = np.array([[row[5], row[7], row[9]] for row in snpsfilt.itertuples(index=False)])
-    dist_diag = d(rs)
-
-    # Select positions for which reads support different haplotypes. Positions for which atleast 5 reads have mismatched haplotypes were selected. Only high quality syri SNP positions are being used
-
-    def get_paired_gene_conv(sample):
-        with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', 'w') as fout:
-            # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
-            print(sample)
-            for i in range(1, 9):
-                snps = deque()
-                last = -1
-                c = f'CUR{i}G'
-                with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/snps_{c}.pileup', 'r') as fin:
-                    # print(sample,c)
-                    for line in tqdm(fin):
-                        # print(len(snps))
-                        line = line.strip().split()
-                        try:
-                            while True:
-                                if int(line[1]) - snps[0].pos > 1000:
-                                    snps.popleft()
-                                else:
-                                    break
-                        except IndexError:
-                            pass
-                        if not S_COV[sample][0] < int(line[3]) < S_COV[sample][1]:
-                            continue
-                        try:
-                            _ = snpsdata[(line[0], line[1])]
-                        except KeyError:
-                            continue
-                        snpd = snvdata(line[:6])
-                        setattr(snpd, "BP", list(map(int, line[6].split(','))))
-                        reads = line[7].split(',')
-                        setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
-                        setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], line[1])][1], snpsdata[(line[0], line[1])][1].lower()}]))
-                        if len(snps) > 0:
-                            for s in snps:
-                                mismatch = 0          # Different haplotypes
-                                rname = deque()
-                                if len(snpd.qry_reads) > 0:
-                                    for r in s.ref_reads:
-                                        if r in snpd.qry_reads:
-                                            mismatch += 1
-                                            rname.append(r)
-                                match = len(s.ref_reads) - mismatch
-                                mismatch2 = 0
-                                if len(snpd.ref_reads) > 0:
-                                    for r in s.qry_reads:
-                                        if r in snpd.ref_reads:
-                                            mismatch2 += 1
-                                            rname.append(r)
-                                match += len(s.qry_reads) - mismatch2
-                                if mismatch >= 5:
-                                    fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch}\t{match}\t{",".join(rname)}\tref_to_qry')
-                                    fout.write("\n")
-                                if mismatch2 >= 5:
-                                    fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch2}\t{match}\t{",".join(rname)}\tqry_to_ref')
-                                    fout.write("\n")
-                        snps.append(snpd)
-
-    with Pool(processes=8) as pool:
-        pool.map(get_paired_gene_conv, SAMPLES)
-
-    # Plot the distribution of read counts with matching and mismatching haplotypes
-    from matplotlib.backends.backend_pdf import PdfPages
-    with PdfPages(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_conversion_match_mismatch.pdf') as pdf:
-        for sample in SAMPLES:
-            with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', 'r') as fin:
-                # with open(f'paired_snps_gene_conversions.txt', 'r') as fin:
-                mismatch = deque()
-                match = deque()
-                for line in fin:
-                    line = line.strip().split()
-                    mismatch.append(int(line[4]))
-                    match.append(int(line[5]))
-            fig = plt.figure()
-            bins = range(0, np.max(match), 5)
-            ax1 = plt.subplot2grid((3, 3), (0, 0), rowspan=1, colspan=2)
-            ax1.set_xlim([0, np.max(match)+5])
-            # ax1.hist(match, bins=int(np.max(match)/5))
-            ax1.hist(match, bins=bins)
-            ax1.set_ylabel('Frequency')
-            ax2 = plt.subplot2grid((3, 3), (1, 0), rowspan=2, colspan=2)
-            ax2.set_xlim([0, np.max(match)+5])
-            ax2.set_ylim([0, np.max(match)+5])
-            ax2.scatter(match, mismatch, s=1, zorder=1, color='black')
-            ax2.plot([0, np.max(match)], [0, np.max(match)], zorder=0, label="x1")
-            ax2.plot([0, np.max(match)], [0, 0.5*np.max(match)], zorder=0, label="x0.5")
-            ax2.plot([0, np.max(match)], [0, 0.25*np.max(match)], zorder=0, label="x0.25")
-            ax2.plot([0, np.max(match)], [0, 0.1*np.max(match)], zorder=0, label="x0.1")
-            ax2.set_xlabel("# Reads with haplotype match")
-            ax2.set_ylabel("# Reads with haplotype mismatch")
-            ax2.legend()
-            ax3 = plt.subplot2grid((3, 3), (1, 2), rowspan=2, colspan=1)
-            ax3.set_ylim([0, np.max(match)+5])
-            # ax3.hist(mismatch, orientation = 'horizontal', bins=int(np.max(match)/5))
-            ax3.hist(mismatch, orientation='horizontal', bins=bins)
-            ax3.set_xlabel('Frequency')
-            fig.suptitle(sample, fontsize=12)
-            plt.tight_layout()
-            pdf.savefig()
-            plt.close()
-
-    # Get overlap of selected positions and filter positions that are shared by all samples from a sequencing technology
-    genecovs = {sample: pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', header=None) for sample in SAMPLES}
-    genecovpos = {}
-    for sample in SAMPLES:
-        df = genecovs[sample]
-        pos = list(df[0].astype('str') + ':' + df[1].astype('str')) + list(df[2].astype('str') + ':' + df[3].astype('str'))
-        genecovpos[sample] = set(pos)
-
-    a = genecovpos['WT_1'].intersection(genecovpos['WT_19']).intersection(genecovpos['MUT_11_1']).intersection(genecovpos['MUT_15'])
-    b = genecovpos['wt7'].intersection(genecovpos['wt18']).intersection(genecovpos['mut4']).intersection(genecovpos['mut11_2'])
-    badpos = a.union(b)
-
-    genecov = pd.DataFrame()
-    for sample in SAMPLES:
-        df = genecovs[sample].copy()
-        df['sample'] = sample
-        df['apos'] = df[0].astype('str') + ':' + df[1].astype('str')
-        df['bpos'] = df[2].astype('str') + ':' + df[3].astype('str')
-        genecov = pd.concat([genecov, df])
-    genecov.reset_index(inplace=True, drop=True)
-
-    goodpos = genecov.loc[~((genecov['apos'].isin(badpos)) | (genecov['bpos'].isin(badpos)))]
-    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_conversions_positions.txt', 'w') as fout:
-        allpos = sorted(set(list(goodpos['apos']) + list(goodpos['bpos'])))
-        for p in allpos:
-            p = p.split(":")
-            fout.write(f"{p[0]}:{p[1]}-{p[1]}\n")
-
-    # Get pileup data at these positions. run code in leaf_dna_analysis.sh
-
-    # For the positions selected above, check if reads supporting the same haplotype switch are present in other samples, if yes then remove the positions
-
-    pos_pair = list(zip(list(goodpos['apos']), list(goodpos['bpos'])))
-    pos_mismatch_cnt = defaultdict(dict)
-    for sample in SAMPLES:
-        snvsdata = {}
-        with open(f"/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.pileup", 'r') as fin:
-            for line in fin:
-                line = line.strip().split()
-                if line[3] == '0':
-                    continue
-                setattr(snpd, "BP", list(map(int, line[6].split(','))))
-                snpd = snvdata(line[:6])
-                reads = line[7].split(',')
-                setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
-                setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], line[1])][1], snpsdata[(line[0], line[1])][1].lower()}]))
-                snvsdata[f"{line[0]}:{line[1]}"] = snpd
-        for p in pos_pair:
-            try:
-                snpd1 = snvsdata[p[0]]
-                snpd2 = snvsdata[p[1]]
-            except KeyError as e:
-                pos_mismatch_cnt[p][sample] = (0, 0, 0)
-                continue
-            mismatch = 0          # Different haplotypes
-            match = 0
-            rname = deque()
-            if len(snpd2.qry_reads) > 0:
-                for r in snpd1.ref_reads:
-                    if r in snpd2.qry_reads:
-                        mismatch += 1
-                        rname.append(r)
-            match = len(snpd1.ref_reads) - mismatch
-            mismatch2 = 0
-            if len(snpd2.ref_reads) > 0:
-                for r in snpd1.qry_reads:
-                    if r in snpd2.ref_reads:
-                        mismatch2 += 1
-                        rname.append(r)
-            match += len(snpd1.qry_reads) - mismatch2
-            # pos_mismatch_cnt[p][sample] = (match, mismatch, mismatch2, rname)
-            pos_mismatch_cnt[p][sample] = (match, mismatch, mismatch2)
-
-    select = deque()
-    for row in goodpos.itertuples(index=False):
-        s = 0
-        for k, v in pos_mismatch_cnt[(row[9], row[10])].items():
-            if v[1] > 0 or v[2] > 0:
-                s += 1
-        if s == 8:
-            select.append(False)
-        else:
-            select.append(True)
-
-    goodpos = goodpos[list(select)]
-    goodpos.reset_index(inplace=True, drop=True)
-
-
-    fig = plt.figure(figsize=[8, 4])
-    ax = fig.add_subplot(1, 2, 1)
-    ax.set_xlim([0, np.max(goodpos[4])])
-    ax.hist(goodpos[4], bins=range(np.max(goodpos[4])+1))
-    ax.set_xlabel("# Reads with haplotype switch")
-    ax.set_ylabel("# Gene conversions")
-
-    ax = fig.add_subplot(1, 2, 2)
-    ax.set_xlim([0, 1])
-    ax.hist(goodpos[4]/goodpos[5], bins=[i/10 for i in range(11)])
-    ax.set_xlabel("AF Reads with haplotype switch")
-    ax.set_ylabel("# Gene conversions")
-    plt.tight_layout()
-
-    # Most candidate gene conversions are selected because of noisy read mapping
-    # To filter them out:
-    #       1) Get a bam file with only the reads supporting gene conversions
-    #       2) Get pileup data and see if the reads have other linked mutations
-
-    poslist = set(goodpos['apos']).union(goodpos['bpos'])
-    for sample in SAMPLES:
-        readnames = deque()
-        with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.pileup', 'r') as fin:
-            for line in fin:
-                line = line.strip().split()
-                if f'{line[0]}:{line[1]}' in poslist:
-                    readnames.extend(line[7].split(","))
-        readnames = list(set(readnames))
-        with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.txt', 'w') as fout:
-            for r in readnames:
-                fout.write(r +"\t\n")
-
-    import pickle
-    # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'wb') as fout:
-    #     pickle.dump(goodpos, fout)
-    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'rb') as fin:
-        goodpos = pickle.load(fin)
-
-    # Get bam and pileup for the reads in geneconv.reads.txt. code in leaf_dna_analysis.sh
-    # Filter out positions where the reads that support gene conversions also have other mutations that are not present in background reads
-    def filter_noisy_reads(sample):
-        selected = pd.DataFrame()
-        readdata = defaultdict(dict)
-        posdata = dict()
-        with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.pileup', 'r') as fin:
-            for line in tqdm(fin):
-                line = line.strip().split()
-                pos = snvdata(line[:6])
-                if pos.rc != 0:
-                    reads = line[7].split(',')
-                    setattr(pos, "ref_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] in {'.', ','}]))
-                    setattr(pos, "qry_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] not in {'.', ','}]))
-                    for i in range(len(reads)):
-                        readdata[reads[i]][f'{line[0]}:{line[1]}'] = pos.bases[i]
-                posdata[f'{line[0]}:{line[1]}'] = pos
-                pos.getindelreads(line[4], line[7])
-
-        df = goodpos.loc[goodpos['sample'] == sample]
-        s = deque()
-        for row in df.itertuples(index=False):
-            # if row[1] == 18152399:
-            #     break
-            bad = False
-            gcreads = set(row[6].split(','))
-            gcpos = set([k for r in gcreads for k in readdata[r]])
-            for p in gcpos:
-                # if p in (f"{row[0]}:{row[1]}", f"{row[2]}:{row[3]}"): continue
-                gc_m = 0    # Gene conversion reads with reference allele
-                gc_mm = 0   # Gene conversion reads with alternate allele
-                ref_m = 0
-                ref_mm = 0
-                gc_ind = 0
-                ref_ind = 0
-                if sum([1 for r in gcreads if r in posdata[p].qry_reads]) >= 3:
-                    if p in (f"{row[0]}:{row[1]}", f"{row[2]}:{row[3]}"): continue
-                    #     print(p)
-                    for r in posdata[p].ref_reads:
-                        if r in gcreads:
-                            gc_m += 1
-                        else:
-                            ref_m += 1
-                    for r in posdata[p].qry_reads:
-                        if r in gcreads:
-                            gc_mm += 1
-                        else:
-                            ref_mm += 1
-                    if gc_mm > ref_mm:
-                        bad = True
-                        break
-                if sum([1 for r in gcreads if r in posdata[p].indelreads]) >= 3:
-                    for r in posdata[p].indelreads:
-                        if r in gcreads:
-                            gc_ind += 1
-                        else:
-                            ref_ind += 1
-                    if gc_ind > ref_ind:
-                        bad = True
-                        break
-            if not bad:
-                s.append(row)
-        return pd.DataFrame(s)
-
-    with Pool(processes=2) as pool:
-        selected = pool.map(filter_noisy_reads, SAMPLES)
-    selected = pd.concat(selected)
-
-    # This filtered gene conversion candidates significantly. The remaining candidates still seem to consist of positions that are a result of mis-mapping
-    # Sample, candidate GC, filtered GC
-    # WT_1 48 8
-    # wt7 32 5
-    # wt18 20 3
-    # WT_19 46 5
-    # mut4 29 4
-    # MUT_11_1 54 5
-    # mut11_2 30 4
-    # MUT_15 37 5
-    ## When using all SNP_pos
-    # WT_1 777 202
-    # wt7 316 42
-    # wt18 235 34
-    # WT_19 1103 267
-    # mut4 224 33
-    # MUT_11_1 1164 339
-    # mut11_2 241 30
-    # MUT_15 685 169
-    # Next idea is to align the reads to the ORA reference genome and check if they still show same haplotype switch. Assumption is that the most of the mis-mapping reads would be gone when aligning with the other haplotype, whereas true reads supporting true gene-coversion would stay.
-    # Code to get reads and align them in leaf_dna_analysis.sh
-
-    # Read the corresponding positions of CUR SNP in the ORA assembly
-    selected_snp_pos = set(list(selected.apos) + list(selected.bpos))
-    snp_cur_ora_map = {}
-    with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out", 'r') as fin:
-        for line in tqdm(fin):
-            line = line.strip().split()
-            if line[10] != 'SNP': continue
-            if f"{line[0]}:{line[1]}" in selected_snp_pos:
-                snp_cur_ora_map[f"{line[0]}:{line[1]}"] = f"{line[5]}:{line[6]}"
-
-    sample_concordance = {}
-    for sample in SAMPLES:
-        readdata = defaultdict(dict)
-        posdata = dict()
-        with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.ora.pileup', 'r') as fin:
-            for line in fin:
-                line = line.strip().split()
-                pos = snvdata(line[:6])
-                if pos.rc != 0:
-                    reads = line[7].split(',')
-                    setattr(pos, "ref_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] in {'.', ','}]))
-                    setattr(pos, "qry_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] not in {'.', ','}]))
-                    for i in range(len(reads)):
-                        readdata[reads[i]][f'{line[0]}:{line[1]}'] = pos.bases[i]
-                posdata[f'{line[0]}:{line[1]}'] = pos
-                pos.getindelreads(line[4], line[7])
-
-        concordance = deque()
-        for row in selected.loc[selected['sample'] == sample].itertuples(index=False):
-            ora1 = snp_cur_ora_map[row.apos]
-            ora2 = snp_cur_ora_map[row.bpos]
-            c = deque()
-            if row[7] == 'ref_to_qry':
-                for r in row[6].split(","):
-                    try:
-                        if readdata[r][ora1] not in [',', '.'] and readdata[r][ora2] in [',', '.']:
-                            c.append(True)
-                        else:
-                            c.append(False)
-                    except KeyError:
-                        c.append(False)
-            elif row[7] == 'qry_to_ref':
-                for r in row[6].split(","):
-                    try:
-                        if readdata[r][ora1] in [',', '.'] and readdata[r][ora2] not in [',', '.']:
-                            c.append(True)
-                        else:
-                            c.append(False)
-                    except KeyError:
-                        c.append(False)
-            concordance.append(sum(c))
-        sample_concordance[sample] = concordance
-
-    for sample in SAMPLES:
-        print(sample, Counter(sample_concordance[sample]))
-    return
-#END
-layer_specific_gene_conversion()
+# <editor-fold desc="OLD OBSOLETE FUNCTION FOR GENE CONVERSION IDENTIFICATION">
+# def layer_specific_gene_conversion():
+#     import numpy as np
+#     import pandas as pd
+#     from collections import deque
+#     from tqdm import tqdm
+#     from matplotlib import pyplot as plt
+#     import sys
+#     sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
+#     from hometools.classes import snvdata
+#     S_COV = {'l1': (20, 150),
+#              'l2': (20, 130),
+#              'l3': (20, 180)}
+#     SAMPLES = ('l1', 'l2', 'l3')
+#     BASE_DICT = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
+#
+#     snpsdata = {}
+#     with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt", 'r') as fin: # Test with lower read depth
+#         for line in fin:
+#             line = line.strip().split()
+#             snpsdata[(line[0], int(line[2]))] = (line[3], line[4])
+#     # Get read-counts at SNP positions. code in layer_specific_dna_analysis.sh
+#     # Check Allele frequency distribution at SNP positions
+#     fig = plt.figure()
+#     i = 1
+#     snps = {}
+#     for sample in SAMPLES:
+#         af = deque()
+#         f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
+#         with open(f, 'r') as fin:
+#             for line in tqdm(fin):
+#                 line = line.strip().split()
+#                 q = snpsdata[(line[0], int(line[1]))][1]
+#                 if int(line[3]) == 0:
+#                     af.append(0)
+#                     continue
+#                 af.append(round(int(line[BASE_DICT[q]])/int(line[3]), 4))
+#         ax = fig.add_subplot(3, 1, i)
+#         ax.hist(af, bins=[v/100 for v in range(101)], range=[0.01, 1])
+#         ax.set_title(sample)
+#         ax.grid(which='both', axis='both')
+#         ax.set_axisbelow(True)
+#         ax.set_xlabel("Allele Frequency")
+#         snps[sample] = af
+#         i += 1
+#     plt.tight_layout()
+#
+#     snps = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt', header=None)
+#     snps.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
+#     for sample in SAMPLES:
+#         f = f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_1_{sample}/{sample}.syri_snps.bamrc'
+#         af = deque()
+#         with open(f, 'r') as fin:
+#             for line in tqdm(fin):
+#                 line = line.strip().split()
+#                 q = snpsdata[(line[0], int(line[1]))][1]
+#                 if int(line[3]) == 0:
+#                     af.append((line[0], int(line[1]), 0, 0))
+#                     continue
+#                 af.append((line[0], int(line[1]), round(int(line[BASE_DICT[q]])/int(line[3]), 4), int(line[3])))
+#         afdict = pd.DataFrame(af)
+#         afdict.columns = [0, 1, f'{sample}_af', f'{sample}_rc']
+#         afdict.drop_duplicates(subset=[0, 1], inplace=True, ignore_index=True)
+#         snps = snps.merge(afdict, how='left', on=[0, 1])
+#         snps.reset_index(drop=True, inplace=True)
+#
+#     snps['type'] = 'transversions'
+#     snps.loc[(snps[3] == 'A') & (snps[4] == 'G'), 'type'] = 'transitions'
+#     snps.loc[(snps[3] == 'C') & (snps[4] == 'T'), 'type'] = 'transitions'
+#     snps.loc[(snps[3] == 'G') & (snps[4] == 'A'), 'type'] = 'transitions'
+#     snps.loc[(snps[3] == 'T') & (snps[4] == 'C'), 'type'] = 'transitions'
+#     snps.to_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/layers.syri_snps.allele_frequency.txt', sep='\t', index=False)
+#
+#     # Remove snps where allele frequency is in 0.35-0.6 for all layers
+#     afdiff = deque()
+#     for row in snps.itertuples(index=False):
+#         afdiff.append(max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]))
+#     snps['afdiff'] = afdiff
+#     snps['mean_rc'] = (snps['l1_rc']+snps['l2_rc']+snps['l3_rc'])/3
+#
+#     filter = deque()
+#     for row in snps.itertuples(index=False):
+#         if 0.35 <= row[5] <= 0.6:
+#             if 0.35 <= row[7] <= 0.6:
+#                 if 0.35 <= row[9] <= 0.6:
+#                     filter.append(False)
+#                     continue
+#         if row[5] <= 0.1:
+#             if row[7] <= 0.1:
+#                 if row[9] <= 0.1:
+#                     filter.append(False)
+#                     continue
+#         if max([row[5], row[7], row[9]]) - min([row[5], row[7], row[9]]) < 0.25:
+#             filter.append(False)
+#             continue
+#         filter.append(True)
+#     snpsfilt = snps.loc[list(filter)].copy()
+#
+#     ### Filter positions with low sequencing
+#     snpsfilt = snpsfilt.loc[(snpsfilt['l1_rc'] >= S_COV['l1'][0]) &
+#                             (snpsfilt['l2_rc'] >= S_COV['l2'][0]) &
+#                             (snpsfilt['l3_rc'] >= S_COV['l3'][0])].copy()
+#
+#
+#     def d(rs):
+#         '''
+#         This function calculates distance of a point from a line. Here, using it to calculate distance of gene conv candidates from the 3D-diagonal
+#
+#         Original answer: https://stackoverflow.com/a/50728570
+#         '''
+#         p = np.array([0, 0, 0])
+#         q = np.array([1, 1, 1])
+#         x = p-q
+#         return np.linalg.norm(
+#             np.outer(np.dot(rs-q, x)/np.dot(x, x), x)+q-rs,
+#             axis=1)
+#     rs = np.array([[row[5], row[7], row[9]] for row in snpsfilt.itertuples(index=False)])
+#     dist_diag = d(rs)
+#
+#     # Select positions for which reads support different haplotypes. Positions for which atleast 5 reads have mismatched haplotypes were selected. Only high quality syri SNP positions are being used
+#
+#     def get_paired_gene_conv(sample):
+#         with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', 'w') as fout:
+#             # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
+#             print(sample)
+#             for i in range(1, 9):
+#                 snps = deque()
+#                 last = -1
+#                 c = f'CUR{i}G'
+#                 with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/snps_{c}.pileup', 'r') as fin:
+#                     # print(sample,c)
+#                     for line in tqdm(fin):
+#                         # print(len(snps))
+#                         line = line.strip().split()
+#                         try:
+#                             while True:
+#                                 if int(line[1]) - snps[0].pos > 1000:
+#                                     snps.popleft()
+#                                 else:
+#                                     break
+#                         except IndexError:
+#                             pass
+#                         if not S_COV[sample][0] < int(line[3]) < S_COV[sample][1]:
+#                             continue
+#                         try:
+#                             _ = snpsdata[(line[0], line[1])]
+#                         except KeyError:
+#                             continue
+#                         snpd = snvdata(line[:6])
+#                         setattr(snpd, "BP", list(map(int, line[6].split(','))))
+#                         reads = line[7].split(',')
+#                         setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
+#                         setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], line[1])][1], snpsdata[(line[0], line[1])][1].lower()}]))
+#                         if len(snps) > 0:
+#                             for s in snps:
+#                                 mismatch = 0          # Different haplotypes
+#                                 rname = deque()
+#                                 if len(snpd.qry_reads) > 0:
+#                                     for r in s.ref_reads:
+#                                         if r in snpd.qry_reads:
+#                                             mismatch += 1
+#                                             rname.append(r)
+#                                 match = len(s.ref_reads) - mismatch
+#                                 mismatch2 = 0
+#                                 if len(snpd.ref_reads) > 0:
+#                                     for r in s.qry_reads:
+#                                         if r in snpd.ref_reads:
+#                                             mismatch2 += 1
+#                                             rname.append(r)
+#                                 match += len(s.qry_reads) - mismatch2
+#                                 if mismatch >= 5:
+#                                     fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch}\t{match}\t{",".join(rname)}\tref_to_qry')
+#                                     fout.write("\n")
+#                                 if mismatch2 >= 5:
+#                                     fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch2}\t{match}\t{",".join(rname)}\tqry_to_ref')
+#                                     fout.write("\n")
+#                         snps.append(snpd)
+#
+#     with Pool(processes=8) as pool:
+#         pool.map(get_paired_gene_conv, SAMPLES)
+#
+#     # Plot the distribution of read counts with matching and mismatching haplotypes
+#     from matplotlib.backends.backend_pdf import PdfPages
+#     with PdfPages(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_conversion_match_mismatch.pdf') as pdf:
+#         for sample in SAMPLES:
+#             with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', 'r') as fin:
+#                 # with open(f'paired_snps_gene_conversions.txt', 'r') as fin:
+#                 mismatch = deque()
+#                 match = deque()
+#                 for line in fin:
+#                     line = line.strip().split()
+#                     mismatch.append(int(line[4]))
+#                     match.append(int(line[5]))
+#             fig = plt.figure()
+#             bins = range(0, np.max(match), 5)
+#             ax1 = plt.subplot2grid((3, 3), (0, 0), rowspan=1, colspan=2)
+#             ax1.set_xlim([0, np.max(match)+5])
+#             # ax1.hist(match, bins=int(np.max(match)/5))
+#             ax1.hist(match, bins=bins)
+#             ax1.set_ylabel('Frequency')
+#             ax2 = plt.subplot2grid((3, 3), (1, 0), rowspan=2, colspan=2)
+#             ax2.set_xlim([0, np.max(match)+5])
+#             ax2.set_ylim([0, np.max(match)+5])
+#             ax2.scatter(match, mismatch, s=1, zorder=1, color='black')
+#             ax2.plot([0, np.max(match)], [0, np.max(match)], zorder=0, label="x1")
+#             ax2.plot([0, np.max(match)], [0, 0.5*np.max(match)], zorder=0, label="x0.5")
+#             ax2.plot([0, np.max(match)], [0, 0.25*np.max(match)], zorder=0, label="x0.25")
+#             ax2.plot([0, np.max(match)], [0, 0.1*np.max(match)], zorder=0, label="x0.1")
+#             ax2.set_xlabel("# Reads with haplotype match")
+#             ax2.set_ylabel("# Reads with haplotype mismatch")
+#             ax2.legend()
+#             ax3 = plt.subplot2grid((3, 3), (1, 2), rowspan=2, colspan=1)
+#             ax3.set_ylim([0, np.max(match)+5])
+#             # ax3.hist(mismatch, orientation = 'horizontal', bins=int(np.max(match)/5))
+#             ax3.hist(mismatch, orientation='horizontal', bins=bins)
+#             ax3.set_xlabel('Frequency')
+#             fig.suptitle(sample, fontsize=12)
+#             plt.tight_layout()
+#             pdf.savefig()
+#             plt.close()
+#
+#     # Get overlap of selected positions and filter positions that are shared by all samples from a sequencing technology
+#     genecovs = {sample: pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/paired_snps_gene_conversions.txt', header=None) for sample in SAMPLES}
+#     genecovpos = {}
+#     for sample in SAMPLES:
+#         df = genecovs[sample]
+#         pos = list(df[0].astype('str') + ':' + df[1].astype('str')) + list(df[2].astype('str') + ':' + df[3].astype('str'))
+#         genecovpos[sample] = set(pos)
+#
+#     a = genecovpos['WT_1'].intersection(genecovpos['WT_19']).intersection(genecovpos['MUT_11_1']).intersection(genecovpos['MUT_15'])
+#     b = genecovpos['wt7'].intersection(genecovpos['wt18']).intersection(genecovpos['mut4']).intersection(genecovpos['mut11_2'])
+#     badpos = a.union(b)
+#
+#     genecov = pd.DataFrame()
+#     for sample in SAMPLES:
+#         df = genecovs[sample].copy()
+#         df['sample'] = sample
+#         df['apos'] = df[0].astype('str') + ':' + df[1].astype('str')
+#         df['bpos'] = df[2].astype('str') + ':' + df[3].astype('str')
+#         genecov = pd.concat([genecov, df])
+#     genecov.reset_index(inplace=True, drop=True)
+#
+#     goodpos = genecov.loc[~((genecov['apos'].isin(badpos)) | (genecov['bpos'].isin(badpos)))]
+#     with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_conversions_positions.txt', 'w') as fout:
+#         allpos = sorted(set(list(goodpos['apos']) + list(goodpos['bpos'])))
+#         for p in allpos:
+#             p = p.split(":")
+#             fout.write(f"{p[0]}:{p[1]}-{p[1]}\n")
+#
+#     # Get pileup data at these positions. run code in leaf_dna_analysis.sh
+#
+#     # For the positions selected above, check if reads supporting the same haplotype switch are present in other samples, if yes then remove the positions
+#
+#     pos_pair = list(zip(list(goodpos['apos']), list(goodpos['bpos'])))
+#     pos_mismatch_cnt = defaultdict(dict)
+#     for sample in SAMPLES:
+#         snvsdata = {}
+#         with open(f"/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.pileup", 'r') as fin:
+#             for line in fin:
+#                 line = line.strip().split()
+#                 if line[3] == '0':
+#                     continue
+#                 setattr(snpd, "BP", list(map(int, line[6].split(','))))
+#                 snpd = snvdata(line[:6])
+#                 reads = line[7].split(',')
+#                 setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
+#                 setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], line[1])][1], snpsdata[(line[0], line[1])][1].lower()}]))
+#                 snvsdata[f"{line[0]}:{line[1]}"] = snpd
+#         for p in pos_pair:
+#             try:
+#                 snpd1 = snvsdata[p[0]]
+#                 snpd2 = snvsdata[p[1]]
+#             except KeyError as e:
+#                 pos_mismatch_cnt[p][sample] = (0, 0, 0)
+#                 continue
+#             mismatch = 0          # Different haplotypes
+#             match = 0
+#             rname = deque()
+#             if len(snpd2.qry_reads) > 0:
+#                 for r in snpd1.ref_reads:
+#                     if r in snpd2.qry_reads:
+#                         mismatch += 1
+#                         rname.append(r)
+#             match = len(snpd1.ref_reads) - mismatch
+#             mismatch2 = 0
+#             if len(snpd2.ref_reads) > 0:
+#                 for r in snpd1.qry_reads:
+#                     if r in snpd2.ref_reads:
+#                         mismatch2 += 1
+#                         rname.append(r)
+#             match += len(snpd1.qry_reads) - mismatch2
+#             # pos_mismatch_cnt[p][sample] = (match, mismatch, mismatch2, rname)
+#             pos_mismatch_cnt[p][sample] = (match, mismatch, mismatch2)
+#
+#     select = deque()
+#     for row in goodpos.itertuples(index=False):
+#         s = 0
+#         for k, v in pos_mismatch_cnt[(row[9], row[10])].items():
+#             if v[1] > 0 or v[2] > 0:
+#                 s += 1
+#         if s == 8:
+#             select.append(False)
+#         else:
+#             select.append(True)
+#
+#     goodpos = goodpos[list(select)]
+#     goodpos.reset_index(inplace=True, drop=True)
+#
+#
+#     fig = plt.figure(figsize=[8, 4])
+#     ax = fig.add_subplot(1, 2, 1)
+#     ax.set_xlim([0, np.max(goodpos[4])])
+#     ax.hist(goodpos[4], bins=range(np.max(goodpos[4])+1))
+#     ax.set_xlabel("# Reads with haplotype switch")
+#     ax.set_ylabel("# Gene conversions")
+#
+#     ax = fig.add_subplot(1, 2, 2)
+#     ax.set_xlim([0, 1])
+#     ax.hist(goodpos[4]/goodpos[5], bins=[i/10 for i in range(11)])
+#     ax.set_xlabel("AF Reads with haplotype switch")
+#     ax.set_ylabel("# Gene conversions")
+#     plt.tight_layout()
+#
+#     # Most candidate gene conversions are selected because of noisy read mapping
+#     # To filter them out:
+#     #       1) Get a bam file with only the reads supporting gene conversions
+#     #       2) Get pileup data and see if the reads have other linked mutations
+#
+#     poslist = set(goodpos['apos']).union(goodpos['bpos'])
+#     for sample in SAMPLES:
+#         readnames = deque()
+#         with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.pileup', 'r') as fin:
+#             for line in fin:
+#                 line = line.strip().split()
+#                 if f'{line[0]}:{line[1]}' in poslist:
+#                     readnames.extend(line[7].split(","))
+#         readnames = list(set(readnames))
+#         with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.txt', 'w') as fout:
+#             for r in readnames:
+#                 fout.write(r +"\t\n")
+#
+#     import pickle
+#     # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'wb') as fout:
+#     #     pickle.dump(goodpos, fout)
+#     with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling//gen_conv_goodpos.pickle", 'rb') as fin:
+#         goodpos = pickle.load(fin)
+#
+#     # Get bam and pileup for the reads in geneconv.reads.txt. code in leaf_dna_analysis.sh
+#     # Filter out positions where the reads that support gene conversions also have other mutations that are not present in background reads
+#     def filter_noisy_reads(sample):
+#         selected = pd.DataFrame()
+#         readdata = defaultdict(dict)
+#         posdata = dict()
+#         with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.pileup', 'r') as fin:
+#             for line in tqdm(fin):
+#                 line = line.strip().split()
+#                 pos = snvdata(line[:6])
+#                 if pos.rc != 0:
+#                     reads = line[7].split(',')
+#                     setattr(pos, "ref_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] in {'.', ','}]))
+#                     setattr(pos, "qry_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] not in {'.', ','}]))
+#                     for i in range(len(reads)):
+#                         readdata[reads[i]][f'{line[0]}:{line[1]}'] = pos.bases[i]
+#                 posdata[f'{line[0]}:{line[1]}'] = pos
+#                 pos.getindelreads(line[4], line[7])
+#
+#         df = goodpos.loc[goodpos['sample'] == sample]
+#         s = deque()
+#         for row in df.itertuples(index=False):
+#             # if row[1] == 18152399:
+#             #     break
+#             bad = False
+#             gcreads = set(row[6].split(','))
+#             gcpos = set([k for r in gcreads for k in readdata[r]])
+#             for p in gcpos:
+#                 # if p in (f"{row[0]}:{row[1]}", f"{row[2]}:{row[3]}"): continue
+#                 gc_m = 0    # Gene conversion reads with reference allele
+#                 gc_mm = 0   # Gene conversion reads with alternate allele
+#                 ref_m = 0
+#                 ref_mm = 0
+#                 gc_ind = 0
+#                 ref_ind = 0
+#                 if sum([1 for r in gcreads if r in posdata[p].qry_reads]) >= 3:
+#                     if p in (f"{row[0]}:{row[1]}", f"{row[2]}:{row[3]}"): continue
+#                     #     print(p)
+#                     for r in posdata[p].ref_reads:
+#                         if r in gcreads:
+#                             gc_m += 1
+#                         else:
+#                             ref_m += 1
+#                     for r in posdata[p].qry_reads:
+#                         if r in gcreads:
+#                             gc_mm += 1
+#                         else:
+#                             ref_mm += 1
+#                     if gc_mm > ref_mm:
+#                         bad = True
+#                         break
+#                 if sum([1 for r in gcreads if r in posdata[p].indelreads]) >= 3:
+#                     for r in posdata[p].indelreads:
+#                         if r in gcreads:
+#                             gc_ind += 1
+#                         else:
+#                             ref_ind += 1
+#                     if gc_ind > ref_ind:
+#                         bad = True
+#                         break
+#             if not bad:
+#                 s.append(row)
+#         return pd.DataFrame(s)
+#
+#     with Pool(processes=2) as pool:
+#         selected = pool.map(filter_noisy_reads, SAMPLES)
+#     selected = pd.concat(selected)
+#
+#     # This filtered gene conversion candidates significantly. The remaining candidates still seem to consist of positions that are a result of mis-mapping
+#     # Sample, candidate GC, filtered GC
+#     # WT_1 48 8
+#     # wt7 32 5
+#     # wt18 20 3
+#     # WT_19 46 5
+#     # mut4 29 4
+#     # MUT_11_1 54 5
+#     # mut11_2 30 4
+#     # MUT_15 37 5
+#     ## When using all SNP_pos
+#     # WT_1 777 202
+#     # wt7 316 42
+#     # wt18 235 34
+#     # WT_19 1103 267
+#     # mut4 224 33
+#     # MUT_11_1 1164 339
+#     # mut11_2 241 30
+#     # MUT_15 685 169
+#     # Next idea is to align the reads to the ORA reference genome and check if they still show same haplotype switch. Assumption is that the most of the mis-mapping reads would be gone when aligning with the other haplotype, whereas true reads supporting true gene-coversion would stay.
+#     # Code to get reads and align them in leaf_dna_analysis.sh
+#
+#     # Read the corresponding positions of CUR SNP in the ORA assembly
+#     selected_snp_pos = set(list(selected.apos) + list(selected.bpos))
+#     snp_cur_ora_map = {}
+#     with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.out", 'r') as fin:
+#         for line in tqdm(fin):
+#             line = line.strip().split()
+#             if line[10] != 'SNP': continue
+#             if f"{line[0]}:{line[1]}" in selected_snp_pos:
+#                 snp_cur_ora_map[f"{line[0]}:{line[1]}"] = f"{line[5]}:{line[6]}"
+#
+#     sample_concordance = {}
+#     for sample in SAMPLES:
+#         readdata = defaultdict(dict)
+#         posdata = dict()
+#         with open(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/{sample}/geneconv.reads.ora.pileup', 'r') as fin:
+#             for line in fin:
+#                 line = line.strip().split()
+#                 pos = snvdata(line[:6])
+#                 if pos.rc != 0:
+#                     reads = line[7].split(',')
+#                     setattr(pos, "ref_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] in {'.', ','}]))
+#                     setattr(pos, "qry_reads", set([reads[i] for i in range(len(reads)) if pos.bases[i] not in {'.', ','}]))
+#                     for i in range(len(reads)):
+#                         readdata[reads[i]][f'{line[0]}:{line[1]}'] = pos.bases[i]
+#                 posdata[f'{line[0]}:{line[1]}'] = pos
+#                 pos.getindelreads(line[4], line[7])
+#
+#         concordance = deque()
+#         for row in selected.loc[selected['sample'] == sample].itertuples(index=False):
+#             ora1 = snp_cur_ora_map[row.apos]
+#             ora2 = snp_cur_ora_map[row.bpos]
+#             c = deque()
+#             if row[7] == 'ref_to_qry':
+#                 for r in row[6].split(","):
+#                     try:
+#                         if readdata[r][ora1] not in [',', '.'] and readdata[r][ora2] in [',', '.']:
+#                             c.append(True)
+#                         else:
+#                             c.append(False)
+#                     except KeyError:
+#                         c.append(False)
+#             elif row[7] == 'qry_to_ref':
+#                 for r in row[6].split(","):
+#                     try:
+#                         if readdata[r][ora1] in [',', '.'] and readdata[r][ora2] not in [',', '.']:
+#                             c.append(True)
+#                         else:
+#                             c.append(False)
+#                     except KeyError:
+#                         c.append(False)
+#             concordance.append(sum(c))
+#         sample_concordance[sample] = concordance
+#
+#     for sample in SAMPLES:
+#         print(sample, Counter(sample_concordance[sample]))
+#     return
+# #END
+# layer_specific_gene_conversion()
+# </editor-fold>
 
 
 def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
@@ -2121,21 +2119,12 @@ def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
     from matplotlib import pyplot as plt
     import sys
 
-    from hometools.hometools import density_scatter
+    from hometools.plot import density_scatter
     from functools import partial
     from multiprocessing import Pool
 
-    # scov = {'l1': (40, 240), 'l2': (20, 180), 'l3': (30, 240)}
     samples = ('l1', 'l2', 'l3')
     base_dict = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-    # cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
-    # bname = 'wt_1'
-    # snpsdata = {}
-    # with open("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt", 'r') as fin: # Test with lower read depth
-    #     for line in fin:
-    #         line = line.strip().split()
-    #         snpsdata[(line[0], int(line[2]))] = (line[3], line[4])
-
     syri_snp_list, syri_indel_list = getsyrivarlist()
     ## write syri_indel_list to a regions file for input to bam-readcount
     with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.indels.txt', 'w') as fout:
@@ -2143,32 +2132,6 @@ def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
             fout.write(f'{k[0]}\t{k[1]}\t{k[1]}\t{v[0]}{v[1]}\n')
 
     # Get read-counts at SNP positions. code in layer_specific_dna_analysis_all_samples.sh
-
-    # Check Allele frequency distribution at SNP positions
-    # fig = plt.figure(figsize=[7, 11])
-    # i = 1
-    # snps = {}
-    # for sample in samples:
-    #     af = deque()
-    #     f = f'{cwd}/{bname}/{bname}_{sample}/{sample}.syri_snps.bamrc'
-    #     with open(f, 'r') as fin:
-    #         for line in tqdm(fin):
-    #             line = line.strip().split()
-    #             q = snpsdata[(line[0], int(line[1]))][1]
-    #             if int(line[3]) == 0:
-    #                 af.append(0)
-    #                 continue
-    #             af.append(round(int(line[base_dict[q]])/int(line[3]), 4))
-    #     ax = fig.add_subplot(5, 1, i)
-    #     ax.hist(af, bins=[v/100 for v in range(101)], range=[0.01, 1])
-    #     ax.set_title(sample)
-    #     ax.minorticks_on()
-    #     ax.grid(which='both', axis='both')
-    #     ax.set_axisbelow(True)
-    #     ax.set_xlabel("Allele Frequency")
-    #     snps[sample] = af
-    #     i += 1
-    # plt.tight_layout()
 
     # Reads allele frequency at syri snps and indel positions
     snps = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/syri.snps.txt', header=None)
@@ -2232,17 +2195,18 @@ def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
     shvfilt.to_csv(f'{cwd}/{bname}/filtered_gene_conversion_shv.txt', sep='\t', header=True, index=False)
 
     # # plot unfiltered AF distribution
+    # fig = plt.figure()
     # ax = fig.add_subplot(5, 2, 7)
-    # x = np.nan_to_num(np.array(snps.l1_af))
-    # y = np.nan_to_num(np.array(snps.l2_af))
+    # x = np.nan_to_num(np.array(shv.l1_af))
+    # y = np.nan_to_num(np.array(shv.l2_af))
     # ax = density_scatter(x, y, ax=ax, fig=fig, s=0.2)
     # ax.set_title('Raw SNPs AF')
     # ax.set_xlabel('L1 AF')
     # ax.set_ylabel('L2 AF')
     # # plot unfiltered RC distribution
     # ax = fig.add_subplot(5, 2, 8)
-    # x = np.nan_to_num(np.array(snps.l1_rc))
-    # y = np.nan_to_num(np.array(snps.l2_rc))
+    # x = np.nan_to_num(np.array(shv.l1_rc))
+    # y = np.nan_to_num(np.array(shv.l2_rc))
     # ax = density_scatter(x, y, ax=ax, fig=fig, s=0.2)
     # ax.set_title('Raw SNPs RC')
     # ax.set_xlabel('L1 RC')
@@ -2273,48 +2237,48 @@ def layer_specific_gene_conversion_all_samples(cwd, bname, scov):
     # fig.suptitle(bname)
     # plt.savefig(f'{cwd}/{bname}_layer_af_distributions.png', dpi=100)
 
+    # TO BE RUN ONLY ONCE
     # with Pool(processes=3) as pool:
-    #     # pool.map(partial(get_paired_gene_conv, bname=bname, snpsdata=snpsdata), ['l1', 'l2', 'l3'])
     #     pool.map(partial(get_paired_gene_conv_shv, cwd=cwd, scov=scov, bname=bname, snpsdata=syri_snp_list, indelsdata=syri_indel_list), ['l1', 'l2', 'l3'])
 
-    # Plot the distribution of read counts with matching and mismatching haplotypes
-    from matplotlib.backends.backend_pdf import PdfPages
-    with PdfPages(f'{cwd}/{bname}/gene_conversion_match_mismatch.pdf') as pdf:
-        for sample in samples:
-            with open(f'{cwd}/{bname}/{sample}_paired_shv_gene_conversions.txt', 'r') as fin:
-                mismatch = deque()
-                match = deque()
-                for line in fin:
-                    line = line.strip().split()
-                    mismatch.append(int(line[4]))
-                    match.append(int(line[5]))
-            fig = plt.figure()
-            bins = range(0, np.max(match), 5)
-            ax1 = plt.subplot2grid((3, 3), (0, 0), rowspan=1, colspan=2)
-            ax1.set_xlim([0, np.max(match)+5])
-            # ax1.hist(match, bins=int(np.max(match)/5))
-            ax1.hist(match, bins=bins)
-            ax1.set_ylabel('Frequency')
-            ax2 = plt.subplot2grid((3, 3), (1, 0), rowspan=2, colspan=2)
-            ax2.set_xlim([0, np.max(match)+5])
-            ax2.set_ylim([0, np.max(match)+5])
-            ax2.scatter(match, mismatch, s=1, zorder=1, color='black')
-            ax2.plot([0, np.max(match)], [0, np.max(match)], zorder=2, label="x1")
-            ax2.plot([0, np.max(match)], [0, 0.5*np.max(match)], zorder=2, label="x0.5")
-            ax2.plot([0, np.max(match)], [0, 0.25*np.max(match)], zorder=2, label="x0.25")
-            ax2.plot([0, np.max(match)], [0, 0.1*np.max(match)], zorder=2, label="x0.1")
-            ax2.set_xlabel("# Reads with haplotype match")
-            ax2.set_ylabel("# Reads with haplotype mismatch")
-            ax2.legend()
-            ax3 = plt.subplot2grid((3, 3), (1, 2), rowspan=2, colspan=1)
-            ax3.set_ylim([0, np.max(match)+5])
-            # ax3.hist(mismatch, orientation = 'horizontal', bins=int(np.max(match)/5))
-            ax3.hist(mismatch, orientation='horizontal', bins=bins)
-            ax3.set_xlabel('Frequency')
-            fig.suptitle(sample, fontsize=12)
-            plt.tight_layout()
-            pdf.savefig()
-            plt.close()
+    # # Plot the distribution of read counts with matching and mismatching haplotypes
+    # from matplotlib.backends.backend_pdf import PdfPages
+    # with PdfPages(f'{cwd}/{bname}/gene_conversion_match_mismatch.pdf') as pdf:
+    #     for sample in samples:
+    #         with open(f'{cwd}/{bname}/{sample}_paired_shv_gene_conversions.txt', 'r') as fin:
+    #             mismatch = deque()
+    #             match = deque()
+    #             for line in fin:
+    #                 line = line.strip().split()
+    #                 mismatch.append(int(line[4]))
+    #                 match.append(int(line[5]))
+    #         fig = plt.figure()
+    #         bins = range(0, np.max(match), 5)
+    #         ax1 = plt.subplot2grid((3, 3), (0, 0), rowspan=1, colspan=2)
+    #         ax1.set_xlim([0, np.max(match)+5])
+    #         # ax1.hist(match, bins=int(np.max(match)/5))
+    #         ax1.hist(match, bins=bins)
+    #         ax1.set_ylabel('Frequency')
+    #         ax2 = plt.subplot2grid((3, 3), (1, 0), rowspan=2, colspan=2)
+    #         ax2.set_xlim([0, np.max(match)+5])
+    #         ax2.set_ylim([0, np.max(match)+5])
+    #         ax2.scatter(match, mismatch, s=1, zorder=1, color='black')
+    #         ax2.plot([0, np.max(match)], [0, np.max(match)], zorder=2, label="x1")
+    #         ax2.plot([0, np.max(match)], [0, 0.5*np.max(match)], zorder=2, label="x0.5")
+    #         ax2.plot([0, np.max(match)], [0, 0.25*np.max(match)], zorder=2, label="x0.25")
+    #         ax2.plot([0, np.max(match)], [0, 0.1*np.max(match)], zorder=2, label="x0.1")
+    #         ax2.set_xlabel("# Reads with haplotype match")
+    #         ax2.set_ylabel("# Reads with haplotype mismatch")
+    #         ax2.legend()
+    #         ax3 = plt.subplot2grid((3, 3), (1, 2), rowspan=2, colspan=1)
+    #         ax3.set_ylim([0, np.max(match)+5])
+    #         # ax3.hist(mismatch, orientation = 'horizontal', bins=int(np.max(match)/5))
+    #         ax3.hist(mismatch, orientation='horizontal', bins=bins)
+    #         ax3.set_xlabel('Frequency')
+    #         fig.suptitle(sample, fontsize=12)
+    #         plt.tight_layout()
+    #         pdf.savefig()
+    #         plt.close()
 
     # Get overlap of selected positions and filter positions that are shared by all samples from a sequencing technology
     genecovs = {sample: pd.read_table(f'{cwd}/{bname}/{sample}_paired_shv_gene_conversions.txt', header=None) for sample in samples}
@@ -2805,6 +2769,7 @@ def get_te_insertions_stats():
     return
 # END
 
+
 ############################# Sub-functions ####################################
 
 def getsyrivarlist():
@@ -2884,69 +2849,71 @@ def readfilteredbamreadcount(filename, scov_min, scov_max, noise_pos, syri_snp_l
 # END
 
 
-def get_paired_gene_conv(sample, bname, snpsdata):
-    '''
-    Reads the pileup data for a sample and selects SNP positions where the two
-    SNPs have reads with mismatching haplotypes
-    '''
-    min_mismatch = 10
-    with open(f'{cwd}/{bname}/{sample}_paired_snps_gene_conversions.txt', 'w') as fout:
-        # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
-        print(sample)
-        for i in range(1, 9):
-            snps = deque()
-            last = -1
-            c = f'CUR{i}G'
-            with open(f'{cwd}/{bname}/{bname}_{sample}/snps_{c}.pileup', 'r') as fin:
-                # print(sample,c)
-                for line in tqdm(fin):
-                    # print(len(snps))
-                    line = line.strip().split()
-                    try:
-                        while True:
-                            if int(line[1]) - snps[0].pos > 1000:
-                                snps.popleft()
-                            else:
-                                break
-                    except IndexError:
-                        pass
-                    # if not scov[sample][0] < int(line[3]) < scov[sample][1]:
-                    if not scov[sample][0] < int(line[3]):
-                        continue
-                    try:
-                        _ = snpsdata[line[0], int(line[1])]
-                    except KeyError:
-                        continue
-                    snpd = snvdata(line[:6])
-                    setattr(snpd, "BP", list(map(int, line[6].split(','))))
-                    reads = line[7].split(',')
-                    setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
-                    setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], int(line[1]))][1], snpsdata[(line[0], int(line[1]))][1].lower()}]))
-                    if len(snps) > 0:
-                        for s in snps:
-                            mismatch = 0          # Different haplotypes
-                            rname = deque()
-                            if len(snpd.qry_reads) > 0:
-                                for r in s.ref_reads:
-                                    if r in snpd.qry_reads:
-                                        mismatch += 1
-                                        rname.append(r)
-                            match = len(s.ref_reads) - mismatch
-                            mismatch2 = 0
-                            if len(snpd.ref_reads) > 0:
-                                for r in s.qry_reads:
-                                    if r in snpd.ref_reads:
-                                        mismatch2 += 1
-                                        rname.append(r)
-                            match += len(s.qry_reads) - mismatch2
-                            if mismatch >= min_mismatch:
-                                fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch}\t{match}\t{",".join(rname)}\tref_to_qry')
-                                fout.write("\n")
-                            if mismatch2 >= min_mismatch:
-                                fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch2}\t{match}\t{",".join(rname)}\tqry_to_ref')
-                                fout.write("\n")
-                    snps.append(snpd)
-# END
+# <editor-fold desc="OLD OBSOLETE FUNCTION FOR FINDING GENE CONVERSIONS BASED ON HAPLOTYPE SWITCH IN A READ">
+# def get_paired_gene_conv(sample, bname, snpsdata):
+#     '''
+#     Reads the pileup data for a sample and selects SNP positions where the two
+#     SNPs have reads with mismatching haplotypes
+#     '''
+#     min_mismatch = 10
+#     with open(f'{cwd}/{bname}/{sample}_paired_snps_gene_conversions.txt', 'w') as fout:
+#         # with open(f'paired_snps_gene_conversions.txt', 'w') as fout:
+#         print(sample)
+#         for i in range(1, 9):
+#             snps = deque()
+#             last = -1
+#             c = f'CUR{i}G'
+#             with open(f'{cwd}/{bname}/{bname}_{sample}/snps_{c}.pileup', 'r') as fin:
+#                 # print(sample,c)
+#                 for line in tqdm(fin):
+#                     # print(len(snps))
+#                     line = line.strip().split()
+#                     try:
+#                         while True:
+#                             if int(line[1]) - snps[0].pos > 1000:
+#                                 snps.popleft()
+#                             else:
+#                                 break
+#                     except IndexError:
+#                         pass
+#                     # if not scov[sample][0] < int(line[3]) < scov[sample][1]:
+#                     if not scov[sample][0] < int(line[3]):
+#                         continue
+#                     try:
+#                         _ = snpsdata[line[0], int(line[1])]
+#                     except KeyError:
+#                         continue
+#                     snpd = snvdata(line[:6])
+#                     setattr(snpd, "BP", list(map(int, line[6].split(','))))
+#                     reads = line[7].split(',')
+#                     setattr(snpd, "ref_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {'.', ','}]))
+#                     setattr(snpd, "qry_reads", set([reads[i] for i in range(len(reads)) if snpd.bases[i] in {snpsdata[(line[0], int(line[1]))][1], snpsdata[(line[0], int(line[1]))][1].lower()}]))
+#                     if len(snps) > 0:
+#                         for s in snps:
+#                             mismatch = 0          # Different haplotypes
+#                             rname = deque()
+#                             if len(snpd.qry_reads) > 0:
+#                                 for r in s.ref_reads:
+#                                     if r in snpd.qry_reads:
+#                                         mismatch += 1
+#                                         rname.append(r)
+#                             match = len(s.ref_reads) - mismatch
+#                             mismatch2 = 0
+#                             if len(snpd.ref_reads) > 0:
+#                                 for r in s.qry_reads:
+#                                     if r in snpd.ref_reads:
+#                                         mismatch2 += 1
+#                                         rname.append(r)
+#                             match += len(s.qry_reads) - mismatch2
+#                             if mismatch >= min_mismatch:
+#                                 fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch}\t{match}\t{",".join(rname)}\tref_to_qry')
+#                                 fout.write("\n")
+#                             if mismatch2 >= min_mismatch:
+#                                 fout.write(f'{s.chr}\t{s.pos}\t{snpd.chr}\t{snpd.pos}\t{mismatch2}\t{match}\t{",".join(rname)}\tqry_to_ref')
+#                                 fout.write("\n")
+#                     snps.append(snpd)
+# # END
+# </editor-fold>
 
 
 def get_paired_gene_conv_shv(sample, cwd, scov, bname, snpsdata, indelsdata):
