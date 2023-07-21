@@ -188,3 +188,41 @@ for sample in SAMPLES:
         fout.write("\n".join(bcslist4[sample]))
 
 
+def splitbambybc():
+    """
+        Read the BCs for each cluster and splits the raw cellranger output BAM file
+        to get cluster specific bam file
+    """
+    # <editor-fold desc="Define import">
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Define defaults and constants">
+    crout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/'
+
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/'
+    clstfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bcs_clstr_id.txt'
+    sdict = {'WT_1': 'wt1',
+             'WT_19': 'wt19',
+             'MUT_11_1': 'mut_11_1',
+             'MUT_15': 'mut_15'}
+    # </editor-fold>
+
+    # <editor-fold desc="Split the cellranger output bam file and get read count at SM positions">
+    for i, (k, v) in enumerate(sdict.items()):
+        # Read BCs
+        bcclt = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bcs_clstr_id.txt', delimiter=' ')
+        bcclt.columns = ['clst', 'bc']
+        for grp in bcclt.groupby('clst'):
+            # df = grp[1]['bc'].apply(revcomp)
+            df = grp[1]['bc']
+            df = df.astype(str) + '-1'
+            df.to_csv(f'{cwd}/{k}/clstrs_{grp[0]}_bcs.txt', header=False, index=False)
+            # Get read count at SM position: SH/scrna_analysis.sh:118
+    # </editor-fold>
+
+
+
+    return
+# END
