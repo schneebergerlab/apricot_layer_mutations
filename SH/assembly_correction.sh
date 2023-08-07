@@ -1066,25 +1066,3 @@ done
 samtools merge -@45 -O BAM cur.genome.v1.hap_reads.bam cur.genome.v1.hap_cur.bam cur.genome.v1.hap_ora.bam cur.genome.v1.hap_unknown.bam
 samtools index cur.genome.v1.hap_reads.bam
 
-
-
-################################################################################
-###################### Genetic Mapp based scaffolding  #########################
-################################################################################
-
-# NOT USED IN FINAL ANALYSIS
-# Using reference-based assembly methods
-
-# Check ntjoin
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/geneticmap_scaffolding/ntjoin/
-sed -i '/^>/ s/ .*//' cur.v3.racon_polished3.fasta
-/srv/netscratch/dep_mercier/grp_schneeberger/private/manish/toolbox/Parser/FASTA/fasta_oneliner.pl currot.v1.1.fasta > currot.v1.1.oneline.fasta
-/srv/netscratch/dep_mercier/grp_schneeberger/private/manish/toolbox/Parser/FASTA/fasta_oneliner.pl cur.v3.racon_polished3.fasta > cur.v3.racon_polished3.oneline.fasta
-ntJoin assemble target=cur.v3.racon_polished3.oneline.fasta target_weight=1 references='currot.v1.1.oneline.fasta' reference_weights='2' k=32 w=500 t=5 agp=True no_cut=True
-## ntJoin didnt result in good results
-
-# Check ragtag
-cd /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assembly_polishing_scaffolding/geneticmap_scaffolding/ratag/
-/srv/netscratch/dep_mercier/grp_schneeberger/software/RagTag-1.0.2/ragtag.py scaffold
-
-
