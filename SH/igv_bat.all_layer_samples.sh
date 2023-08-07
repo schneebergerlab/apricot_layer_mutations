@@ -14,7 +14,7 @@ load /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdn
 load /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_11_2/mut_11_2_l2/mut_11_2_l2.deduped.RG.withSM.bam
 load /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/mut_15_l1/mut_15_l1.deduped.RG.withSM.bam
 load /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/mut_15/mut_15_l2/mut_15_l2.deduped.RG.withSM.bam
-#colorBy READ_STRAND
+colorBy READ_STRAND
 setTrackHeight 25
 setDataRange
 squish
