@@ -180,6 +180,124 @@ def read_coverage(depthfin, fout, mm2_good, y_cut=10):
         plt.close()
 
 
+def assembly_plots():
+    """
+        Collection of functions for anlysing and visualising assembly quality
+    """
+    # <editor-fold desc="Define imports">
+    from itertools import permutations
+    from collections import deque, Counter, defaultdict, OrderedDict
+    import subprocess
+    import numpy as np
+    import pandas as pd
+    from matplotlib import pyplot as plt
+    import seaborn as sns
+    import igraph as ig
+    import pybedtools as bt
+    from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
+    from scipy.spatial.distance import squareform
+    from scipy.sparse.csgraph import minimum_spanning_tree
+    from scipy.sparse import triu, csr_matrix
+    from hometools.plot import plot2emf, cleanax
+    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges
+    from multiprocessing import Pool
+    import json
+    from itertools import product
+    # </editor-fold>
+
+    # <editor-fold desc="Define default values">
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/hifi_assembly/assemblyplots/'
+    curfa = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
+    orafa = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/ora.genome.v1.fasta'
+    curlen = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.chrlen.txt'
+    oralen = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/ora.genome.chrlen.txt'
+    cur5tel = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/telomer.5end.kmer.cur.v1.bed'
+    cur3tel = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/telomer.3end.kmer.cur.v1.bed'
+    ora5tel = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/telomer.5end.kmer.ora.v1.bed'
+    ora3tel = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/telomer.3end.kmer.ora.v1.bed'
+    curgff = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.protein_coding.3utr.gff3'
+    oragff = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/ora/EVM_PASA/pasa_on_mancur/ora.pasa_out.sort.protein_coding.3utr.gff3'
+
+    SMALL_SIZE = 8
+    MEDIUM_SIZE = 10
+    BIGGER_SIZE = 12
+    plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+    plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+    plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+    # </editor-fold>
+
+    # <editor-fold desc="Plot positions of telomeric repeats on the chromosomes>
+    def gethist(cl, ct, maxx, n, t):
+        fig = plt.figure(figsize= (4, 7), dpi=300)
+        for i in range(0, 8):
+            ax = fig.add_subplot(8, 1, i+1)
+            ax.spines[:].set_visible(False)
+            ax.set_xlim([0, maxx])
+            c = cl.iloc[i, 0]
+            l = cl.iloc[i, 1]
+            ax.hlines(0, 0, l, linewidth=5)
+            bins = np.arange(0, l, 200000)
+            h = np.histogram(ct.loc[ct[0] == c, 1], bins=bins)
+            ys = h[0]
+            xs = bins[1:] - 100000
+            ax.bar(x=xs,height=ys, width=180000)
+            ax.set_xlabel(c)
+        fig.supylabel(f'count')
+        fig.suptitle(t)
+        plt.tight_layout()
+        plt.savefig(n)
+        plt.close()
+        return
+    # END
+
+    # get plot for currot
+    clen = pd.read_table(curlen, header=None).iloc[:8]
+    maxx = max(clen[1])
+    # 5' telomers
+    tel5 = pd.read_table(cur5tel, header=None)
+    gethist(clen, tel5, maxx, f'{cwd}/cur.telo.5end.png', "Currot 5' telo (3x) sequence")
+    # 3' telomers
+    tel3 = pd.read_table(cur3tel, header=None)
+    gethist(clen, tel3, maxx, f'{cwd}/cur.telo.3end.png', "Currot 3' telo (3x) sequence")
+
+    # get plot for orangered
+    olen = pd.read_table(oralen, header=None).iloc[:8]
+    maxx = max(olen[1])
+    # 5' telomers
+    tel5 = pd.read_table(ora5tel, header=None)
+    gethist(olen, tel5, maxx, f'{cwd}/ora.telo.5end.png', "Orangered 5' telo (3x) sequence")
+    # 3' telomers
+    tel3 = pd.read_table(ora3tel, header=None)
+    gethist(olen, tel3, maxx, f'{cwd}/ora.telo.3end.png', "Orangered 3' telo (3x) sequence")
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Plot gene distribution on the chromosomes">
+    # Get currot gene distribution
+    clen = pd.read_table(curlen, header=None).iloc[:8]
+    maxx = max(clen[1])
+    cgff = pd.read_table(curgff, header=None)
+    cgff = cgff.loc[cgff[2] == 'gene', [0, 3]]
+    cgff.columns = [0, 1]
+    gethist(clen, cgff, maxx, f'{cwd}/currot.gene.distribution.png', "Currot gene distribution")
+    # Get gene positions
+    olen = pd.read_table(oralen, header=None).iloc[:8]
+    maxx = max(olen[1])
+    ogff = pd.read_table(oragff, header=None)
+    ogff = ogff.loc[ogff[2] == 'gene', [0, 3]]
+    ogff.columns = [0, 1]
+    gethist(olen, ogff, maxx, f'{cwd}/orangered.gene.distribution.png', "Orangered gene distribution")
+
+    # </editor-fold>
+    return
+# END
+
+
 def mutation_spectra():
     """
     Plots describing mutations spectra of somatic mutations identified from the
@@ -200,11 +318,13 @@ def mutation_spectra():
     from scipy.spatial.distance import squareform
     from scipy.sparse.csgraph import minimum_spanning_tree
     from scipy.sparse import triu, csr_matrix
+    from scipy.stats import ttest_rel
     from hometools.plot import plot2emf, cleanax
-    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges
+    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges, p_adjust
     from multiprocessing import Pool
     import json
     from itertools import product
+    from statsmodels.stats.multitest import multipletests
     # </editor-fold>
 
 
@@ -536,13 +656,10 @@ def mutation_spectra():
 
     # <editor-fold desc="Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
     snppos = datafilter.loc[datafilter.type == 'SNP'].drop_duplicates(subset='chromosome position alt_allele'.split())
-    # smvars = allsmmat.reset_index()
-    # smvars['type'] = ['SNP' if i[0] not in '+-' else 'indel' for i in smvars['alt_allele']]
-    # snppos = smvars.loc[smvars.type == 'SNP'].copy()   # 1 based positions
 
-    # Count the total number of
+    # Count the total number of k-mers
     threemers = sorted(canonical_kmers(3))
-    args_list = [Namespace(fasta=Namespace(name=refcur), kmer=kmer, canonical=True) for kmer in threemers]
+    args_list = [Namespace(fasta=Namespace(name=refcur), kmer=kmer, canonical=True, loc=False) for kmer in threemers]
     with Pool(processes=4) as pool:
         kmercnts = pool.map(cntkmer, args_list)
     kmercnts = dict(zip(threemers, kmercnts))
@@ -552,6 +669,36 @@ def mutation_spectra():
     for p in snppos.itertuples(index=False):
         trip.append(refseq[p.chromosome][p.position-2: p.position+1])
     snppos['trip_reg'] = trip
+
+    # Testing for layers separately didn't return in any statistically significant 3mers. Reason: Too few SNVs
+    # So, checking the counts for the combined table
+    stats = deque()
+    s = snppos.copy()
+    snpcnt = s.shape[0]
+    for k in kmercnts:
+        cnt = s.loc[s.trip_reg == k].shape[0] + s.loc[s.trip_reg == revcomp(k)].shape[0]
+        stats.append((l, k, *fisher_exact(np.array([[cnt, snpcnt], [kmercnts[k], 233151596]]), alternative='greater')))
+    stats = pd.DataFrame(stats)
+    stats.columns = 'Layer kmer odds pvalue'.split()
+    stats['p.val.adjusted'] = multipletests(stats.pvalue.to_numpy(), method='fdr_bh')[1]
+    print(stats.loc[stats['p.val.adjusted'] < 0.05])
+    # This shows that ACG, AGG, CGA are significantly higher
+
+    # Compare L1 vs L2 distribution
+    stats = deque()
+    for l in 'L1 L2'.split():
+        s = snppos.loc[snppos.Layer == l].copy()
+        snpcnt = s.shape[0]
+        for k in kmercnts:
+            cnt = (s.loc[s.trip_reg == k].shape[0] + s.loc[s.trip_reg == revcomp(k)].shape[0])/snpcnt
+            stats.append((l, k, *fisher_exact(np.array([[cnt, snpcnt], [kmercnts[k], 233151596]]), alternative='greater')))
+        stats = pd.DataFrame(stats)
+        stats.columns = 'Layer kmer odds pvalue'.split()
+        stats['p.val.adjusted'] = multipletests(stats.pvalue.to_numpy(), method='fdr_bh')[1]
+        print(stats.loc[stats['p.val.adjusted'] < 0.05])
+    # This shows that ACG, AGG, CGA are significantly higher
+
+    #TODO : update the plot to include statistical significance information
     tripcntabs = defaultdict()
     tripcntnorm = defaultdict()
     for l in 'L1 L2 shared'.split():
@@ -626,6 +773,10 @@ def mutation_spectra():
     plt.tight_layout(pad=0.1)
     plt.savefig(f'{cwd}/sm_counts_in_branches.png')
     plt.close()
+    branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby('Layer')}
+    garb1 = [branchscnt['L1'][b] - 21 for b in branches]
+    garb2 = [branchscnt['L2'][b] - 1 for b in branches]
+    ttest_rel(garb1, garb2, alternative='greater')
     # </editor-fold>
 
 
@@ -669,7 +820,7 @@ def mutation_spectra():
     pos = datafilter.copy()
     pos['start'] = pos.position - 1
     pos['end'] = pos.position
-    pos = pos[['chromosome', 'start', 'end', 'Layer', 'type']].copy()
+    pos = pos[['chromosome', 'start', 'end', 'alt_allele', 'Layer', 'type']].copy()
     pos.drop_duplicates(inplace=True)
     posbt = bt.BedTool.from_dataframe(pos)
     genepos = posbt.intersect(genes, u=True).to_dataframe()
@@ -687,13 +838,13 @@ def mutation_spectra():
     tepos['anno'] = 'te'
 
     anno = np.array(['intergenic']*pos.shape[0])
-    g = pos.merge(tepos, how='left', on=['chromosome', 'start', 'end', 'Layer', 'type'])
+    g = pos.merge(tepos, how='left', on=['chromosome', 'start', 'end', 'alt_allele', 'Layer', 'type'])
     anno[g.anno == 'te'] = 'te'
-    g = pos.merge(intronpos, how='left', on=['chromosome', 'start', 'end', 'Layer', 'type'])
+    g = pos.merge(intronpos, how='left', on=['chromosome', 'start', 'end', 'alt_allele', 'Layer', 'type'])
     anno[g.anno == 'intron'] = 'intron'
-    g = pos.merge(utrpos, how='left', on=['chromosome', 'start', 'end', 'Layer', 'type'])
+    g = pos.merge(utrpos, how='left', on=['chromosome', 'start', 'end', 'alt_allele', 'Layer', 'type'])
     anno[g.anno == 'utr'] = 'utr'
-    g = pos.merge(cdspos, how='left', on=['chromosome', 'start', 'end', 'Layer', 'type'])
+    g = pos.merge(cdspos, how='left', on=['chromosome', 'start', 'end', 'alt_allele', 'Layer', 'type'])
     anno[g.anno == 'cds'] = 'cds'
     pos['anno'] = anno
 
@@ -703,13 +854,26 @@ def mutation_spectra():
     regsize['intron'] = sum([int(b[2])-int(b[1])+1 for b in intron.sort().merge()])
     regsize['te'] = sum([int(b[2])-int(b[1])+1 for b in te_rep.sort().merge()])
     regsize['intergenic'] = 233151598 - sum(regsize.values())
+    genomesize = sum([v for v in regsize.values()])
+    annotypes = 'cds utr intron te intergenic'.split()
+    stats = deque()
+    for l in 'L1 L2'.split():
+        # poscnt = pos.loc[(pos.Layer == l) & (~(pos.alt_allele.isin('-AT -TA +AT +TA'.split())))].anno.value_counts()
+        poscnt = pos.loc[pos.Layer == l].anno.value_counts()
+        for a in annotypes:
+            stats.append((l, a, poscnt[a], regsize[a], *fisher_exact(np.array([[poscnt[a], regsize[a]], [sum(poscnt), genomesize]]),
+            alternative='less')))
+    stats = pd.DataFrame(stats)
+    stats.columns = 'Layer anno count length odds pvalue'.split()
+    stats['padjusted'] = multipletests(stats.pvalue, method='fdr_bh')[1]
+    print(stats.loc[stats.padjusted < 0.05])
 
 
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
     bar_width = 0.3
     fig = plt.figure(figsize=[4, 6], dpi=300)
     ax = fig.add_subplot(3, 1, 1)
-
+    #TODO: make two figures. 1) Main figure showing the normalised values. 2) Unnormalised counts and percentages of SMs
     for i, l in enumerate('L1 L2 shared'.split()):
         y_bottom = [0]*5
         for t in 'SNP Indel'.split():
@@ -871,6 +1035,17 @@ def mutation_spectra():
 
 
 
+    # </editor-fold>
+
+
+    # <editor-fold desc="Check whether the SMs present in all branches are homozygous>
+    ## Check how many of these positions are covered by syri annotations
+    pos = [grp[0] for grp in datafilter.loc[datafilter.Layer == 'L1'].groupby('chromosome position alt_allele'.split()) if grp[1].shape[0] == 7]
+    annos=['SYN', 'SYNAL', 'INV', 'INVAL', 'TRANS', 'TRANSAL', 'INVTR',  'INVTRAL', 'DUP', 'DUPAL', 'INVDP', 'INVDPAL']
+    syridf = readsyriout(syriout)
+    for p in pos:
+        print(p)
+        print(syridf.loc[(syridf[0] == p[0]) & (syridf[1] < p[1]) & (p[1] < syridf[2])])
     # </editor-fold>
 
 
@@ -1065,7 +1240,6 @@ def merge_all_SM():
     # <editor-fold desc="Get cleaned allsmmat file">
     layerfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt'
     leaffin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt"
-    # allfin = "/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_samples_candidate_high_cov_sms3.only_selected.csv"
 
     # Read layer SM
     layersm = pd.read_table(layerfin)
@@ -1080,12 +1254,6 @@ def merge_all_SM():
     leafsm['type'] = 'SNP'
     leafsm.loc[[a[0] in '+-' for a in leafsm.alt_allele], 'type'] = 'Indel'
 
-    # # Read all sample SM
-    # allsam = pd.read_table(allfin, header=None)
-    # allsam.columns = 'chromosome position branch tissue ref_allele alt_allele read_count allele_freq selected ploidy remark'.split()
-    # allsam.tissue = allsam.tissue.str.upper()
-
-    # allsm = pd.concat([leafsm, layersm, allsam])
     allsm = pd.concat([leafsm, layersm])
     allsm.sort_values(['chromosome', 'position'], inplace=True)
 
@@ -1160,7 +1328,7 @@ def merge_all_SM():
     # </editor-fold>
 
 
-    allsmmat = pd.read_table(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv')
+    allsmmat = pd.read_table(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv', sep=',')
 
 
     # <editor-fold desc="Create summary stats">
@@ -1319,7 +1487,7 @@ def merge_all_SM():
     ## Read read counts at the layer SM positions in leaves
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
     for b in ('WT_1', 'wt7', 'wt18', 'WT_19', 'MUT_11_1', 'mut11_2', 'MUT_15'):
-        with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.all_sm_in_all_samples.read_count.txt', 'r') as fin:
+        with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.all_sm_in_all_samples.b30.q10.read_count.txt', 'r') as fin:
             bname = sdict[b]
             rc[bname] = dict()
             af[bname] = dict()
@@ -1345,7 +1513,7 @@ def merge_all_SM():
     ## Read counts at the layer SM positions in layers
     for l in ('l1', 'l2'):
         for b in ('wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15'):
-            with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.{l}.all_sm_in_all_samples.read_count.txt', 'r') as fin:
+            with open(f'{cwd}/all_sm_in_all_samples_readcounts/{b}.{l}.all_sm_in_all_samples.b30.q10.read_count.txt', 'r') as fin:
                 bname = f'{b}_{l}'
                 rc[bname] = dict()
                 af[bname] = dict()
@@ -2270,6 +2438,130 @@ def gene_conversion_spectra():
 # END
 
 
+def axillary_stats_plots():
+    """
+    Functions and commands to get extra plots for manuscript
+    """
+
+    # <editor-fold desc="Define Import">
+    from gzip import open as gzopen
+    from collections import deque
+    from matplotlib import pyplot as plt
+    import json
+    from collections import defaultdict
+    from glob2 import glob
+    import pandas as pd
+    from hometools.hometools import undict
+
+    # </editor-fold>
+
+    # <editor-fold desc="Define Defaults">
+    outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
+    # </editor-fold>
+
+    def get_fastq_readsizes(f):
+        sizes = deque()
+        with gzopen(f, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i % 4 == 1:
+                    sizes.append(len(line.strip()))
+        return sizes
+    # END
+
+    # <editor-fold desc="Get read count, read length distribution, and total number of bases for HiFi reads">
+    hififin = '/srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4784/4784_A_run521_HIFI.fastq.gz'
+    sizes = get_fastq_readsizes(hififin)
+    hifijsondata = dict()
+    hifijsondata['Number of reads'] = len(sizes)
+    hifijsondata['Total read length'] = sum(sizes)
+    plt.hist(sizes, bins=100)
+    plt.ylabel("Number of reads")
+    plt.xlabel("Read length")
+    plt.tight_layout()
+    plt.savefig(f'{outdir}/hifi_read_lenght.png', dpi=300)
+    plt.close()
+    with open(f'{outdir}/hifi_reads.json', 'w') as fout:
+        json.dump(hifijsondata, fout, indent=2)
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get the sequencing read stats for the layer specific sample sequencing">
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/fruit_layer_specific/'
+    branches = 'mut_11_1/  mut_11_2/  mut_15/  wt_1/  wt_18/  wt_19/  wt_7/'.replace('/', '').split()
+    stats = defaultdict(dict)
+    for branch in branches:
+        for layer in 'l1 l2 l3'.split():
+            print(branch, layer)
+            stats[branch][layer] = dict()
+            for i in [1, 2]:
+                total_size = 0
+                total_cnt = 0
+                # Get read sizes for mate 1
+                for f in glob(f'{indir}/{branch}/{branch}_{layer}/*{i}.fq.gz'):
+                    sizes = get_fastq_readsizes(f)
+                    total_size += sum(sizes)
+                    total_cnt += len(sizes)
+                stats[branch][layer][i] = {'size': total_size, 'count': total_cnt}
+            stats[branch][layer] = {'size': stats[branch][layer][1]['size'] + stats[branch][layer][2]['size'],
+                                    'count': stats[branch][layer][1]['count'] + stats[branch][layer][2]['count']}
+    stats_flat = undict(stats)[0]
+    df = pd.DataFrame(stats_flat)
+    df = df.pivot(index=[0, 1], columns=[2]).reset_index()
+    df.columns = 'branch layer sequenced_reads sequenced_bases'.split()
+    df['coverage'] = df['sequenced_bases']/242500000
+    df.to_csv(f'{outdir}/layer_sequencing_stats.tsv', sep='\t', index=False, header=True)
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get the sequencing read stats for the leaf sample sequencing">
+    indir1 = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scdna/bigdata/'
+    indir2 = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/rp_branch_specific/'
+    outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
+    stats = defaultdict(dict)
+    for branch in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
+        for i in [1, 2]:
+            total_size, total_cnt = 0, 0
+            for f in glob(f'{indir1}/{branch}/{branch}*R{i}_001.fastq.gz'):
+                sizes = get_fastq_readsizes(f)
+                total_size += sum(sizes)
+                total_cnt += len(sizes)
+            stats[branch.lower()][i] = {'size': total_size, 'count': total_cnt}
+    for branch in 'wt_7 wt_18 mut_4 mut_11_2'.split():
+        for i in [1, 2]:
+            total_size, total_cnt = 0, 0
+            for f in glob(f'{indir2}/{branch.replace("_", "", 1)}/*{i}.fq.gz'):
+                sizes = get_fastq_readsizes(f)
+                total_size += sum(sizes)
+                total_cnt += len(sizes)
+            stats[branch][i] = {'size': total_size, 'count': total_cnt}
+
+    for branch in 'mut_11_1  mut_11_2  mut_15 mut_4  wt_1  wt_18  wt_19  wt_7'.split():
+        stats[branch] = {'size': stats[branch][1]['size'] + stats[branch][2]['size'],
+                         'count': stats[branch][1]['count'] + stats[branch][2]['count']}
+
+    stats_flat = undict(stats)[0]
+    df = pd.DataFrame(stats_flat)
+    df = df.pivot(index=[0], columns=[1]).reset_index()
+    df.columns = 'branch sequenced_reads sequenced_bases'.split()
+    df['coverage'] = df['sequenced_bases']/242500000
+    df.to_csv(f'{outdir}/leaf_sequencing_stats.tsv', sep='\t', index=False, header=True)
+
+    # </editor-fold>
+
+
+
+    def get_leaf_fastq_stats():
+        """
+        Get the sequencing read stats for the leaf sample sequencing
+        """
+
+        return
+    # END
+
+    return
+# END
+
+
 def get_overlap_of_sm_and_flowering_gene():
     """
     Have a list of Currot genes that are homologous to A.thaliana flowering time genes (
@@ -2353,129 +2645,6 @@ def get_overlap_of_sm_and_flowering_gene():
     # flowt
     # Out[31]: Empty PyRanges
 
-
-    return
-# END
-
-
-def axillary_stats_plots():
-    """
-    Functions and commands to get extra plots for manuscript
-    """
-    def get_fastq_readsizes(f):
-        from gzip import open as gzopen
-        from collections import deque
-        sizes = deque()
-        with gzopen(f, 'r') as fin:
-            for i, line in enumerate(fin):
-                if i % 4 == 1:
-                    sizes.append(len(line.strip()))
-        return sizes
-    # END
-
-    def raw_hifi_stats():
-        """
-        Get read count, read length distribution, and total number of bases
-        """
-        from gzip import open as gzopen
-        from collections import deque
-        from matplotlib import pyplot as plt
-        f = '/srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4784/4784_A_run521_HIFI.fastq.gz'
-        outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
-        sizes = get_fastq_readsizes(f)
-        cnt = len(sizes)
-        print(f'Number of reads: {cnt}')
-        print(f'Total read lenght: {sum(sizes)}')
-        plt.hist(sizes, bins=100)
-        plt.ylabel("Number of reads")
-        plt.xlabel("Read length")
-        plt.tight_layout()
-        plt.savefig(f'{outdir}/hifi_read_lenght.png', dpi=300)
-        plt.close()
-        return
-    # END
-
-    def get_layer_fastq_stats():
-        """
-            Get the sequencing read stats for the layer specific sample sequencing
-        """
-        from collections import defaultdict
-        from glob2 import glob
-        import pandas as pd
-        from hometools.hometools import undict
-
-        outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
-        indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/fruit_layer_specific/'
-        branches = 'mut_11_1/  mut_11_2/  mut_15/  wt_1/  wt_18/  wt_19/  wt_7/'.replace('/', '').split()
-        stats = defaultdict(dict)
-        for branch in branches:
-            for layer in 'l1 l2 l3'.split():
-                print(branch, layer)
-                stats[branch][layer] = dict()
-                for i in [1, 2]:
-                    total_size = 0
-                    total_cnt = 0
-                    # Get read sizes for mate 1
-                    for f in glob(f'{indir}/{branch}/{branch}_{layer}/*{i}.fq.gz'):
-                        sizes = get_fastq_readsizes(f)
-                        total_size += sum(sizes)
-                        total_cnt += len(sizes)
-                    stats[branch][layer][i] = {'size': total_size, 'count': total_cnt}
-                stats[branch][layer] = {'size': stats[branch][layer][1]['size'] + stats[branch][layer][2]['size'],
-                                        'count': stats[branch][layer][1]['count'] + stats[branch][layer][2]['count']}
-        stats_flat = undict(stats)[0]
-        df = pd.DataFrame(stats_flat)
-        df = df.pivot(index=[0, 1], columns=[2]).reset_index()
-        # df.columns =
-        df.columns = 'branch layer sequenced_reads sequenced_bases'.split()
-        df['coverage'] = df['sequenced_bases']/242500000
-        df.to_csv(f'{outdir}/layer_sequencing_stats.tsv', sep='\t', index=False, header=True)
-        return
-    # END
-
-    def get_leaf_fastq_stats():
-        """
-        Get the sequencing read stats for the leaf sample sequencing
-        """
-        from collections import defaultdict
-        from glob2 import glob
-        import pandas as pd
-        from hometools.hometools import undict
-
-        indir1 = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scdna/bigdata/'
-        indir2 = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_illumina/rp_branch_specific/'
-        outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
-        stats = defaultdict(dict)
-
-        for branch in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
-            for i in [1, 2]:
-                total_size, total_cnt = 0, 0
-                for f in glob(f'{indir1}/{branch}/{branch}*R{i}_001.fastq.gz'):
-                    sizes = get_fastq_readsizes(f)
-                    total_size += sum(sizes)
-                    total_cnt += len(sizes)
-                stats[branch.lower()][i] = {'size': total_size, 'count': total_cnt}
-        for branch in 'wt_7 wt_18 mut_4 mut_11_2'.split():
-            for i in [1, 2]:
-                total_size, total_cnt = 0, 0
-                for f in glob(f'{indir2}/{branch.replace("_", "", 1)}/*{i}.fq.gz'):
-                    sizes = get_fastq_readsizes(f)
-                    total_size += sum(sizes)
-                    total_cnt += len(sizes)
-                stats[branch][i] = {'size': total_size, 'count': total_cnt}
-
-        for branch in 'mut_11_1  mut_11_2  mut_15 mut_4  wt_1  wt_18  wt_19  wt_7'.split():
-            stats[branch] = {'size': stats[branch][1]['size'] + stats[branch][2]['size'],
-                             'count': stats[branch][1]['count'] + stats[branch][2]['count']}
-
-        stats_flat = undict(stats)[0]
-        df = pd.DataFrame(stats_flat)
-        df = df.pivot(index=[0], columns=[1]).reset_index()
-        df.columns = 'branch sequenced_reads sequenced_bases'.split()
-        df['coverage'] = df['sequenced_bases']/242500000
-        df.to_csv(f'{outdir}/leaf_sequencing_stats.tsv', sep='\t', index=False, header=True)
-        return
-    # END
 
     return
 # END
