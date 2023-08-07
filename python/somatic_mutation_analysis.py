@@ -429,9 +429,6 @@ def getsmeffect():
     # Done here: SH/somatic_mutation_analysis.sh:54
 
     # Read the alignment and draw clusters
-
-
-
     aln = pd.read_table(f'{cwd}/search.m8', header=None)
     nodes = [f'{s}_{mrna}_ranked_{i}.pdb' for s in 'wt sm'.split() for mrna in mrnaids for i in range(5)]
     edges = OrderedDict()
