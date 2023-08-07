@@ -140,13 +140,11 @@ samples=( wt_1 wt_7 wt_18 wt_19 mut_11_1 mut_11_2 mut_15 )
 for s in ${samples[@]}; do
     for l in l1 l2 l3; do
         cd ${CWD}/${s}/${s}_${l}
-#        cut -f 4 bam_read_counts_b30_q10.bt2.txt \
-#        | sort -n \
-#        | uniq -c \
-#        | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_${l} -xlim 0 400 &
+#        cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.pdf -x Mapping Depth -y Frequency -t ${s}_${l} -xlim 0 400 &
+        cut -f 4 bam_read_counts_b30_q10.bt2.txt | sort -n | uniq -c | hometools plthist -o bam_read_counts_b30_q10.bt2.mapping_depth.hist.png -x Mapping Depth -y Frequency -t ${s}_${l} -xlim 0 400 -n 400 &
 #        ## Get allele-frequency at the updated leaf mutation positions
 #        hometools pbamrc -b 30 -q 10 -w 0 -f $refcur -I -n 1 -l $MUTSNEW ${l}.deduped.bam read_count_at_leaf_mut_pos.all_branches.updated.txt &
-        hometools pbamrc -b 0 -q 0 -w 0 -f $refcur -I -n 1 -l $MUTSNEW ${l}.deduped.bam read_count_at_leaf_mut_pos.all_branches.b0_q0.updated.txt &
+#        hometools pbamrc -b 0 -q 0 -w 0 -f $refcur -I -n 1 -l $MUTSNEW ${l}.deduped.bam read_count_at_leaf_mut_pos.all_branches.b0_q0.updated.txt &
     done
 done
 
@@ -220,16 +218,19 @@ cd $cwd
 for s in 'WT_1' 'WT_19' 'MUT_15' 'MUT_11_1' ; do
     echo $s
     hometools pbamrc -n 10 -b 0 -q 0 -w 0 -I -f $refcur -l $muts ../${s}/${s}.sorted.bt2.bam ${s}.all_sm_in_all_samples.read_count.txt
+    hometools pbamrc -n 10 -b 30 -q 10 -w 0 -I -f $refcur -l $muts ../${s}/${s}.sorted.bt2.bam ${s}.all_sm_in_all_samples.b30.q10.read_count.txt
 done
 # Leaf normal
 for s in 'wt7' 'wt18' 'mut4' 'mut11_2' ; do
     echo $s
     hometools pbamrc -n 10 -b 0 -q 0 -w 0 -I -f $refcur -l $muts ../${s}/${s}.deduped.bam ${s}.all_sm_in_all_samples.read_count.txt
+    hometools pbamrc -n 10 -b 30 -q 10 -w 0 -I -f $refcur -l $muts ../${s}/${s}.deduped.bam ${s}.all_sm_in_all_samples.b30.q10.read_count.txt
 done
 # Layers
 for s in wt_1 wt_7 wt_18 wt_19 mut_11_1 mut_11_2 mut_15; do
     for l in l1 l2; do
         hometools pbamrc -n 10 -b 0 -q 0 -w 0 -f $refcur -I -l $muts ../layer_samples/${s}/${s}_${l}/${l}.deduped.bam ${s}.${l}.all_sm_in_all_samples.read_count.txt
+        hometools pbamrc -n 10 -b 30 -q 10 -w 0 -f $refcur -I -l $muts ../layer_samples/${s}/${s}_${l}/${l}.deduped.bam ${s}.${l}.all_sm_in_all_samples.b30.q10.read_count.txt
     done
 done
 
