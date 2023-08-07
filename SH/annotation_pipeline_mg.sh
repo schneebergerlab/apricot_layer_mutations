@@ -1,0 +1,1 @@
+../../results/annotations/scripts/annotation_pipeline_mg.sh
