@@ -9,6 +9,8 @@ gffread cur.pasa_out.sort.protein_coding.3utr.gff3 -T > cur.pasa_out.sort.protei
 
 # Changing cellranger to newer version (04.08.2024)
 cellranger=/srv/netscratch/dep_mercier/grp_schneeberger/software/cellranger-7.1.0/bin/cellranger
+# Rerunning with older version (08.08.2024)
+cellranger=/srv/netscratch/dep_mercier/grp_schneeberger/software/cellranger-5.0.0/bin/cellranger
 # Cellranger index
 nohup $cellranger mkref --genome=cur --fasta cur.genome.v1.fasta --genes=cur.pasa_out.sort.protein_coding.3utr.gtf --nthreads=20 &
 
@@ -26,8 +28,8 @@ for sample in ${samples[@]}; do
 #    mv $f  $(echo $f | sed -r 's/_H.{8}_/_/')
 #  done
   cd $cwd
-  mkdir -p $sample
-  cd $sample
+  mkdir -p ${sample}_cr5
+  cd ${sample}_cr5
   sample_list=$(ls ${indir}/${sample}/*fastq.gz  | sed 's/^.*\///g' |sed 's/_S.*$//g' | sort -u | tr '\n' ',' | sed 's/,$//g')
   echo $sample_list
 
@@ -37,7 +39,7 @@ for sample in ${samples[@]}; do
       --transcriptome=$refdir \
       --sample=$sample_list \
       --expect-cells 3500 \
-      --include-introns true \
+      --include-introns \
       --jobmode=lsf --maxjobs=10000 --jobinterval=1 --mempercore=10 \
       2>&1  > cellranger.log
   "
