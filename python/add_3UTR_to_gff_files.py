@@ -36,7 +36,7 @@ def add3UTR(anno, fout, S):
                 anno[exon_indices[-1]][4] = str(int(anno[exon_indices[-1]][4]) + S)
                 if end != anno[exon_indices[-1]][4]:
                     print('ERROR: End coordinates do not match {}'.format(anno[0][8]))
-            if strand=='-':
+            if strand == '-':
                 anno[mrna_indices[i]][3] = str(int(anno[mrna_indices[i]][3])-S if (int(anno[mrna_indices[i]][3])-S) > 0 else 1)
                 end = anno[mrna_indices[i]][3]
                 utr3data = anno[exon_indices[-1]].copy()
