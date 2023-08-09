@@ -10,9 +10,6 @@ import numpy as np
 from scipy.stats import ttest_ind
 from hometools.hometools import readfasta_iterator, writefasta
 
-
-################################################################################
-
 # <editor-fold desc="(OUTDATED) Select neighboring regions of somatic mutation and check whether they are enriched for transcription-finding motifs compared to regions without somatic mutations">
 
 def getsmpos():
@@ -116,118 +113,8 @@ plt.tight_layout()
 # </editor-fold>
 
 ################################################################################
-
-# <editor-fold desc="(OUTDATED) Get distribution of somatic mutations in genomic regions (gene vs repeat vs TE etc)">
-
-## Read somatic mutation list
-leafsm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/high_cov_mutants_sorted.all_samples.selected.txt", header=None)
-layersm = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/high_conf_layer_specific_somatic_mutations.selected.txt")
-layersm.columns = [0, 1, 2, 3] + list(layersm.columns[4:])
-leafsm = leafsm[[0, 1, 2, 3, 6]]
-leafsm.columns = ['chr', 'pos', 'ref', 'alt', 'sample']
-leafsm['layer'] = '-'
-layersm = layersm[[0, 1, 2, 3, 'Layer']]
-layersm.columns = ['chr', 'pos', 'ref', 'alt', 'layer']
-layersm['sample'] = 'MUT_11_1'
-smpos = pd.concat([leafsm, layersm])
-smpos.sort_values(['chr', 'pos'], inplace=True)
-smpos.reset_index(drop=True, inplace=True)
-smpos.reset_index(drop=True, inplace=True)
-
-
-repeatlist = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.out'
-tegenes = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.TE.gff3'
-progenes = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.protein_coding.3utr.gff3'
-
-## Read repeat region coordinates
-repcoord = deque()
-with open(repeatlist, 'r') as fin:
-    for i in range(3):
-        line = fin.readline()
-    for line in fin:
-        line = line.strip().split()
-        repcoord.append([line[4], line[5], line[6], line[8], line[10]])
-repcoord = pd.DataFrame(repcoord)
-repcoord[[1, 2]] = repcoord[[1, 2]].astype(int)
-repcoord[5] = 'repeat'
-
-## Read TE gene coordinates
-tecoord = deque()
-with open(tegenes, 'r') as fin:
-    for line in fin:
-        line = line.strip().split()
-        if line[2] == 'gene':
-            tecoord.append([line[0], line[3], line[4], line[6], line[8].split(";")[0].rsplit("=")[1]])
-tecoord = pd.DataFrame(tecoord)
-tecoord[[1, 2]] = tecoord[[1, 2]].astype(int)
-tecoord[5] = 'tegenes'
-
-## Read protein coding gene coordinates
-procoord = deque()
-with open(progenes, 'r') as fin:
-    for line in fin:
-        line = line.strip().split()
-        if line[2] == 'gene':
-            procoord.append([line[0], line[3], line[4], line[6], line[8].split(";")[0].rsplit("=")[1]])
-procoord = pd.DataFrame(procoord)
-procoord[[1, 2]] = procoord[[1, 2]].astype(int)
-procoord[5] = 'progenes'
-
-annocoord = pd.concat([repcoord, tecoord, procoord])
-annocoord.columns = ['Chromosome', 'Start', 'End', 'Strand', 'ID', 'type']
-annocoord.loc[annocoord['Strand'] == 'C', 'Strand'] = '-'
-
-smanno = deque()
-for grp in smpos.groupby(['chr']):
-    chrcoord = annocoord.loc[annocoord['Chromosome'] == grp[0]]
-    for row in grp[1].itertuples(index=False):
-        df = chrcoord.loc[(chrcoord['Start'] <= row[1]) & (chrcoord['End'] >= row[1])].copy()
-        df['chr'] = row[0]
-        df['pos'] = row[1]
-        smanno.append(df)
-smanno = pd.concat(smanno)
-smanno[['Start', 'End']] = smanno[['Start', 'End']].astype(str)
-smanno.drop_duplicates(inplace=True)
-smanno = smpos.merge(smanno, how='left', on=['chr', 'pos'])
-smanno.fillna('-', inplace=True)
-smanno.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutation_genomic_region_annotation.txt", index=False, sep='\t')
-
-# </editor-fold>
-
-################################################################################
 # <editor-fold desc="(OUTDATED) Get distribution of somatic mutations in structural region between haplotypes (syntenic vs SR vs not_aligned/HDR) also, check overlap with genome mappability">
 
-## Read smpos same way as in repeat/gene overlap section above
-syripath = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run/all_sv.syri.out'
-syriout = deque()
-with open(syripath, 'r') as fin:
-    for line in fin:
-        line = line.strip().split()
-        if line[10] in {'SNP', 'INS', 'DEL'}: continue
-        syriout.append(line)
-syriout = pd.DataFrame(syriout)
-syriout = syriout.loc[~(syriout[0] == '-')]
-syriout = syriout.loc[~(syriout[10].isin(['SYN', 'INV', 'TRANS', 'DUP', 'INVTR', 'INVDP']))]
-syriout[[1, 2]] = syriout[[1, 2]].astype(int)
-syriout[9] = syriout[9].str.replace(r'[0-9]', '', regex=True)
-smanno = deque()
-for grp in smpos.groupby(['chr']):
-    chrcoord = syriout.loc[syriout[0] == grp[0]]
-    for row in grp[1].itertuples(index=False):
-        df = chrcoord.loc[(chrcoord[1] <= row[1]) & (chrcoord[2] >= row[1])].copy()
-        df['chr'] = row[0]
-        df['pos'] = row[1]
-        smanno.append(df)
-smanno = pd.concat(smanno)
-smanno = smanno[[0, 1, 2, 8, 9, 10, 11, 'chr', 'pos']]
-smanno[[1, 2]] = smanno[[1, 2]].astype(str)
-smanno.drop_duplicates(inplace=True)
-smanno = smpos.merge(smanno, how='left', on=['chr', 'pos'])
-smanno.fillna('-', inplace=True)
-smanno.columns = list(smanno.columns)[:6] + ['chrom', 'start', 'end', 'id', 'parentid', 'type', 'duptype']
-smanno.to_csv("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/somatic_mutation_structural_annotation.txt", index=False, sep='\t')
-
-################################################################################
 # Get correlation of mappability and SM. Ideally, this should not be different
 # than the background distribution
 
@@ -305,18 +192,18 @@ def df2vcf(df, f, ref):
     return
 # END
 
-
 cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/snpeff_run/'
 refcur = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta'
-f = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.vcf'
-allsmmat = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.csv')
+f = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.noisy_annotated.vcf'
+allsmmat = pd.read_csv('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.noisy_annotated.csv')
 allsmmat = allsmmat['chromosome position alt_allele'.split()].drop_duplicates()
 
 df2vcf(allsmmat, f, refcur)
+# Steps to create snpEff database (https://pcingola.github.io/SnpEff/se_buildingdb/)
 
 ## Run snpeff with command:
-## java -jar /srv/netscratch/dep_mercier/grp_schneeberger/bin/snpEff/snpEff5.1d/snpEff.jar currot.v1 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.vcf > all_sm_in_all_samples.manually_selected.cleaned.ann.vcf
-grep -P "LOW|MODERATE|HIGH" all_sm_in_all_samples.manually_selected.cleaned.ann.vcf  | cut -f 1,2,4,5 > affected_snps.txt
+# java -jar /srv/netscratch/dep_mercier/grp_schneeberger/bin/snpEff/snpEff5.1d/snpEff.jar currot.v1 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.manually_selected.cleaned.noisy_annotated.vcf > all_sm_in_all_samples.manually_selected.cleaned.ann.vcf
+# grep -P "LOW|MODERATE|HIGH" all_sm_in_all_samples.manually_selected.cleaned.ann.vcf  | cut -f 1,2,4,5 > affected_snps.txt
 
 # TODO: There are 7 SMs in exons: Catalog them.
 genelist = pd.read_table("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/sm_analysis/snpeff_run/snpEff_genes.txt", skiprows=1)
