@@ -1,5 +1,7 @@
-# Script to analyse the identified somatic mutations
-####################################################
+"""
+Script to analyse the identified somatic mutations
+"""
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import sys
@@ -112,7 +114,7 @@ plt.tight_layout()
 
 # </editor-fold>
 
-################################################################################
+
 # <editor-fold desc="(OUTDATED) Get distribution of somatic mutations in structural region between haplotypes (syntenic vs SR vs not_aligned/HDR) also, check overlap with genome mappability">
 
 # Get correlation of mappability and SM. Ideally, this should not be different
@@ -251,6 +253,8 @@ geneids = c('Gene.10343', 'Gene.23204', 'Gene.27798', 'Gene.7081')
 
 # </editor-fold>
 
+
+# <editor-fold desc="Check is the SM affect the structure of protein. Result: AF2 is not sensitive to point mutations">
 def getsmeffect():
     """
         THIS DID NOT RESULT IN ANY CLEAR DIFFERENCE BETWEEN WT AND SM PROTEINS
@@ -366,3 +370,4 @@ def getsmeffect():
 
     return
 # END
+# </editor-fold>
