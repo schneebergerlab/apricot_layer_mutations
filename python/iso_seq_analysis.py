@@ -1,18 +1,10 @@
 import os
 import pandas as pd
 from collections import deque, Counter, defaultdict
-import sys
-sys.path.insert(0, '/srv/biodata/dep_mercier/grp_schneeberger/software/hometools/')
-# from myUsefulFunctions import revcomp
-from hometools.hometools import revcomp
 from matplotlib import pyplot as plt
-import warnings
 import seaborn as sns
-import numpy as np
 import pysam
 import pathlib
-from itertools import product
-from matplotlib import colors as mcolors
 
 colour = {('L1', 'SNP'): '#1f77b4',
           ('L1', 'Indel'): '#84b4d6',
@@ -34,6 +26,7 @@ colour = {('L1', 'SNP'): '#1f77b4',
           'theme4': '#3bceac',
           'theme5': '#0ead69'}
 
+# <editor-fold desc="OBSOLETE: Tried to find differences between transcriptomes but do not have enough power">
 
 def get_transcriptome_variants():
     """
@@ -131,6 +124,8 @@ def get_transcriptome_variants():
     return
 # END
 
+# </editor-fold>
+
 
 def get_iso_seq_stats():
     """
@@ -140,6 +135,8 @@ def get_iso_seq_stats():
 
         scrna read count and clusters generated using Anshupa's analysis
     """
+
+    #TODO: Move this to analysis_plots.py
 
     from hometools.hometools import revcomp
     from matplotlib import pyplot as plt
@@ -253,6 +250,7 @@ def get_allele_freq_at_sm_pos_plot():
 # END
 
 
+# <editor-fold desc="OBSOLETE: Get statistics for Iso-seq reac counts across chromosomes, genes, etc">
 # Get cluster-specific read stats
 s_cls_rc = {}
 for s in SAMPLES:
@@ -279,8 +277,6 @@ for s in SAMPLES:
 for s, v in s_cls_rc.items():
     for c, v1 in v.items():
         print(s, c, Counter(v1[1]))
-
-
 
 genecnts = Counter(pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.bed', header=None)[0])
 fig = plt.figure(figsize=[10,10])
@@ -333,3 +329,4 @@ plt.tight_layout()
 plt.savefig(CWD+"iso_read_mapping_stats.pdf")
 plt.savefig(CWD+"iso_read_mapping_stats.png")
 plt.close()
+# </editor-fold>
