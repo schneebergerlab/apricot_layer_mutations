@@ -314,7 +314,7 @@ def mutation_spectra():
     from matplotlib import pyplot as plt
     from matplotlib import cm as mcm
     import matplotlib.transforms as mtransforms
-    from matplotlib_venn import venn3
+    from matplotlib_venn import venn3, venn2
     import matplotlib.image as mpimg
     import seaborn as sns
     import igraph as ig
@@ -325,7 +325,7 @@ def mutation_spectra():
     from scipy.sparse import triu, csr_matrix
     from scipy.stats import ttest_rel, fisher_exact, spearmanr
     from hometools.plot import plot2emf, cleanax, inlineplotsr
-    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges, readsyriout
+    from hometools.hometools import printdf, unlist, canonical_kmers, Namespace, cntkmer, revcomp, readfasta, mergeRanges, sumranges, readsyriout, getvalues
     from multiprocessing import Pool
     import json
     from itertools import product
@@ -354,12 +354,12 @@ def mutation_spectra():
     SMALL_SIZE = 7
     BIGGER_SIZE = 8
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-    plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+    plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
     plt.rc('axes', labelsize=SMALL_SIZE)    # fontsize of the x and y labels
     plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
     plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
     plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
-    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+    plt.rc('figure', titlesize=SMALL_SIZE)  # fontsize of the figure title
     plt.rc('font', family='Arial')  # fontsize of the figure title
     # </editor-fold>
 
@@ -479,18 +479,18 @@ def mutation_spectra():
     barwidth = 0.125
     dpi = 100
     pltwidth = 7.24
-    fig1 = plt.figure(figsize=[pltwidth, 6], dpi=dpi)
+    fig1 = plt.figure(figsize=[pltwidth, 8.5], dpi=dpi)
     trans = mtransforms.ScaledTranslation(-20/dpi, 5/dpi, fig1.dpi_scale_trans)
 
 
     # <editor-fold desc="A: Add tree image">
-    def getcntplt(axispos, branch):
-        bar_width = 0.75
-        ax = fig1.add_axes(axispos)
+    def getcntplt(ax, branch, bar_width):
+        # ax = fig1.add_axes(axispos)
         y_bottom = [0]
+        ymax = 75
         ax.set_xlim([-0.5, 0.5])
-        ax.set_ylim([0, 70])
-        ax.set_yticks([0, 75])
+        ax.set_ylim([0, ymax])
+        ax.set_yticks([0, ymax])
         ax.tick_params(bottom=False, labelbottom=False)
         ax.set_xlabel(branch, fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
         ax.spines[:].set_visible(False)
@@ -503,7 +503,7 @@ def mutation_spectra():
     # END
 
     tree = mpimg.imread(f'{cwd}/../tree_sketch_1.png')
-    axA = fig1.add_axes([0.03, 0.575, 0.4, 0.4])
+    axA = fig1.add_axes([0.03, 0.675, 0.4, 0.3])
     axA.imshow(tree, aspect='auto')
     axA.text(0, 1, 'A', transform=axA.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     axA.spines[:].set_visible(False)
@@ -511,15 +511,14 @@ def mutation_spectra():
 
     branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
     bar_width = 0.75
-    axwidth = barwidth*1/pltwidth
-    axA1 = getcntplt([0.39, 0.87, axwidth, 0.05], 'wt_1')
-    axA2 = getcntplt([0.39, 0.66, axwidth, 0.05], 'wt_7')
-    axA3 = getcntplt([0.325, 0.9, axwidth, 0.05], 'wt_18')
-    axA4 = getcntplt([0.2, 0.9, axwidth, 0.05], 'wt_19')
-    axA5 = getcntplt([0.06, 0.92, axwidth, 0.05], 'mut_11_1')
-    axA6 = getcntplt([0.13, 0.92, axwidth, 0.05], 'mut_15')
-    axA7 = getcntplt([0.06, 0.75, axwidth, 0.05], 'mut_11_2')
-
+    axwidth = (barwidth*1/pltwidth)/0.4
+    axA1 = getcntplt(axA.inset_axes([0.9, 0.7, axwidth, 0.1]), 'wt_1', bar_width)
+    axA2 = getcntplt(axA.inset_axes([0.9, 0.25, axwidth, 0.1]), 'wt_7', bar_width)
+    axA3 = getcntplt(axA.inset_axes([0.75, 0.85, axwidth, 0.1]), 'wt_18', bar_width)
+    axA4 = getcntplt(axA.inset_axes([0.45, 0.85, axwidth, 0.1]), 'wt_19', bar_width)
+    axA5 = getcntplt(axA.inset_axes([0.25, 0.85, axwidth, 0.1]), 'mut_15', bar_width)
+    axA6 = getcntplt(axA.inset_axes([0.1, 0.85, axwidth, 0.1]), 'mut_11_1', bar_width)
+    axA7 = getcntplt(axA.inset_axes([0.1, 0.5, axwidth, 0.1]), 'mut_11_2', bar_width)
 
     # </editor-fold>
 
@@ -544,29 +543,29 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="C: Number of branches covered by each SM">
-
-    pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
-    samplecnt = {grp[0]: len(set(grp[1].branch)) for grp in datafilter.groupby(['chromosome', 'position', 'alt_allele'])}
-    pos['Branch Count'] = [samplecnt[row.chromosome, row.position, row.alt_allele] for row in pos.itertuples(index=False)]
-    n_branch = pos.groupby(['Layer', 'type', 'Branch Count']).size().to_dict()
-    axwidth = barwidth*7/pltwidth
-    axC = fig1.add_axes([0.625, 0.875, axwidth, 0.1])
-    y_bottom = [0]*7
-    for l in ('L1', 'L2'):
-        for t in ('SNV', 'Indel'):
-            y = [n_branch[(l, t, i)] if (l, t, i) in n_branch else 0 for i in range(1, 8)]
-            axC.bar(np.arange(0, 7), y, label=f'{l}_{t}', bottom=y_bottom, color=colour[(l, t)], width=0.75)
-            y_bottom = [y_bottom[i] + y[i] for i in range(7)]
-    axC.set_xlim(-0.5, 6.5)
-    axC.set_xlabel("Number of branch")
-    axC.set_ylabel("SMs")
-    axC.set_xticks(ticks=range(7))
-    axC.set_xticklabels(np.arange(1, 8))
-    axC = cleanax(axC)
-    axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # </editor-fold>
+    # # <editor-fold desc="C: Number of branches covered by each SM">
+    #
+    # pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
+    # samplecnt = {grp[0]: len(set(grp[1].branch)) for grp in datafilter.groupby(['chromosome', 'position', 'alt_allele'])}
+    # pos['Branch Count'] = [samplecnt[row.chromosome, row.position, row.alt_allele] for row in pos.itertuples(index=False)]
+    # n_branch = pos.groupby(['Layer', 'type', 'Branch Count']).size().to_dict()
+    # axwidth = barwidth*7/pltwidth
+    # axC = fig1.add_axes([0.625, 0.875, axwidth, 0.1])
+    # y_bottom = [0]*7
+    # for l in ('L1', 'L2'):
+    #     for t in ('SNV', 'Indel'):
+    #         y = [n_branch[(l, t, i)] if (l, t, i) in n_branch else 0 for i in range(1, 8)]
+    #         axC.bar(np.arange(0, 7), y, label=f'{l}_{t}', bottom=y_bottom, color=colour[(l, t)], width=0.75)
+    #         y_bottom = [y_bottom[i] + y[i] for i in range(7)]
+    # axC.set_xlim(-0.5, 6.5)
+    # axC.set_xlabel("Number of branch")
+    # axC.set_ylabel("SMs")
+    # axC.set_xticks(ticks=range(7))
+    # axC.set_xticklabels(np.arange(1, 8))
+    # axC = cleanax(axC)
+    # axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    #
+    # # </editor-fold>
 
 
     # # <editor-fold desc="D: Plot for number of SMs per branch">
@@ -632,7 +631,7 @@ def mutation_spectra():
     df = pd.DataFrame(garb)
     df.columns = ['SNP type', 'Layer', 'Percentage of SMs']
     df = df.loc[~(df.Layer == 'shared')]
-    axE = fig1.add_axes([0.825, 0.875, 0.17, 0.1])
+    axE = fig1.add_axes([0.625, 0.875, 0.15, 0.1])
     # axE = sns.barplot(data=df, x='SNP type', y='Percentage of SMs', hue='Layer', palette=colour, order=['A,T>G,C', 'C,G>T,A', 'A,T>C,G', 'A,T>T,A', 'C,G>A,T', 'C,G>G,C'], ax=axE, width=0.75)
     axE = sns.lineplot(data=df, x='SNP type', y='Percentage of SMs', hue='Layer', palette=colour, ax=axE, legend=False)
     axE.axvline(1.5, linestyle='dashed', color='black', linewidth=0.75)
@@ -767,7 +766,7 @@ def mutation_spectra():
     tripkeys = sorted(kmercnts, key=lambda x: sum([tripcntnorm[l][x] for l in 'L1 L2'.split()]), reverse=True)
     tripkeys = [t for t in tripkeys if tripcntnorm['L1'][t] + tripcntnorm['L2'][t] > 0]
     axwidth = (barwidth*len(tripkeys)/pltwidth)/1
-    axF = fig1.add_axes([0.5, 0.65, axwidth, 0.1])
+    axF = fig1.add_axes([0.5, 0.7, axwidth, 0.1])
     ybottom = np.zeros_like(tripkeys, dtype='float')
     for l in 'L1 L2'.split():
         y = [tripcntnorm[l][k] for k in tripkeys]
@@ -797,12 +796,12 @@ def mutation_spectra():
     indsizeall = pd.DataFrame(indsizeall)
     indsizeall.columns = 'tissue size count'.split()
     axwidth = barwidth*10/pltwidth
-    axG = fig1.add_axes([0.075, 0.35, axwidth, 0.15])
+    axG = fig1.add_axes([0.85, 0.875, 0.15, 0.1])
     axG = sns.lineplot(indsizeall, x='size', y='count', hue='tissue', palette=[colour[l, 'SNV'] for l in 'L1 L2'.split()])
     axG.legend().remove()
     axG = cleanax(axG)
-    axG.set_xlabel("Indel size")
-    axG.set_ylabel("Number of indels")
+    axG.set_xlabel("Size (in bp)")
+    axG.set_ylabel("Indels")
     axG.text(0, 1, 'G', transform=axG.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
@@ -869,7 +868,7 @@ def mutation_spectra():
     print(stats.loc[stats.padjusted < 0.05])
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
     axwidth = barwidth*10/pltwidth
-    axH = fig1.add_axes([0.075, 0.1, axwidth, 0.15])
+    axH = fig1.add_axes([0.075, 0.525, axwidth, 0.1])
     bar_width = 0.75/2
     for i, l in enumerate('L1 L2'.split()):
         y_bottom = [0]*5
@@ -880,7 +879,7 @@ def mutation_spectra():
             y_bottom = y
     axH.set_xticks(np.arange(5))
     axH.set_xticklabels(['Coding', 'UTR', 'Intron', 'TE/Repeat', 'Intergenic'])
-    axH.set_ylabel('SMs per MBp')
+    axH.set_ylabel('SMs (per MBp)')
     axH.set_xlabel('')
     axH = cleanax(axH)
     axH.set_xlim(-0.5, 4.5)
@@ -935,7 +934,7 @@ def mutation_spectra():
         pos.to_csv(f'{cwd}/{grp[0]}_sm_pos.bed', index=False, header=False, sep='\t')
     os.chdir(cwd)
     args = Namespace(H=None, R=False, S=0.4, W=None, b='agg', bp=None, cfg=Namespace(name=f'{cwd}/../base.cfg'), chr=None, chrname=Namespace(name=f'{cwd}/../plotsr_chrnames.txt'), chrord=None, d=300, f=SMALL_SIZE, genomes=Namespace(name=f'{cwd}/../genomes.txt'), itx=False, log='WARN', logfin=Namespace(name='plotsr.log'), markers=None, nodup=False, noinv=False, nosyn=False, notr=False, o='plotsr.pdf', reg=None, rtr=False, s=25000, sr=[Namespace(name='syri.out')], tracks=Namespace(name='tracks.txt'), v=True)
-    axI = fig1.add_axes([0.35, 0.075, 0.64, 0.325])
+    axI = fig1.add_axes([0.4, 0.3, 0.59, 0.225])
     axI = inlineplotsr(axI, args)
     axI = cleanax(axI)
     axI.spines[:].set_visible(False)
@@ -989,7 +988,7 @@ def mutation_spectra():
 
     axwidth = barwidth*4/pltwidth
     bar_width = 0.75/2
-    axJ = fig1.add_axes([0.9, 0.35, axwidth, 0.1])
+    axJ = fig1.add_axes([0.9, 0.5, axwidth, 0.1])
     axJ = sns.barplot(data=smdist, x='variable', y='value', hue='tissue', hue_order='L1 L2'.split(), palette=colour, ax=axJ)
     axJ.ticklabel_format(axis='y', useOffset=False, style='plain')
     axJ.get_legend().remove()
@@ -1001,6 +1000,216 @@ def mutation_spectra():
     axJ.tick_params(axis='x', rotation=45)
     axJ = cleanax(axJ)
     axJ.text(0, 1, 'J', transform=axJ.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # </editor-fold>
+
+
+    # <editor-fold desc="K: Dendrogram for SMs in L1 and L2">
+    # hierarchical clustering between branches (this would show whether the SMs fit the morphology of the tree)
+    # fig = plt.figure(figsize=[3, 5], dpi=300)
+    axwidth = barwidth*10/pltwidth
+    axB1 = fig1.add_axes([0.05, 0.275, 0.2, 0.125])
+    axB2 = fig1.add_axes([0.05, 0.075, 0.2, 0.125])
+    axdict = {0: axB1, 1: axB2}
+    for i, l in enumerate('L1 L2'.split()):
+        pos = datafilter.loc[datafilter.Layer.isin([l, 'shared']), ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+        # pos = datafilter.loc[datafilter.Layer == l, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+        alts = {(row[0], row[1], row[3]) for row in pos.itertuples(index=False)}
+        branchpos = np.zeros([7, len(alts)], dtype=int)
+
+        for j, branch in enumerate(branches):
+            bdf = pos.loc[pos.branch == branch]
+            balts = {(row[0], row[1], row[3]) for row in bdf.itertuples(index=False)}
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[j, k] = 1
+        ## Get distances for hierarchical clustering
+        AM = pdist(branchpos, metric='hamming')
+        # AM = pdist(branchpos, lambda u, v : 1 - (sum((u==1) & (v==1))/len(u)))
+        Z = linkage(AM, method='ward')
+        ax = axdict[i]
+        # dendrogram(optimal_leaf_ordering(Z, AM), link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+        dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+        ax.spines[:].set_visible(False)
+        ax.tick_params(left=False, labelleft=False)
+        # ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=ax.get_xticks(), rotation=90)
+        ax.set_xticks(labels=[branches[i] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=45)
+        ax.set_ylabel(l)
+    axB1.text(0, 1, 'B', transform=axB1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # # Get maximum spanning tree
+    # # Get adjacency matrix for minimum spanning tree
+    # AM2 = 30 - squareform(AM)
+    # np.fill_diagonal(AM2, 0)
+    # g = ig.Graph.Weighted_Adjacency(AM2, mode="undirected")
+    # g.vs['name'] = branches
+    # inv_weight = [1./w for w in g.es["weight"]]
+    # T = g.spanning_tree(weights=inv_weight)
+    # print(T.is_connected())
+    #
+    # ax = fig.add_subplot(2, 2, 2)
+    # ig.plot(g, target=ax, layout='davidson_harel', vertex_label=g.vs["name"], edge_width=np.log1p(g.es['weight']), vertex_size=0.2)
+    # ax.set_xlabel('branch connectivity')
+    # ax = fig.add_subplot(2, 2, 4)
+    # ig.plot(T, target=ax, layout='davidson_harel', vertex_label=T.vs["name"], edge_width=np.log1p(T.es['weight']), vertex_size=0.2)
+    # ax.set_xlabel('Maximum spanning tree')
+    # plt.tight_layout(h_pad=2, w_pad=3)
+    # plt.savefig(f'{cwd}/sm_branch_clustering.png')
+    # plt.close()
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="L: Grouping of SMs based on branching">
+    # Generate the Figure 5 from Tomimoto and Satake, 2023
+    l1cnts = defaultdict(int)
+    l2cnts = defaultdict(int)
+    shcnts = defaultdict(int)
+    for grp in datafilter.groupby('chromosome position alt_allele Layer'.split()):
+        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
+        if grp[0][3] == 'L1':
+            l1cnts[selb] += 1
+        elif grp[0][3] == 'L2':
+            l2cnts[selb] += 1
+        elif grp[0][3] == 'shared':
+            shcnts[selb] += 1
+
+    bkeys = set(list(l1cnts) + list(l2cnts))
+    bkeys = sorted(sorted(bkeys), key=lambda x: sum(x))
+
+    cnts = {'L1': l1cnts, 'L2': l2cnts, 'shared': shcnts}
+    sharedcnts = dict()
+    sharedcnts['L1'] = sum([v for k, v in cnts['L1'].items() if 1 < sum(k) < 7])
+    sharedcnts['L2'] = sum([v for k, v in cnts['L2'].items() if 1 < sum(k) < 7])
+
+    axwidth = barwidth*14/pltwidth
+    # [0.05, 0.3, 0.2226, 0.1]
+    axC1 = fig1.add_axes([0.62, 0.075, 0.1, 0.1])
+    axC2 = fig1.add_axes([0.51, 0.075, 0.1, 0.1])
+    axC3 = fig1.add_axes([0.3, 0.075, 0.2, 0.1])
+    axdict = {0: axC1, 1: axC2}
+    for i, l in enumerate('L1 L2'.split()):
+        data = cnts[l]
+        total_cnt = sum(data.values())
+        ax = axdict[i]
+        ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k]/total_cnt for k in bkeys[::-1]], color=colour[l], height=0.75)
+        ax.tick_params(axis='y',
+                       which='both',
+                       left=False,
+                       top=False,
+                       labelleft=False)
+        ax.set_ylim([-0.5, 13.5])
+        ax.set_title(f'{l} SMs (in %)')
+        ax.hlines(y=6.5, xmin=0, xmax=25, color='black', linestyle='dotted')
+        ax=cleanax(ax)
+        ax.grid(which='major', axis='y')
+        ax.set_axisbelow(True)
+        ax.set_xlim([0, 0.25])
+
+    ypos, xpos = np.where(np.array(bkeys)==1)
+    xpos = 6 - xpos
+    ypos = 13 - ypos
+    # xpos = 6 - xpos
+    axC3.scatter([x for i, x in enumerate(xpos) if ypos[i] not in {1, 5}], [y for i, y in enumerate(ypos) if y not in {1, 5}], marker=r'$\checkmark$', color='black', s=20)
+    axC3.scatter([x for i, x in enumerate(xpos) if ypos[i] in {1, 5}], [y for i, y in enumerate(ypos) if y in {1, 5}], marker=r'$\chi$', color='red', s=20)
+    axC3.set_xticks(ticks=range(7), rotation=45)
+    axC3.set_yticks(ticks=range(14))
+    axC3.set_xticklabels(labels=branchorder[::-1])
+    axC3.grid()
+    axC3.set_axisbelow(True)
+    axC3.set_xlim([-0.5, 6.5])
+    axC3.set_ylim([-0.5, 13.5])
+    axC3.tick_params(axis='y',
+                     which='both',
+                     left=False,
+                     top=False,
+                     labelleft=False)
+    axC3.tick_params(axis='x', rotation=45)
+    axC3.set_title('Selected branches')
+    axC3.spines[:].set_visible(False)
+    axC3.text(0, 1, 'C', transform=axC3.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="M: Correlation of SM count against branch length and branching events count from the primary branching">
+    branchlength = {'wt_1': (0.93 + 1.25 + 1.5),
+                    'wt_7': (0.93 + 1.25 + 1.0),
+                    'wt_18': (0.93 + 2.25),
+                    'wt_19': (3.13),
+                    'mut_11_1': (0.77 + 0.92 + 1.51 + 0.1),
+                    'mut_11_2': (0.77 + 0.92 + 1.51 + 0.2),
+                    'mut_15': (0.77 + 0.92 + 0.08 + 1.45)}
+    # branchcount = {'wt_1': 3,
+    #                'wt_7': 3,
+    #                'wt_18': 3,
+    #                'wt_19': 2,
+    #                'mut_11_1': 4,
+    #                'mut_11_2': 4,
+    #                'mut_15': 4}
+    df = datafilter.copy()
+    df.set_index('chromosome position alt_allele'.split(), inplace=True)
+    # Filter positions that are in branches
+
+    grp = datafilter.groupby('chromosome position alt_allele'.split()).nunique()
+    grp = grp.loc[grp.branch == 7]
+    df = df.loc[~df.index.isin(grp.index)]
+    df = df.reset_index()
+
+    # branchsmcnt = dict()
+    layersmcount = defaultdict(dict)
+    for l in 'L1 L2'.split():
+        layersmcount[l] = {branch: df.loc[df.branch==branch].loc[df.Layer.isin([l, 'shared'])].shape[0] for branch in branches}
+    #
+    # mutsinallL1 = allsmpivot.loc[:, [b+'_L1' for b in branches]]              # Get all positions that are in L1
+    # allsmmatfilt = allsmpivot.loc[mutsinallL1.apply(sum, axis=1) != 7]        # Filter positions that are in all L1
+    #
+    # for branch in branches:
+    #     bdf = allsmmatfilt.loc[:, [f'{branch}_{l}' for l in ['L1', 'L2', 'leaf']]]
+    #     bdf = bdf.loc[(bdf != 0).any(axis=1)]
+    #     branchsmcnt[branch] = bdf.shape[0]
+    #     layersmcount['L1'][branch] = sum(allsmmatfilt[f'{branch}_L1'])
+    #     layersmcount['L2'][branch] = sum(allsmmatfilt[f'{branch}_L2'])
+    #     layersmcount['leaf'][branch] = sum(allsmmatfilt[f'{branch}_leaf'])
+
+    # fig = plt.figure(figsize=[3, 3], dpi=300)
+    # ax = fig.add_subplot(4, 2, 1)
+    # ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    # r, p = sp.stats.spearmanr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+    # # ax.set_xlabel('branch length (in m)')
+    # ax.set_ylabel('Total number of SM')
+    # ax = cleanax(ax)
+    # ax = fig.add_subplot(4, 2, 2)
+    # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+    # # ax.set_xlabel('Number of branching event')
+    # ax = cleanax(ax)
+    # for l in ['L1', 'L2', 'leaf']:
+    # ax = fig.add_subplot(2, 1, i)
+    # ax = fig.add_subplot()
+    # 0.62, 0.075, 0.1, 0.1]
+    axD = fig1.add_axes([0.8, 0.075, 0.2, 0.1])
+    for i, l in enumerate(['L1', 'L2']):
+        axD = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=axD, label=l, color=colour[l], scatter_kws={'s': 5}, ci=None)
+        r, p = spearmanr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
+        axD.text(.6, .2 - (i/10), 'r={:.2f}, p={:.2g}'.format(r, p), transform=axD.transAxes, label=l, color=colour[l])
+        axD.set_ylabel(f'SMs')
+        axD = cleanax(axD)
+        i += 1
+        # ax = fig.add_subplot(4, 2, i)
+        # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l, color=colour[l])
+        # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
+        # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+        # ax = cleanax(ax)
+        # i+=1
+        # # ax.set_ylabel(f'Number of SM in {l}')
+        # if l == 'leaf':
+        #     ax.set_xlabel('Number of branching event')
+    # plt.tight_layout(h_pad=2, w_pad=2)
+    axD.legend(frameon=True).remove()
+    axD.set_xlabel('Branch length (in m)')
+    axD.text(0, 1, 'D', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # </editor-fold>
 
 
@@ -1238,81 +1447,84 @@ def mutation_spectra():
 
     # <editor-fold desc="Figure 3 plots">
     barwidth = 0.125
-    pltwidth = 7.24
+    pltwidth = 4.76
     dpi = 100
-    fig3 = plt.figure(figsize=[pltwidth, 5], dpi=dpi)
-    trans = mtransforms.ScaledTranslation(-20/dpi, 5/dpi, fig3.dpi_scale_trans)
+    fig3 = plt.figure(figsize=[pltwidth, 6], dpi=dpi)
+    trans = mtransforms.ScaledTranslation(-5/dpi, 5/dpi, fig3.dpi_scale_trans)
 
 
     # <editor-fold desc="A: Add tree image">
-    def getcntplt(axispos, branch):
-        bar_width = 0.75
-        ax = fig1.add_axes(axispos)
+    def getcntplt(ax, branch, bar_width):
+        # ax = fig1.add_axes(axispos)
         y_bottom = [0]
+        ymax = 25
         ax.set_xlim([-0.5, 0.5])
-        ax.set_ylim([0, 70])
-        ax.set_yticks([0, 75])
+        ax.set_ylim([0, ymax])
+        ax.set_yticks([0, ymax])
         ax.tick_params(bottom=False, labelbottom=False)
         ax.set_xlabel(branch, fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
         ax.spines[:].set_visible(False)
-        for l in ('L1', 'L2'):
-            for t in ('SNV', 'Indel'):
-                y = branchscnt[(l, t)][branch]
-                ax.bar([0], [y], label=f'{l} {t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
-                y_bottom = [y_bottom[0] + y]
+        for t in ('SNV', 'Indel'):
+            y = branchscnt[t][branch]
+            ax.bar([0], [y], label=f'{t}', bottom=y_bottom, color=colour[('leaf', t)], width=bar_width)
+            y_bottom = [y_bottom[0] + y]
         return ax
     # END
 
+
     tree = mpimg.imread(f'{cwd}/../tree_sketch_3.png')
-    axA = fig3.add_axes([0.03, 0.475, 0.4, 0.48])
+    axA = fig3.add_axes([0.05, 0.525, 0.6, 0.425])
     axA.imshow(tree, aspect='auto')
     axA.text(0, 1, 'A', transform=axA.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     axA.spines[:].set_visible(False)
     axA.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
 
-    # branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
-    # bar_width = 0.75
-    # axwidth = barwidth*1/pltwidth
-    # axA1 = getcntplt([0.39, 0.87, axwidth, 0.05], 'wt_1')
-    # axA2 = getcntplt([0.39, 0.66, axwidth, 0.05], 'wt_7')
-    # axA3 = getcntplt([0.325, 0.9, axwidth, 0.05], 'wt_18')
-    # axA4 = getcntplt([0.2, 0.9, axwidth, 0.05], 'wt_19')
-    # axA5 = getcntplt([0.06, 0.92, axwidth, 0.05], 'mut_11_1')
-    # axA6 = getcntplt([0.13, 0.92, axwidth, 0.05], 'mut_15')
-    # axA7 = getcntplt([0.06, 0.75, axwidth, 0.05], 'mut_11_2')
 
-
-    # </editor-fold>
-
-
-    # <editor-fold desc="B: Plot number of SMs identified in leaves">
-    # TODO: Update these plots
     df = allsmdata.loc[allsmdata.tissue == 'leaf'].copy()
     df['type'] = 'SNV'
     df.loc[[a[0] in '+-' for a in df.alt_allele], 'type'] = 'Indel'
     branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in df.groupby('type')}
+    bar_width = 0.75
+    axwidth = (barwidth*1/pltwidth)/0.6
+    axA1 = getcntplt(axA.inset_axes([0.9, 0.7, axwidth, 0.1]), 'wt_1', bar_width)
+    axA2 = getcntplt(axA.inset_axes([0.9, 0.25, axwidth, 0.1]), 'wt_7', bar_width)
+    axA3 = getcntplt(axA.inset_axes([0.75, 0.85, axwidth, 0.1]), 'wt_18', bar_width)
+    axA4 = getcntplt(axA.inset_axes([0.45, 0.85, axwidth, 0.1]), 'wt_19', bar_width)
+    axA5 = getcntplt(axA.inset_axes([0.25, 0.85, axwidth, 0.1]), 'mut_15', bar_width)
+    axA6 = getcntplt(axA.inset_axes([0.1, 0.85, axwidth, 0.1]), 'mut_11_1', bar_width)
+    axA7 = getcntplt(axA.inset_axes([0.1, 0.5, axwidth, 0.1]), 'mut_11_2', bar_width)
 
-    axwidth = barwidth*7/7.24
-    axB = fig3.add_axes([0.55, 0.825, axwidth, 0.125])
-    y_bottom = [0]*7
-    for t in ('SNV', 'Indel'):
-        y = [branchscnt[t][b] for b in branches]
-        axB.bar(branches, y, label=f'{t}', bottom=y_bottom, color=colour[('leaf', t)], width=0.75)
-        y_bottom = [y_bottom[i] + y[i] for i in range(7)]
-    axB.set_xlabel("Branch")
-    axB.set_ylabel("SMs")
-    axB.set_yticks(range(0, 21, 5))
-    axB = cleanax(axB)
-    axB.set_xlim(-0.5, 6.5)
-    # axB.legend(frameon=False, bbox_to_anchor=[0.7, 0.7])
-    # axB.legend().remove()
-    axB.tick_params(axis='x', rotation=45)
-    # xlabxc = axB.transAxes.transform([0.5, 0])[0]/100
-    # axB.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
-    # ylabyc = axA[0].transAxes.transform([0, 1])[1]/100
-    # axA[0].text(0.2, ylabyc, 'A', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    axB.text(0, 1, 'B', transform=axB.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # </editor-fold>
+
+
+    # # <editor-fold desc="B: Plot number of SMs identified in leaves">
+    # # TODO: Update these plots
+    # df = allsmdata.loc[allsmdata.tissue == 'leaf'].copy()
+    # df['type'] = 'SNV'
+    # df.loc[[a[0] in '+-' for a in df.alt_allele], 'type'] = 'Indel'
+    # branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in df.groupby('type')}
+    #
+    # axwidth = barwidth*7/7.24
+    # axB = fig3.add_axes([0.55, 0.825, axwidth, 0.125])
+    # y_bottom = [0]*7
+    # for t in ('SNV', 'Indel'):
+    #     y = [branchscnt[t][b] for b in branches]
+    #     axB.bar(branches, y, label=f'{t}', bottom=y_bottom, color=colour[('leaf', t)], width=0.75)
+    #     y_bottom = [y_bottom[i] + y[i] for i in range(7)]
+    # axB.set_xlabel("Branch")
+    # axB.set_ylabel("SMs")
+    # axB.set_yticks(range(0, 21, 5))
+    # axB = cleanax(axB)
+    # axB.set_xlim(-0.5, 6.5)
+    # # axB.legend(frameon=False, bbox_to_anchor=[0.7, 0.7])
+    # # axB.legend().remove()
+    # axB.tick_params(axis='x', rotation=45)
+    # # xlabxc = axB.transAxes.transform([0.5, 0])[0]/100
+    # # axB.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
+    # # ylabyc = axA[0].transAxes.transform([0, 1])[1]/100
+    # # axA[0].text(0.2, ylabyc, 'A', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # axB.text(0, 1, 'B', transform=axB.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # # </editor-fold>
 
 
     # <editor-fold desc="C: Plot Number of organ specific SMs">
@@ -1320,26 +1532,36 @@ def mutation_spectra():
     df = allsmdata.copy()
     df['type'] = ['SNV' if row[2][0] not in '+-' else 'Indel' for row in df.itertuples(index=False)]
     axwidth = barwidth*3/7.24
-    axC = fig3.add_axes([0.55, 0.55, axwidth, 0.125])
-    y_bottom = [0]*3
-    for t in ('SNV', 'Indel'):
-        cnts = df.loc[df.type == t] \
-            .drop_duplicates(subset='chromosome position alt_allele'.split()) \
-            .organ.value_counts().to_dict()
-        # axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('fruit', 'leaf', 'shared')], width=0.75)
-        axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=colour['leaf', t], label=t, width=0.75)
-        y_bottom = [cnts[l] for l in ('fruit', 'leaf', 'shared')]
-        # axC.bar([0], [0], color=legcol[t], label=t)
-    axC.set_xlabel("Organ")
-    axC.set_ylabel("SMs")
-    axC.set_xlim(-0.5, 2.5)
-    axC.tick_params(axis='x', rotation=45)
-    axC = cleanax(axC)
-    axC.legend(frameon=False, bbox_to_anchor=[1.1, 1])
-    # axC.legend().remove()
-    # xlabxc = axC.transAxes.transform([0.5, 0])[0]/100
-    # axC.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
-    axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    cnts = df \
+        .drop_duplicates(subset='chromosome position alt_allele'.split()) \
+        .organ.value_counts().to_dict()
+
+    axC = fig3.add_axes([0.7, 0.825, 0.3, 0.15])
+    venn2(subsets=(cnts['fruit'], cnts['leaf'], cnts['shared']),
+          set_labels='fruit leaf'.split(),
+          set_colors=(colour['L1'], colour['leaf']), alpha=1, ax=axC)
+    # axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axC.text(0, 1, 'C', transform=axC.transAxes, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # y_bottom = [0]*3
+    # for t in ('SNV', 'Indel'):
+    #     cnts = df.loc[df.type == t] \
+    #         .drop_duplicates(subset='chromosome position alt_allele'.split()) \
+    #         .organ.value_counts().to_dict()
+    #     # axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('fruit', 'leaf', 'shared')], width=0.75)
+    #     axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=colour['leaf', t], label=t, width=0.75)
+    #     y_bottom = [cnts[l] for l in ('fruit', 'leaf', 'shared')]
+    #     # axC.bar([0], [0], color=legcol[t], label=t)
+    # axC.set_xlabel("Organ")
+    # axC.set_ylabel("SMs")
+    # axC.set_xlim(-0.5, 2.5)
+    # axC.tick_params(axis='x', rotation=45)
+    # axC = cleanax(axC)
+    # axC.legend(frameon=False, bbox_to_anchor=[1.1, 1])
+    # # axC.legend().remove()
+    # # xlabxc = axC.transAxes.transform([0.5, 0])[0]/100
+    # # axC.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
+    # axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
@@ -1365,7 +1587,7 @@ def mutation_spectra():
     leafl1cnt = len(leafsms.intersect(l1sms, u=True).subtract(l2sms))
     l1l2cnt = len(l1sms.intersect(l2sms, u=True).subtract(leafsms))
     l1l2leafcnt = len(l1sms.intersect(l2sms, u=True).intersect(leafsms, u=True))
-    axD = fig3.add_axes([0.75, 0.55, 0.25, 0.4])
+    axD = fig3.add_axes([0.7, 0.525, 0.3, 0.25])
     venn3(subsets=(leafcnt, l2cnt, leafl2cnt, l1cnt, leafl1cnt, l1l2cnt, l1l2leafcnt),
           set_labels='leaf L2 L1'.split(),
           set_colors=(colour['leaf'], colour['L2'], colour['L1']), alpha=1, ax=axD)
@@ -1383,12 +1605,12 @@ def mutation_spectra():
     mrates['mrate'] = 'Mutation load'
 
     axE = deque()
-    axE1 = fig3.add_axes([0.075, 0.1, 0.2, 0.25])
+    axE1 = fig3.add_axes([0.1, 0.29, 0.3, 0.175])
 
     axE1 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE1)
     plt.setp(axE1.collections, alpha=.2)
     ylim = axE1.get_ylim()
-    axE1 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE1, hue='tissue', legend=False)
+    axE1 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE1, hue='tissue', legend=False, s=3)
     axE1.set_ylim(ylim)
     axE1.set_title('')
     axE1.set_ylabel('Mutation load (x$10^{-7}$)')
@@ -1402,31 +1624,31 @@ def mutation_spectra():
     axE1 = cleanax(axE1)
     axE.append(axE1)
 
-    mutsinallL1 = Counter(allsmdata.loc[allsmdata.tissue == 'L1'].groupby('position alt_allele'.split()).position.count())[7]       # Number of SMs that are in all branches
-    mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()
-    mrates = pd.DataFrame(mrates)
-    mrates.reset_index(inplace=True)
-    mrates.columns = 'branch tissue value'.split()
-    mrates.loc[mrates.tissue == 'L1', 'value'] -= mutsinallL1
-    mrates['value'] /= 480000000
-    mrates['mrate'] = 'Mutation load'
+    # mutsinallL1 = Counter(allsmdata.loc[allsmdata.tissue == 'L1'].groupby('position alt_allele'.split()).position.count())[7]       # Number of SMs that are in all branches
+    # mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()
+    # mrates = pd.DataFrame(mrates)
+    # mrates.reset_index(inplace=True)
+    # mrates.columns = 'branch tissue value'.split()
+    # mrates.loc[mrates.tissue == 'L1', 'value'] -= mutsinallL1
+    # mrates['value'] /= 480000000
+    # mrates['mrate'] = 'Mutation load'
 
-    axE2 = fig3.add_axes([0.3, 0.1, 0.2, 0.25])
-    axE2 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE2)
-    plt.setp(axE2.collections, alpha=.2)
-    ylim = axE2.get_ylim()
-    axE2 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE2, hue='tissue', legend=False)
-    axE2.set_ylim(ylim)
-    # axE2.set_xlabel('')
-    axE2.set_ylabel('')
-    axE2.set_xlabel("Filtered SMs present\nin L1 of branches")
-    axE2.ticklabel_format(axis='y', useOffset=False, style='plain')
-    axE2.set_ylim(axE1.get_ylim())
-    plt.tick_params(axis='x', bottom=False, labelbottom=False)
-    plt.tick_params(axis='y', left=False, labelleft=False)
-    axE2 = cleanax(axE2)
-    axE2.spines['left'].set_visible(False)
-    axE.append(axE2)
+    # axE2 = fig3.add_axes([0.225, 0.075, 0.1, 0.3])
+    # axE2 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE2)
+    # plt.setp(axE2.collections, alpha=.2)
+    # ylim = axE2.get_ylim()
+    # axE2 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE2, hue='tissue', legend=False, size=3)
+    # axE2.set_ylim(ylim)
+    # axE2.set_ylabel('')
+    # # axE2.set_xlabel("Filtered SMs present\nin L1 of branches")
+    # axE2.set_xlabel("Filtered SMs")
+    # axE2.ticklabel_format(axis='y', useOffset=False, style='plain')
+    # axE2.set_ylim(axE1.get_ylim())
+    # plt.tick_params(axis='x', bottom=False, labelbottom=False)
+    # plt.tick_params(axis='y', left=False, labelleft=False)
+    # axE2 = cleanax(axE2)
+    # axE2.spines['left'].set_visible(False)
+    # axE.append(axE2)
     axE[0].text(0, 1, 'E', transform=axE[0].transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
@@ -1439,68 +1661,148 @@ def mutation_spectra():
     # Read SMs in L1, L2 and leaves
     df = pd.read_table(allsmrc, index_col=[0, 1, 2])
     gtvals = [1, 2, 5, 10, 15, 20]
-    lcomb = {'L1': '100',
-             'L2': '010',
-             'leaf': '001',
-             'L1+L2': '110',
-             'L1+leaf': '101',
-             'L2+leaf': '011',
-             'L1+L2+leaf': '111'
+    # lcomb = {'L1': '100',
+    #          'L2': '010',
+    #          'leaf': '001',
+    #          'L1+L2': '110',
+    #          'L1+leaf': '101',
+    #          'L2+leaf': '011',
+    #          'L1+L2+leaf': '111'
+    #          }
+    l1comb = {'L1': '10',
+             'leaf': '01',
+             'L1+leaf': '11',
+              'None': '00'
              }
-    gtcnts = pd.DataFrame()
-    for gt in gtvals:
-        dfmask = df[[f"{b}{l}" for b in branches for l in ["_l1", "_l2", '']]].copy()
-        dfmask[dfmask < gt] = -1
-        dfmask[dfmask != -1] = 1
-        dfmask[dfmask == -1] = 0
-        # gtdict = {'SNP': defaultdict(int), 'Indel': defaultdict(int)}
-        gtdict = defaultdict(int)
-        # fig = plt.figure(figsize=[9, 9])
-        for i, b in enumerate(branches):
-            bsm = allsmdata.loc[allsmdata.branch == b]
-            bsm = bsm.set_index('chromosome position alt_allele'.split())
+    l2comb = {'L2': '10',
+             'leaf': '01',
+             'L2+leaf': '11',
+              'None': '00'
+             }
+    lcombdict = {0: l1comb, 1: l2comb}
+    lcnts = pd.DataFrame()
 
-            for j, t in enumerate('SNP Indel'.split()):
-                # Plots SNP heatmaps
-                # bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
-                bdf = dfmask[[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+    for i, l in enumerate('L1 L2'.split()):
+        gtcnts = pd.DataFrame()
+        for gt in gtvals:
+            tissues = [l, 'leaf']
+            # dfmask = df[[f"{b}{l}" for b in branches for l in ["_l1", "_l2", '']]].copy()
+            dfmask = df[[f"{b}{t}" for b in branches for t in [f"_{l.lower()}", '']]].copy()
+            dfmask[dfmask < gt] = -1
+            dfmask[dfmask != -1] = 1
+            dfmask[dfmask == -1] = 0
+            # gtdict = {'SNP': defaultdict(int), 'Indel': defaultdict(int)}
+            gtdict = defaultdict(int)
+            for b in branches:
+                bsm = allsmdata.loc[(allsmdata.branch == b) & (allsmdata.tissue.isin(tissues))].copy()
+                bsm = bsm.loc[[t[0] not in '+-' for t in bsm.alt_allele]]
+                bsm = bsm.set_index('chromosome position alt_allele'.split())
+                # for j, t in enumerate('SNP Indel'.split()):
+                    # Plots SNP heatmaps
+                    # bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+                    # bdf = dfmask[[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+                bdf = dfmask[[f"{b}{t}" for t in [f"_{l.lower()}", '']]].copy()
                 bdf = bdf.loc[bdf.index.isin(bsm.index)]
-                bdf = bdf.loc[bdf.apply(sum, axis=1) > 0]
+                # bdf = bdf.loc[bdf.apply(sum, axis=1) > 0]
                 bdf.sort_values(list(bdf.columns), inplace=True)
-                l = list(bdf.apply(lambda x: f'{x[0]}{x[1]}{x[2]}', axis=1))
-                for k, v in lcomb.items():
-                    gtdict[k] += l.count(v)
-                # ax = fig.add_subplot(2, 7, i+1+(j*7))
-                # ax = sns.heatmap(bdf, ax=ax, cbar=False, linewidth=1, linecolor='red')
-                # ax.set_yticklabels('')
-                # ax.set_ylabel(t)
-        # plt.suptitle(f'Genetype RC > {gt}')
-        # plt.tight_layout()
-        # plt.savefig(f'{cwd}/genotyping.rc_{gt}.png')
-        # plt.close()
-        gtdict = pd.DataFrame({'tissue': gtdict.keys(), 'count': gtdict.values()})
-        gtdict['gt'] = gt
-        # gtdict.reset_index(names='tissue', inplace=True)
-        # gtdict['SNP'] = (gtdict['SNP']*100)/sum(gtdict['SNP'])
-        gtdict['count'] /= sum(gtdict['count'])
-        gtdict['count'] *= 100
-        gtcnts = pd.concat([gtcnts, gtdict])
+                # l = list(bdf.apply(lambda x: f'{x[0]}{x[1]}{x[2]}', axis=1))
+                cmb = list(bdf.apply(lambda x: f'{x[0]}{x[1]}', axis=1))
+                for k, v in lcombdict[i].items():
+                    gtdict[k] += cmb.count(v)
 
-    # fig = plt.figure(figsize=[4, 5], dpi=300)
-    axF = fig3.add_axes([0.6, 0.1, 0.35, 0.25])
-    axF = sns.lineplot(gtcnts, x='gt', y='count', hue='tissue', legend=False, ax=axF, zorder=0)
-    axF = sns.scatterplot(gtcnts, x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', '*', '8', 's', 'p', 'd'], ax=axF, edgecolor='black', linewidth=0.5, zorder=1)
+            gtdict = pd.DataFrame({'tissue': gtdict.keys(), 'count': gtdict.values()})
+            gtdict['gt'] = gt
+            gtdict['count'] /= sum(gtdict['count'])
+            gtdict['count'] *= 100
+            gtcnts = pd.concat([gtcnts, gtdict])
+        gtcnts['Layer'] = l
+        lcnts = pd.concat([lcnts, gtcnts])
+
+    axF = fig3.add_axes([0.55, 0.29, 0.425, 0.175])
+    axF = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axF, zorder=0, palette=[colour['L1'], colour['leaf'], 'black', 'grey'])
+    axF = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axF, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L1'], colour['leaf'], 'black', 'grey'], s=10)
     axF = cleanax(axF)
     plt.setp(axF.lines, linewidth=1)
-    plt.setp(axF.collections, sizes=[20])
+    # plt.setp(axF.collections, sizes=[20])
     axF.set_xticks(gtvals)
-    axF.legend(frameon=False, ncols=2, bbox_to_anchor=[0.35, 0.6])
-    axF.set_xlabel('Minimum read count')
-    axF.set_ylabel('Genotyped SMs (%)')
+    # axF.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
+    axF.legend(frameon=False, ncol=3)
+    axF.set_xlabel('')
+    axF.set_ylabel('SM-branch pairs (%)')
+    axF.set_ylim(0, 100)
+    axF.set_facecolor('antiquewhite')
     axF.text(0, 1, 'F', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+
+    axF = fig3.add_axes([0.55, 0.06, 0.425, 0.175])
+    axF = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axF, zorder=0, palette=[colour['L2'], colour['leaf'], 'black', 'grey'])
+    axF = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axF, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L2'], colour['leaf'], 'black', 'grey'], s=10)
+    axF = cleanax(axF)
+    plt.setp(axF.lines, linewidth=1)
+    # plt.setp(axF.collections, sizes=[20])
+    axF.set_xticks(gtvals)
+    # axF.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
+    axF.legend(frameon=False, ncol=3)
+    axF.set_ylim(0, 100)
+    # axF.tick_params(axis='y', left=False, labelleft=False)
+    axF.set_xlabel('Minimum alternate reads')
+    axF.set_ylabel('SM-branch pairs (%)')
+    axF.set_facecolor('lavender')
+    # axF.text(0, 1, 'F', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # fig = plt.figure(figsize=[4, 5], dpi=300)
 
     # </editor-fold>
 
+
+    # <editor-fold desc="G: AF plots of L2/leaf specific mutations">
+    # Get SMs in each tissue type
+    smslist = dict()
+    df = allsmdata.set_index('chromosome position alt_allele'.split()).copy()
+    for grp in df.groupby('tissue'):
+        smslist[grp[0]] = set(grp[1].index.values)
+    l2pos = smslist['L2'].difference(smslist['leaf'])
+    leafpos = smslist['leaf'].difference(smslist['L2'])
+    bothpos = smslist['L2'].intersection(smslist['leaf'])
+    # Get afvalues for the selected positions
+    afvalues = pd.read_table(f'{cwd}/../all_sm_in_all_samples.allele_freq.txt')
+    afvalues.set_index(['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2'], inplace=True)
+
+    poscnts = pd.DataFrame()
+    for i, (k, v) in enumerate({'L2': l2pos, 'leaf': leafpos, 'both': bothpos}.items()):
+        afcnts = deque()
+        for row in afvalues.itertuples(index=True):
+            if row.Index in v:
+                # s = df.loc[row.Index].to_numpy()[0] if k == 'leaf' else df.loc[row.Index].to_numpy()[0][0]
+                bnames = df.loc[df.tissue.isin(['L2', 'leaf'])].loc[row.Index].branch.unique()
+                for bname in bnames:
+                    afcnts.append(list(row.Index) + [bname] + getvalues(row, [row._fields.index(c) for c in [bname, f'{bname}_l1', f'{bname}_l2']]))
+        afcnts = pd.DataFrame(afcnts)
+        afcnts['Group'] = k
+        # afcnts.reset_index(inplace=True)
+        poscnts = pd.concat([poscnts, afcnts])
+    poscnts.columns = ['chromosome', 'position', 'alt_allele', 'branch', 'leaf', 'L1', 'L2', 'Group']
+    # Remove posiltion with manually curated alt-allele
+    poscnts = poscnts.loc[poscnts.position != 20360183]
+    # Generate the plot for SNPs
+    pltdf = poscnts.loc[[i[0] not in '+-' for i in poscnts.alt_allele]]
+    axG = fig3.add_axes([0.1, 0.06, 0.3, 0.175])
+    axG = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=axG, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': 'black'}, s=10)
+    axG.set_xlim(-0.05, 1.05)
+    axG.set_ylim(-0.05, 1.05)
+    axG = cleanax(axG)
+    axG.legend(frameon=False).remove()
+    axG.text(0, 1, 'G', transform=axG.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # Generate the plot for Indels
+    pltdf = poscnts.loc[[i[0] in '+-' for i in poscnts.alt_allele]]
+    fig, ax = plt.subplots()
+    ax = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=ax, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': 'black'}, s=10)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax = cleanax(axG)
+    ax.legend(frameon=False).remove()
+    plt.savefig(f'{cwd}/../l2_leaf_allele_freq_indels.png', dpi=300)
+    plt.close()
+    # </editor-fold>
 
     plt.savefig("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/fig3.png", dpi=300)
     plt.close()
@@ -1685,6 +1987,7 @@ def mutation_spectra():
 
 
     # <editor-fold desc="Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2">
+    # IMPORTANT DO NOT DELETE: This section creates the all_sm_in_all_samples.read_counts.txt and all_sm_in_all_samples.alelle_freq.txt files required for main figures
     ## get allsmmat regions for use with BAM-readcount
     df = allsmdata['chromosome position position'.split()].drop_duplicates()
     df.to_csv(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.regions', index=False, header=False, sep='\t')
@@ -1849,45 +2152,6 @@ def mutation_spectra():
     plt.savefig(f'{cwd}/../genotyping_counts.png')
     plt.close()
 
-    # </editor-fold>
-
-    # TODO: update this plot
-    # <editor-fold desc="AF plots of tissue specific mutations">
-    ## layer 1 mutations could not be identified in leaves, further support that
-    ## accurate SM identification would require homogenous cell population)
-    afvalues = pd.read_table(f'{cwd}/all_sm_in_all_samples.allele_freq.txt')
-    afvalues.set_index(['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2'], inplace=True)
-    ldf = allsmmat.loc[allsmmat.organ == 'leaf'].drop('tissue organ'.split(), axis=1)
-    ldf.set_index('chromosome position alt_allele'.split(), inplace=True)
-    leafpos = set(list(map(tuple, ldf.index.values)))
-    fdf = allsmmat.loc[allsmmat.organ == 'fruit']
-    fdf.set_index('chromosome position alt_allele'.split(), inplace=True)
-    l1pos = set(list(map(tuple, fdf.loc[fdf.tissue == 'L1'].index.values)))
-    l2pos = set(list(map(tuple, fdf.loc[fdf.tissue == 'L2'].index.values)))
-    l1only = l1pos.difference(l2pos)
-    l2only = l2pos.difference(l1pos)
-    fig = plt.figure(figsize=[3, 4.5], dpi=300)
-    for i, (k, v) in enumerate({'leaf': leafpos, 'L1': l1only, 'L2': l2only}.items()):
-        ax = fig.add_subplot(3, 1, i+1)
-        df = ldf if k == 'leaf' else fdf
-        afcnts = dict()
-        for row in afvalues.itertuples(index=True):
-            if row.Index in v:
-                s = df.loc[row.Index].to_numpy()[0] if k == 'leaf' else df.loc[row.Index].to_numpy()[0][0]
-                afcnts[row.Index] = [s] + getvalues(row, [row._fields.index(c) for c in [s, f'{s}_l1', f'{s}_l2']])
-        afcnts = pd.DataFrame(afcnts).T
-        afcnts.reset_index(inplace=True)
-        afcnts.columns = ['chromosome', 'position', 'alt_allele', 'sample'] + ['leaf', 'L1', 'L2']
-        afcnts = afcnts.melt(id_vars=['chromosome', 'position', 'alt_allele', 'sample'])
-        ax = sns.lineplot(afcnts, x='variable', y='value', units='position', color='lightgrey', alpha=0.5, linestyle='dotted',  estimator=None, ax=ax, zorder=0, size=0.1, legend=False)
-        ax = sns.boxplot(data=afcnts, x='variable', y='value', ax=ax, linewidth=0.5, fliersize=0.2, palette=colour, zorder=1)
-        ax.set_xlabel('')
-        ax.set_ylabel('Allele Frequency')
-        ax.set_ylim([0, 1])
-        ax = cleanax(ax)
-    plt.tight_layout(pad=0.1)
-    plt.savefig(f'{cwd}/af_dist_all_sm.png')
-    plt.close()
     # </editor-fold>
 
 
