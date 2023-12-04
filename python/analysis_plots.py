@@ -14,6 +14,8 @@ colour = {('L1', 'SNV'): '#1f77b4',
           ('leaf', 'Indel'): '#8bcb8b',
           'L1': '#1f77b4',
           'L2': '#ff7f0e',
+          'L1+leaf': '#34C39C',
+          'L2+leaf': '#D1C929',
           'shared': '#9467bd',
           'both': '#9467bd',
           'fruit': '#003399',
@@ -349,8 +351,12 @@ def mutation_spectra():
     allsmrcdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples_readcounts/'
     allsmrc = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_in_all_samples.read_counts.txt'
     smbcs = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/bcs_with_sm_reads.txt'
+    figout = '/local/goel/Dropbox/projects/apricot_leaf/manuscript/figures/'
+    scrnadir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/'
+    scisodir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
     branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
     branchorder = ['wt_7', 'wt_1', 'wt_18', 'wt_19', 'mut_15', 'mut_11_1', 'mut_11_2']
+    bnamedict = dict(zip(branchorder, [f'B{i}' for i in range(1, 8)]))
     SMALL_SIZE = 7
     BIGGER_SIZE = 8
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
@@ -492,7 +498,8 @@ def mutation_spectra():
         ax.set_ylim([0, ymax])
         ax.set_yticks([0, ymax])
         ax.tick_params(bottom=False, labelbottom=False)
-        ax.set_xlabel(branch, fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
+        ax.set_xlabel(bnamedict[branch], fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 1, 'fc': 'white', 'ec': 'white'}})
+        ax.set_yticklabels(labels=ax.get_yticklabels(), fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'verticalalignment': 'center', 'bbox': {'pad': 1, 'fc': 'white', 'ec': 'white'}})
         ax.spines[:].set_visible(False)
         for l in ('L1', 'L2'):
             for t in ('SNV', 'Indel'):
@@ -502,7 +509,7 @@ def mutation_spectra():
         return ax
     # END
 
-    tree = mpimg.imread(f'{cwd}/../tree_sketch_1.png')
+    tree = mpimg.imread(f'{cwd}/../tree_sketch_fruit_nolength.png')
     axA = fig1.add_axes([0.03, 0.675, 0.4, 0.3])
     axA.imshow(tree, aspect='auto')
     axA.text(0, 1, 'A', transform=axA.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
@@ -518,7 +525,7 @@ def mutation_spectra():
     axA4 = getcntplt(axA.inset_axes([0.45, 0.85, axwidth, 0.1]), 'wt_19', bar_width)
     axA5 = getcntplt(axA.inset_axes([0.25, 0.85, axwidth, 0.1]), 'mut_15', bar_width)
     axA6 = getcntplt(axA.inset_axes([0.1, 0.85, axwidth, 0.1]), 'mut_11_1', bar_width)
-    axA7 = getcntplt(axA.inset_axes([0.1, 0.5, axwidth, 0.1]), 'mut_11_2', bar_width)
+    axA7 = getcntplt(axA.inset_axes([0.1, 0.45, axwidth, 0.1]), 'mut_11_2', bar_width)
 
     # </editor-fold>
 
@@ -568,6 +575,63 @@ def mutation_spectra():
     # # </editor-fold>
 
 
+    # <editor-fold desc="F: Plot mutation load">
+    """Consider each sample as separate lineage and divide by the diploid genome size"""
+    mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()/480000000
+    mrates = pd.DataFrame(mrates)
+    mrates.reset_index(inplace=True)
+    mrates.columns = 'branch tissue value'.split()
+    mrates['mrate'] = 'Mutation load'
+    mrates = mrates.loc[mrates.tissue !='leaf']
+    axwidth = barwidth*10/pltwidth
+    axF = fig1.add_axes([0.65, 0.875, 0.1,  0.1])
+    axF = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axF)
+    plt.setp(axF.collections, alpha=.2)
+    ylim = axF.get_ylim()
+    axF = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axF, hue='tissue', legend=False, s=3)
+    axF.set_ylim(ylim)
+    axF.set_title('')
+    axF.set_ylabel('Mutation load (x$10^{-7}$)')
+    axF.set_xlabel("All SMs")
+    axF.ticklabel_format(axis='y', useOffset=False, style='plain')
+    yticks = axF.get_yticks()
+    yticksl = yticks*10000000
+    axF.set_yticks(yticks[1:-1])
+    axF.set_yticklabels(yticksl[1:-1])
+    plt.tick_params(axis='x', bottom=False, labelbottom=False)
+    axF = cleanax(axF)
+    axF.text(0, 1, 'C', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # mutsinallL1 = Counter(allsmdata.loc[allsmdata.tissue == 'L1'].groupby('position alt_allele'.split()).position.count())[7]       # Number of SMs that are in all branches
+    # mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()
+    # mrates = pd.DataFrame(mrates)
+    # mrates.reset_index(inplace=True)
+    # mrates.columns = 'branch tissue value'.split()
+    # mrates.loc[mrates.tissue == 'L1', 'value'] -= mutsinallL1
+    # mrates['value'] /= 480000000
+    # mrates['mrate'] = 'Mutation load'
+
+    # axE2 = fig3.add_axes([0.225, 0.075, 0.1, 0.3])
+    # axE2 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE2)
+    # plt.setp(axE2.collections, alpha=.2)
+    # ylim = axE2.get_ylim()
+    # axE2 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE2, hue='tissue', legend=False, size=3)
+    # axE2.set_ylim(ylim)
+    # axE2.set_ylabel('')
+    # # axE2.set_xlabel("Filtered SMs present\nin L1 of branches")
+    # axE2.set_xlabel("Filtered SMs")
+    # axE2.ticklabel_format(axis='y', useOffset=False, style='plain')
+    # axE2.set_ylim(axE1.get_ylim())
+    # plt.tick_params(axis='x', bottom=False, labelbottom=False)
+    # plt.tick_params(axis='y', left=False, labelleft=False)
+    # axE2 = cleanax(axE2)
+    # axE2.spines['left'].set_visible(False)
+    # axE.append(axE2)
+
+
+    # </editor-fold
+
+
     # # <editor-fold desc="D: Plot for number of SMs per branch">
     #
     # branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
@@ -597,7 +661,7 @@ def mutation_spectra():
     # # </editor-fold>
 
 
-    # <editor-fold desc="E: Get transversion vs transitions plot">
+    # <editor-fold desc="C: Get transversion vs transitions plot">
     unisnp = datafilter.loc[datafilter.type == 'SNV'].drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele', 'Layer'])
     unisnp['snptype'] = 'transversions'
     unisnp.loc[(unisnp['ref_allele'] == 'A') & (unisnp['alt_allele'] == 'G'), 'snptype'] = 'transitions'
@@ -631,7 +695,7 @@ def mutation_spectra():
     df = pd.DataFrame(garb)
     df.columns = ['SNP type', 'Layer', 'Percentage of SMs']
     df = df.loc[~(df.Layer == 'shared')]
-    axE = fig1.add_axes([0.625, 0.875, 0.15, 0.1])
+    axE = fig1.add_axes([0.825, 0.875, 0.15, 0.1])
     # axE = sns.barplot(data=df, x='SNP type', y='Percentage of SMs', hue='Layer', palette=colour, order=['A,T>G,C', 'C,G>T,A', 'A,T>C,G', 'A,T>T,A', 'C,G>A,T', 'C,G>G,C'], ax=axE, width=0.75)
     axE = sns.lineplot(data=df, x='SNP type', y='Percentage of SMs', hue='Layer', palette=colour, ax=axE, legend=False)
     axE.axvline(1.5, linestyle='dashed', color='black', linewidth=0.75)
@@ -647,11 +711,11 @@ def mutation_spectra():
     axE.plot([], [], linewidth=3, color='darkgrey', label='SNV')
     axE.plot([], [], linewidth=3, color='lightgrey', label='Indel')
     axE.legend(frameon=False, bbox_to_anchor=[0.5, 0.2])
-    axE.text(0, 1, 'E', transform=axE.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axE.text(0, 1, 'D', transform=axE.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # </editor-fold>
 
 
-    # <editor-fold desc="F: Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
+    # <editor-fold desc="D: Get distibution of SMs SNPs in genomic triplets. Are CpGs enriched?">
     snppos = datafilter.loc[datafilter.type == 'SNV'].drop_duplicates(subset='chromosome position alt_allele'.split())
 
     # DO NOT DELETE
@@ -779,12 +843,12 @@ def mutation_spectra():
     axF.set_ylabel('SM ratio (x$10^{-6}$)')
     axF = cleanax(axF)
     axF.tick_params(axis='x', rotation=45)
-    axF.text(0, 1, 'F', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axF.text(0, 1, 'E', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
 
-    # <editor-fold desc="G: Indel size distribution">
+    # <editor-fold desc="E: Indel size distribution">
     inddf = datafilter.loc[datafilter['type'] == 'Indel'].drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele', 'Layer'])
     indsize = dict()
     for grp in inddf.groupby('Layer'):
@@ -796,18 +860,18 @@ def mutation_spectra():
     indsizeall = pd.DataFrame(indsizeall)
     indsizeall.columns = 'tissue size count'.split()
     axwidth = barwidth*10/pltwidth
-    axG = fig1.add_axes([0.85, 0.875, 0.15, 0.1])
+    axG = fig1.add_axes([0.075, 0.5, axwidth, 0.125])
     axG = sns.lineplot(indsizeall, x='size', y='count', hue='tissue', palette=[colour[l, 'SNV'] for l in 'L1 L2'.split()])
     axG.legend().remove()
     axG = cleanax(axG)
     axG.set_xlabel("Size (in bp)")
     axG.set_ylabel("Indels")
-    axG.text(0, 1, 'G', transform=axG.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axG.text(0, 1, 'F', transform=axG.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
 
-    # <editor-fold desc="H: SMs overlapping genes, TEs, and intergenic, annotations">
+    # <editor-fold desc="F: SMs overlapping genes, TEs, and intergenic, annotations">
     gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
     te_rep = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.ann.gff3').saveas()
 
@@ -868,7 +932,7 @@ def mutation_spectra():
     print(stats.loc[stats.padjusted < 0.05])
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
     axwidth = barwidth*10/pltwidth
-    axH = fig1.add_axes([0.075, 0.525, axwidth, 0.1])
+    axH = fig1.add_axes([0.075, 0.3, axwidth, 0.125])
     bar_width = 0.75/2
     for i, l in enumerate('L1 L2'.split()):
         y_bottom = [0]*5
@@ -884,7 +948,7 @@ def mutation_spectra():
     axH = cleanax(axH)
     axH.set_xlim(-0.5, 4.5)
     axH.tick_params(axis='x', rotation=45)
-    axH.text(0, 1, 'H', transform=axH.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axH.text(0, 1, 'G', transform=axH.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
 
     fig2 = plt.figure(figsize=[4, 4], dpi=300)
@@ -913,17 +977,18 @@ def mutation_spectra():
             y_bottom = y
             ax.set_xticks(np.arange(5))
             ax.set_xticklabels(['Coding', 'UTR', 'Intron', 'TE/Repeat', 'Intergenic'])
-            ax.set_ylabel('Ratio of mutations')
+            ax.set_ylabel('Percent of mutations')
             ax.set_xlabel('Annotation')
             ax = cleanax(ax)
     plt.tight_layout(pad=0)
-    plt.savefig(f'{cwd}/all_layer_somatic_variants.annotation_overlap.supplementary.png')
+    plt.savefig(f'{cwd}/../all_layer_somatic_variants.annotation_overlap.supplementary.png')
+    plt.savefig(f'{cwd}/../all_layer_somatic_variants.annotation_overlap.supplementary.pdf')
     plt.close()
     # subprocess.call(f'inkscape {cwd}/all_layer_somatic_variants.annotation_overlap.svg -M {cwd}/all_layer_somatic_variants.annotation_overlap.emf', shell=True)
     # </editor-fold>
 
 
-    # <editor-fold desc="I: Get syri plot with SMs">
+    # <editor-fold desc="G: Get syri plot with SMs">
     df = datafilter.drop_duplicates(subset=['chromosome', 'position', 'ref_allele', 'alt_allele'])
     for grp in df.groupby('Layer'):
         pos = grp[1].copy()
@@ -934,11 +999,11 @@ def mutation_spectra():
         pos.to_csv(f'{cwd}/{grp[0]}_sm_pos.bed', index=False, header=False, sep='\t')
     os.chdir(cwd)
     args = Namespace(H=None, R=False, S=0.4, W=None, b='agg', bp=None, cfg=Namespace(name=f'{cwd}/../base.cfg'), chr=None, chrname=Namespace(name=f'{cwd}/../plotsr_chrnames.txt'), chrord=None, d=300, f=SMALL_SIZE, genomes=Namespace(name=f'{cwd}/../genomes.txt'), itx=False, log='WARN', logfin=Namespace(name='plotsr.log'), markers=None, nodup=False, noinv=False, nosyn=False, notr=False, o='plotsr.pdf', reg=None, rtr=False, s=25000, sr=[Namespace(name='syri.out')], tracks=Namespace(name='tracks.txt'), v=True)
-    axI = fig1.add_axes([0.4, 0.3, 0.59, 0.225])
+    axI = fig1.add_axes([0.35, 0.3, 0.65, 0.225])
     axI = inlineplotsr(axI, args)
     axI = cleanax(axI)
     axI.spines[:].set_visible(False)
-    axI.text(0, 1, 'I', transform=axI.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axI.text(0, 1, 'H', transform=axI.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     axI.set_xlabel('Chromosome ID')
     ## Run plotsr using the above BED files as tracks (/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/haplodiff/syri_run)
     ## plotsr command:
@@ -946,7 +1011,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="J: Get syntenic and SR regions from syri.out for sm_overlap_with_structural_annotation">
+    # <editor-fold desc="H: Get syntenic and SR regions from syri.out for sm_overlap_with_structural_annotation">
 
     curanno = deque()
     with open(syriout, 'r') as f:
@@ -999,67 +1064,11 @@ def mutation_spectra():
     axJ.set_xlabel('')
     axJ.tick_params(axis='x', rotation=45)
     axJ = cleanax(axJ)
-    axJ.text(0, 1, 'J', transform=axJ.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axJ.text(0, 1, 'I', transform=axJ.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # </editor-fold>
 
 
-    # <editor-fold desc="K: Dendrogram for SMs in L1 and L2">
-    # hierarchical clustering between branches (this would show whether the SMs fit the morphology of the tree)
-    # fig = plt.figure(figsize=[3, 5], dpi=300)
-    axwidth = barwidth*10/pltwidth
-    axB1 = fig1.add_axes([0.05, 0.275, 0.2, 0.125])
-    axB2 = fig1.add_axes([0.05, 0.075, 0.2, 0.125])
-    axdict = {0: axB1, 1: axB2}
-    for i, l in enumerate('L1 L2'.split()):
-        pos = datafilter.loc[datafilter.Layer.isin([l, 'shared']), ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
-        # pos = datafilter.loc[datafilter.Layer == l, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
-        alts = {(row[0], row[1], row[3]) for row in pos.itertuples(index=False)}
-        branchpos = np.zeros([7, len(alts)], dtype=int)
-
-        for j, branch in enumerate(branches):
-            bdf = pos.loc[pos.branch == branch]
-            balts = {(row[0], row[1], row[3]) for row in bdf.itertuples(index=False)}
-            for k, alt in enumerate(alts):
-                if alt in balts:
-                    branchpos[j, k] = 1
-        ## Get distances for hierarchical clustering
-        AM = pdist(branchpos, metric='hamming')
-        # AM = pdist(branchpos, lambda u, v : 1 - (sum((u==1) & (v==1))/len(u)))
-        Z = linkage(AM, method='ward')
-        ax = axdict[i]
-        # dendrogram(optimal_leaf_ordering(Z, AM), link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
-        dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
-        ax.spines[:].set_visible(False)
-        ax.tick_params(left=False, labelleft=False)
-        # ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=ax.get_xticks(), rotation=90)
-        ax.set_xticks(labels=[branches[i] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=45)
-        ax.set_ylabel(l)
-    axB1.text(0, 1, 'B', transform=axB1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # # Get maximum spanning tree
-    # # Get adjacency matrix for minimum spanning tree
-    # AM2 = 30 - squareform(AM)
-    # np.fill_diagonal(AM2, 0)
-    # g = ig.Graph.Weighted_Adjacency(AM2, mode="undirected")
-    # g.vs['name'] = branches
-    # inv_weight = [1./w for w in g.es["weight"]]
-    # T = g.spanning_tree(weights=inv_weight)
-    # print(T.is_connected())
-    #
-    # ax = fig.add_subplot(2, 2, 2)
-    # ig.plot(g, target=ax, layout='davidson_harel', vertex_label=g.vs["name"], edge_width=np.log1p(g.es['weight']), vertex_size=0.2)
-    # ax.set_xlabel('branch connectivity')
-    # ax = fig.add_subplot(2, 2, 4)
-    # ig.plot(T, target=ax, layout='davidson_harel', vertex_label=T.vs["name"], edge_width=np.log1p(T.es['weight']), vertex_size=0.2)
-    # ax.set_xlabel('Maximum spanning tree')
-    # plt.tight_layout(h_pad=2, w_pad=3)
-    # plt.savefig(f'{cwd}/sm_branch_clustering.png')
-    # plt.close()
-
-    # </editor-fold>
-
-
-    # <editor-fold desc="L: Grouping of SMs based on branching">
+    # <editor-fold desc="J: Grouping of SMs based on branching">
     # Generate the Figure 5 from Tomimoto and Satake, 2023
     l1cnts = defaultdict(int)
     l2cnts = defaultdict(int)
@@ -1073,7 +1082,7 @@ def mutation_spectra():
         elif grp[0][3] == 'shared':
             shcnts[selb] += 1
 
-    bkeys = set(list(l1cnts) + list(l2cnts))
+    bkeys = set(list(l1cnts) + list(l2cnts) + list(shcnts))
     bkeys = sorted(sorted(bkeys), key=lambda x: sum(x))
 
     cnts = {'L1': l1cnts, 'L2': l2cnts, 'shared': shcnts}
@@ -1083,142 +1092,85 @@ def mutation_spectra():
 
     axwidth = barwidth*14/pltwidth
     # [0.05, 0.3, 0.2226, 0.1]
-    axC1 = fig1.add_axes([0.62, 0.075, 0.1, 0.1])
-    axC2 = fig1.add_axes([0.51, 0.075, 0.1, 0.1])
-    axC3 = fig1.add_axes([0.3, 0.075, 0.2, 0.1])
-    axdict = {0: axC1, 1: axC2}
-    for i, l in enumerate('L1 L2'.split()):
+    axC0 = fig1.add_axes([0.05, 0.05, 0.025, 0.175])
+    axC1 = fig1.add_axes([0.085, 0.05, 0.325, 0.175])
+    axC2 = fig1.add_axes([0.44, 0.05, 0.15, 0.175])
+    axC3 = fig1.add_axes([0.63, 0.05, 0.15, 0.175])
+    axC4 = fig1.add_axes([0.82, 0.05, 0.15, 0.175])
+
+    crosspos = [1, 5, 6]
+    checkpos = [i for i in range(len(bkeys)) if i not in crosspos]
+    axC0.scatter(x=[1]*len(checkpos), y=checkpos, marker=r'$\checkmark$', color='black', s=20)
+    axC0.scatter(x=[1]*len(crosspos), y=crosspos, marker=r'$\chi$', color='red', s=20)
+    axC0.spines[:].set_visible(True)
+    axC0.tick_params(axis='both',
+                     which='both',
+                     left=False,
+                     top=False,
+                     labelleft=False,
+                     bottom=False,
+                     labelbottom=False)
+    axC0.set_yticks(ticks=range(15))
+    axC0.set_ylim([-0.5, 14.5])
+    axC0.grid(which='major', axis='y')
+    axC0.set_axisbelow(True)
+    axC0.set_ylabel('Matches tree branching')
+
+    ypos, xpos = np.where(np.array(bkeys)==1)
+    xpos = 6 - xpos
+    ypos = 14 - ypos
+    # xpos = 6 - xpos
+    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] not in crosspos], [y for i, y in enumerate(ypos) if y not in crosspos], marker='o', color='black', s=20)
+    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] in crosspos], [y for i, y in enumerate(ypos) if y in crosspos], marker='o', color='black', s=20)
+    axC1.set_xticks(ticks=range(7), rotation=45)
+    axC1.set_yticks(ticks=range(len(bkeys)))
+    axC1.set_xticklabels(labels=branchorder[::-1])
+    axC1.grid()
+    axC1.set_axisbelow(True)
+    axC1.set_xlim([-0.5, 6.5])
+    axC1.set_ylim([-0.5, 14.5])
+    axC1.tick_params(axis='y',
+                     which='both',
+                     left=False,
+                     top=False,
+                     labelleft=False)
+    axC1.tick_params(axis='x', rotation=45)
+    axC1.set_xticks(labels=[bnamedict[i.get_text()] for i in axC1.get_xticklabels()], ticks=axC1.get_xticks(), rotation=0)
+    axC1.set_xlabel('Branches with SMs')
+    axC1.spines[:].set_visible(False)
+    axdict = {0: axC2, 1: axC3, 2: axC4}
+    for i, l in enumerate('L1 L2 shared'.split()):
         data = cnts[l]
         total_cnt = sum(data.values())
         ax = axdict[i]
-        ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k]/total_cnt for k in bkeys[::-1]], color=colour[l], height=0.75)
+        # ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k]/total_cnt for k in bkeys[::-1]], color=colour[l], height=0.75)
+        ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k] for k in bkeys[::-1]], color=colour[l], height=0.75)
         ax.tick_params(axis='y',
                        which='both',
                        left=False,
                        top=False,
                        labelleft=False)
-        ax.set_ylim([-0.5, 13.5])
-        ax.set_title(f'{l} SMs (in %)')
-        ax.hlines(y=6.5, xmin=0, xmax=25, color='black', linestyle='dotted')
+        ax.set_ylim([-0.5, 14.5])
+        ax.set_xlabel(f'{l} SMs')
+        ax.axhline(y=7.5, color='black', linestyle='dotted')
         ax=cleanax(ax)
         ax.grid(which='major', axis='y')
         ax.set_axisbelow(True)
-        ax.set_xlim([0, 0.25])
+        # ax.set_xlim([0, [0.25, 0.25, 0.55][i]])
+        ax.set_xlim([0, 25])
 
-    ypos, xpos = np.where(np.array(bkeys)==1)
-    xpos = 6 - xpos
-    ypos = 13 - ypos
-    # xpos = 6 - xpos
-    axC3.scatter([x for i, x in enumerate(xpos) if ypos[i] not in {1, 5}], [y for i, y in enumerate(ypos) if y not in {1, 5}], marker=r'$\checkmark$', color='black', s=20)
-    axC3.scatter([x for i, x in enumerate(xpos) if ypos[i] in {1, 5}], [y for i, y in enumerate(ypos) if y in {1, 5}], marker=r'$\chi$', color='red', s=20)
-    axC3.set_xticks(ticks=range(7), rotation=45)
-    axC3.set_yticks(ticks=range(14))
-    axC3.set_xticklabels(labels=branchorder[::-1])
-    axC3.grid()
-    axC3.set_axisbelow(True)
-    axC3.set_xlim([-0.5, 6.5])
-    axC3.set_ylim([-0.5, 13.5])
-    axC3.tick_params(axis='y',
-                     which='both',
-                     left=False,
-                     top=False,
-                     labelleft=False)
-    axC3.tick_params(axis='x', rotation=45)
-    axC3.set_title('Selected branches')
-    axC3.spines[:].set_visible(False)
-    axC3.text(0, 1, 'C', transform=axC3.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axC0.text(0.25, 1, 'J', transform=axC0.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
 
-    # <editor-fold desc="M: Correlation of SM count against branch length and branching events count from the primary branching">
-    branchlength = {'wt_1': (0.93 + 1.25 + 1.5),
-                    'wt_7': (0.93 + 1.25 + 1.0),
-                    'wt_18': (0.93 + 2.25),
-                    'wt_19': (3.13),
-                    'mut_11_1': (0.77 + 0.92 + 1.51 + 0.1),
-                    'mut_11_2': (0.77 + 0.92 + 1.51 + 0.2),
-                    'mut_15': (0.77 + 0.92 + 0.08 + 1.45)}
-    # branchcount = {'wt_1': 3,
-    #                'wt_7': 3,
-    #                'wt_18': 3,
-    #                'wt_19': 2,
-    #                'mut_11_1': 4,
-    #                'mut_11_2': 4,
-    #                'mut_15': 4}
-    df = datafilter.copy()
-    df.set_index('chromosome position alt_allele'.split(), inplace=True)
-    # Filter positions that are in branches
-
-    grp = datafilter.groupby('chromosome position alt_allele'.split()).nunique()
-    grp = grp.loc[grp.branch == 7]
-    df = df.loc[~df.index.isin(grp.index)]
-    df = df.reset_index()
-
-    # branchsmcnt = dict()
-    layersmcount = defaultdict(dict)
-    for l in 'L1 L2'.split():
-        layersmcount[l] = {branch: df.loc[df.branch==branch].loc[df.Layer.isin([l, 'shared'])].shape[0] for branch in branches}
-    #
-    # mutsinallL1 = allsmpivot.loc[:, [b+'_L1' for b in branches]]              # Get all positions that are in L1
-    # allsmmatfilt = allsmpivot.loc[mutsinallL1.apply(sum, axis=1) != 7]        # Filter positions that are in all L1
-    #
-    # for branch in branches:
-    #     bdf = allsmmatfilt.loc[:, [f'{branch}_{l}' for l in ['L1', 'L2', 'leaf']]]
-    #     bdf = bdf.loc[(bdf != 0).any(axis=1)]
-    #     branchsmcnt[branch] = bdf.shape[0]
-    #     layersmcount['L1'][branch] = sum(allsmmatfilt[f'{branch}_L1'])
-    #     layersmcount['L2'][branch] = sum(allsmmatfilt[f'{branch}_L2'])
-    #     layersmcount['leaf'][branch] = sum(allsmmatfilt[f'{branch}_leaf'])
-
-    # fig = plt.figure(figsize=[3, 3], dpi=300)
-    # ax = fig.add_subplot(4, 2, 1)
-    # ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
-    # r, p = sp.stats.spearmanr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
-    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
-    # # ax.set_xlabel('branch length (in m)')
-    # ax.set_ylabel('Total number of SM')
-    # ax = cleanax(ax)
-    # ax = fig.add_subplot(4, 2, 2)
-    # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
-    # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
-    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
-    # # ax.set_xlabel('Number of branching event')
-    # ax = cleanax(ax)
-    # for l in ['L1', 'L2', 'leaf']:
-    # ax = fig.add_subplot(2, 1, i)
-    # ax = fig.add_subplot()
-    # 0.62, 0.075, 0.1, 0.1]
-    axD = fig1.add_axes([0.8, 0.075, 0.2, 0.1])
-    for i, l in enumerate(['L1', 'L2']):
-        axD = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=axD, label=l, color=colour[l], scatter_kws={'s': 5}, ci=None)
-        r, p = spearmanr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
-        axD.text(.6, .2 - (i/10), 'r={:.2f}, p={:.2g}'.format(r, p), transform=axD.transAxes, label=l, color=colour[l])
-        axD.set_ylabel(f'SMs')
-        axD = cleanax(axD)
-        i += 1
-        # ax = fig.add_subplot(4, 2, i)
-        # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l, color=colour[l])
-        # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
-        # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
-        # ax = cleanax(ax)
-        # i+=1
-        # # ax.set_ylabel(f'Number of SM in {l}')
-        # if l == 'leaf':
-        #     ax.set_xlabel('Number of branching event')
-    # plt.tight_layout(h_pad=2, w_pad=2)
-    axD.legend(frameon=True).remove()
-    axD.set_xlabel('Branch length (in m)')
-    axD.text(0, 1, 'D', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    # </editor-fold>
-
-
-    plt.savefig("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/fig1.png", dpi=300)
+    plt.savefig(f"{figout}/fig1.png", dpi=300)
+    plt.savefig(f"{figout}/fig1.pdf", dpi=300)
     plt.close()
     # </editor-fold>
 
 
-    # <editor-fold desc="Figure 2 plots">
+    # <editor-fold desc="OBSOLETE: Figure 2 plots">
     barwidth = 0.125
     pltwidth = 4.76
     dpi = 100
@@ -1445,7 +1397,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Figure 3 plots">
+    # <editor-fold desc="Figure 2 plots">
     barwidth = 0.125
     pltwidth = 4.76
     dpi = 100
@@ -1462,7 +1414,8 @@ def mutation_spectra():
         ax.set_ylim([0, ymax])
         ax.set_yticks([0, ymax])
         ax.tick_params(bottom=False, labelbottom=False)
-        ax.set_xlabel(branch, fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
+        ax.set_xlabel(bnamedict[branch], fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
+        ax.set_yticklabels(labels=ax.get_yticklabels(), fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'verticalalignment': 'center', 'bbox': {'pad': 0, 'fc': 'white', 'ec': 'white'}})
         ax.spines[:].set_visible(False)
         for t in ('SNV', 'Indel'):
             y = branchscnt[t][branch]
@@ -1472,7 +1425,7 @@ def mutation_spectra():
     # END
 
 
-    tree = mpimg.imread(f'{cwd}/../tree_sketch_3.png')
+    tree = mpimg.imread(f'{cwd}/../tree_sketch_2.png')
     axA = fig3.add_axes([0.05, 0.525, 0.6, 0.425])
     axA.imshow(tree, aspect='auto')
     axA.text(0, 1, 'A', transform=axA.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
@@ -1497,8 +1450,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # # <editor-fold desc="B: Plot number of SMs identified in leaves">
-    # # TODO: Update these plots
+    # # <editor-fold desc="Plot number of SMs identified in leaves">
     # df = allsmdata.loc[allsmdata.tissue == 'leaf'].copy()
     # df['type'] = 'SNV'
     # df.loc[[a[0] in '+-' for a in df.alt_allele], 'type'] = 'Indel'
@@ -1516,57 +1468,30 @@ def mutation_spectra():
     # axB.set_yticks(range(0, 21, 5))
     # axB = cleanax(axB)
     # axB.set_xlim(-0.5, 6.5)
-    # # axB.legend(frameon=False, bbox_to_anchor=[0.7, 0.7])
-    # # axB.legend().remove()
     # axB.tick_params(axis='x', rotation=45)
-    # # xlabxc = axB.transAxes.transform([0.5, 0])[0]/100
-    # # axB.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
-    # # ylabyc = axA[0].transAxes.transform([0, 1])[1]/100
-    # # axA[0].text(0.2, ylabyc, 'A', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # axB.text(0, 1, 'B', transform=axB.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # # </editor-fold>
 
 
-    # <editor-fold desc="C: Plot Number of organ specific SMs">
+    # <editor-fold desc="B: Plot Number of organ specific SMs">
     legcol = {'SNV': 'black', 'Indel': 'grey'}
     df = allsmdata.copy()
     df['type'] = ['SNV' if row[2][0] not in '+-' else 'Indel' for row in df.itertuples(index=False)]
-    axwidth = barwidth*3/7.24
     cnts = df \
         .drop_duplicates(subset='chromosome position alt_allele'.split()) \
         .organ.value_counts().to_dict()
 
-    axC = fig3.add_axes([0.7, 0.825, 0.3, 0.15])
+    axB = fig3.add_axes([0.7, 0.825, 0.3, 0.15])
     venn2(subsets=(cnts['fruit'], cnts['leaf'], cnts['shared']),
           set_labels='fruit leaf'.split(),
-          set_colors=(colour['L1'], colour['leaf']), alpha=1, ax=axC)
-    # axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    axC.text(0, 1, 'C', transform=axC.transAxes, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # y_bottom = [0]*3
-    # for t in ('SNV', 'Indel'):
-    #     cnts = df.loc[df.type == t] \
-    #         .drop_duplicates(subset='chromosome position alt_allele'.split()) \
-    #         .organ.value_counts().to_dict()
-    #     # axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('fruit', 'leaf', 'shared')], width=0.75)
-    #     axC.bar(['fruit', 'leaf', 'shared'], [cnts[l] for l in ('fruit', 'leaf', 'shared')], bottom=y_bottom, color=colour['leaf', t], label=t, width=0.75)
-    #     y_bottom = [cnts[l] for l in ('fruit', 'leaf', 'shared')]
-    #     # axC.bar([0], [0], color=legcol[t], label=t)
-    # axC.set_xlabel("Organ")
-    # axC.set_ylabel("SMs")
-    # axC.set_xlim(-0.5, 2.5)
-    # axC.tick_params(axis='x', rotation=45)
-    # axC = cleanax(axC)
-    # axC.legend(frameon=False, bbox_to_anchor=[1.1, 1])
-    # # axC.legend().remove()
-    # # xlabxc = axC.transAxes.transform([0.5, 0])[0]/100
-    # # axC.xaxis.set_label_coords(xlabxc, 2.5, transform=fig3.dpi_scale_trans)
-    # axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+          set_colors=(colour['theme2'], colour['leaf']), alpha=1, ax=axB)
+    # axB.text(0, 1, 'B', transform=axB.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axB.text(0, 1, 'B', transform=axB.transAxes, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
 
-    # <editor-fold desc="D: Venn diagram showing organ specificity of SMs">
+    # <editor-fold desc="C: Venn diagram showing organ specificity of SMs">
     def tobed(df):
         df = df['chromosome position'.split()].copy()
         df.columns = 'chromosome end'.split()
@@ -1587,74 +1512,19 @@ def mutation_spectra():
     leafl1cnt = len(leafsms.intersect(l1sms, u=True).subtract(l2sms))
     l1l2cnt = len(l1sms.intersect(l2sms, u=True).subtract(leafsms))
     l1l2leafcnt = len(l1sms.intersect(l2sms, u=True).intersect(leafsms, u=True))
-    axD = fig3.add_axes([0.7, 0.525, 0.3, 0.25])
-    venn3(subsets=(leafcnt, l2cnt, leafl2cnt, l1cnt, leafl1cnt, l1l2cnt, l1l2leafcnt),
-          set_labels='leaf L2 L1'.split(),
-          set_colors=(colour['leaf'], colour['L2'], colour['L1']), alpha=1, ax=axD)
-    axD.text(0, 1, 'D', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axC = fig3.add_axes([0.7, 0.525, 0.3, 0.25])
+    # venn3(subsets=(leafcnt, l2cnt, leafl2cnt, l1cnt, leafl1cnt, l1l2cnt, l1l2leafcnt),
+    #       set_labels='leaf L2 L1'.split(),
+    #       set_colors=(colour['leaf'], colour['L2'], colour['L1']), alpha=1, ax=axC)
+    venn3(subsets=(l1cnt, leafcnt, leafl1cnt, l2cnt, l1l2cnt, leafl2cnt, l1l2leafcnt),
+          set_labels='Fruit:L1 leaf Fruit:L2'.split(),
+          set_colors=(colour['L1'], colour['leaf'], colour['L2']), alpha=1, ax=axC)
+    axC.text(0, 1, 'C', transform=axC.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
 
-    # <editor-fold desc="E: Plot mutation load">
-    """Consider each sample as separate lineage and divide by the diploid genome size"""
-    mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()/480000000
-    mrates = pd.DataFrame(mrates)
-    mrates.reset_index(inplace=True)
-    mrates.columns = 'branch tissue value'.split()
-    mrates['mrate'] = 'Mutation load'
-
-    axE = deque()
-    axE1 = fig3.add_axes([0.1, 0.29, 0.3, 0.175])
-
-    axE1 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE1)
-    plt.setp(axE1.collections, alpha=.2)
-    ylim = axE1.get_ylim()
-    axE1 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE1, hue='tissue', legend=False, s=3)
-    axE1.set_ylim(ylim)
-    axE1.set_title('')
-    axE1.set_ylabel('Mutation load (x$10^{-7}$)')
-    axE1.set_xlabel("All SMs")
-    axE1.ticklabel_format(axis='y', useOffset=False, style='plain')
-    yticks = axE1.get_yticks()
-    yticksl = yticks*10000000
-    axE1.set_yticks(yticks[1:-1])
-    axE1.set_yticklabels(yticksl[1:-1])
-    plt.tick_params(axis='x', bottom=False, labelbottom=False)
-    axE1 = cleanax(axE1)
-    axE.append(axE1)
-
-    # mutsinallL1 = Counter(allsmdata.loc[allsmdata.tissue == 'L1'].groupby('position alt_allele'.split()).position.count())[7]       # Number of SMs that are in all branches
-    # mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()
-    # mrates = pd.DataFrame(mrates)
-    # mrates.reset_index(inplace=True)
-    # mrates.columns = 'branch tissue value'.split()
-    # mrates.loc[mrates.tissue == 'L1', 'value'] -= mutsinallL1
-    # mrates['value'] /= 480000000
-    # mrates['mrate'] = 'Mutation load'
-
-    # axE2 = fig3.add_axes([0.225, 0.075, 0.1, 0.3])
-    # axE2 = sns.violinplot(data=mrates, x='mrate', y="value", color=colour['theme1'], linewidth=0, inner=None, ax=axE2)
-    # plt.setp(axE2.collections, alpha=.2)
-    # ylim = axE2.get_ylim()
-    # axE2 = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axE2, hue='tissue', legend=False, size=3)
-    # axE2.set_ylim(ylim)
-    # axE2.set_ylabel('')
-    # # axE2.set_xlabel("Filtered SMs present\nin L1 of branches")
-    # axE2.set_xlabel("Filtered SMs")
-    # axE2.ticklabel_format(axis='y', useOffset=False, style='plain')
-    # axE2.set_ylim(axE1.get_ylim())
-    # plt.tick_params(axis='x', bottom=False, labelbottom=False)
-    # plt.tick_params(axis='y', left=False, labelleft=False)
-    # axE2 = cleanax(axE2)
-    # axE2.spines['left'].set_visible(False)
-    # axE.append(axE2)
-    axE[0].text(0, 1, 'E', transform=axE[0].transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # </editor-fold>
-
-
-    # <editor-fold desc="F: Plot genotyping calls">
+    # <editor-fold desc="D: Plot genotyping calls">
     # Originally was separating out SNVs and indels, but since there is not much
     # difference between them now I draw a single plot showing them together
 
@@ -1670,22 +1540,23 @@ def mutation_spectra():
     #          'L1+L2+leaf': '111'
     #          }
     l1comb = {'L1': '10',
-             'leaf': '01',
-             'L1+leaf': '11',
+              'leaf': '01',
+              'L1+leaf': '11',
               'None': '00'
-             }
+              }
     l2comb = {'L2': '10',
-             'leaf': '01',
-             'L2+leaf': '11',
+              'leaf': '01',
+              'L2+leaf': '11',
               'None': '00'
-             }
+              }
     lcombdict = {0: l1comb, 1: l2comb}
     lcnts = pd.DataFrame()
 
     for i, l in enumerate('L1 L2'.split()):
         gtcnts = pd.DataFrame()
         for gt in gtvals:
-            tissues = [l, 'leaf']
+            # tissues = [l, 'leaf']
+            tissues = [l]
             # dfmask = df[[f"{b}{l}" for b in branches for l in ["_l1", "_l2", '']]].copy()
             dfmask = df[[f"{b}{t}" for b in branches for t in [f"_{l.lower()}", '']]].copy()
             dfmask[dfmask < gt] = -1
@@ -1698,9 +1569,9 @@ def mutation_spectra():
                 bsm = bsm.loc[[t[0] not in '+-' for t in bsm.alt_allele]]
                 bsm = bsm.set_index('chromosome position alt_allele'.split())
                 # for j, t in enumerate('SNP Indel'.split()):
-                    # Plots SNP heatmaps
-                    # bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
-                    # bdf = dfmask[[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+                # Plots SNP heatmaps
+                # bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+                # bdf = dfmask[[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
                 bdf = dfmask[[f"{b}{t}" for t in [f"_{l.lower()}", '']]].copy()
                 bdf = bdf.loc[bdf.index.isin(bsm.index)]
                 # bdf = bdf.loc[bdf.apply(sum, axis=1) > 0]
@@ -1712,49 +1583,703 @@ def mutation_spectra():
 
             gtdict = pd.DataFrame({'tissue': gtdict.keys(), 'count': gtdict.values()})
             gtdict['gt'] = gt
+            print(gtdict)
+            # print(sum(gtdict['count']), gtdict)
             gtdict['count'] /= sum(gtdict['count'])
             gtdict['count'] *= 100
             gtcnts = pd.concat([gtcnts, gtdict])
+
         gtcnts['Layer'] = l
         lcnts = pd.concat([lcnts, gtcnts])
+    lcnts.reset_index(inplace=True, drop=True)
 
-    axF = fig3.add_axes([0.55, 0.29, 0.425, 0.175])
-    axF = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axF, zorder=0, palette=[colour['L1'], colour['leaf'], 'black', 'grey'])
-    axF = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axF, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L1'], colour['leaf'], 'black', 'grey'], s=10)
-    axF = cleanax(axF)
-    plt.setp(axF.lines, linewidth=1)
-    # plt.setp(axF.collections, sizes=[20])
-    axF.set_xticks(gtvals)
-    # axF.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
-    axF.legend(frameon=False, ncol=3)
-    axF.set_xlabel('')
-    axF.set_ylabel('SM-branch pairs (%)')
-    axF.set_ylim(0, 100)
-    axF.set_facecolor('antiquewhite')
-    axF.text(0, 1, 'F', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axD1 = fig3.add_axes([0.1, 0.3, 0.5, 0.175])
+    axD1 = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axD1, zorder=0, palette=[colour['L1'], colour['leaf'], colour['L1+leaf'], 'grey'])
+    axD1 = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L1') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axD1, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L1'], colour['leaf'], colour['L1+leaf'], 'grey'], s=10)
+    axD1 = cleanax(axD1)
+    plt.setp(axD1.lines, linewidth=1)
+    # plt.setp(axD1.collections, sizes=[20])
+    axD1.set_xticks(gtvals)
+    # axD1.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
+    axD1.legend(frameon=False, ncol=3, loc='upper center')
+    axD1.set_xlabel('')
+    axD1.set_ylabel('SM-branch pairs (%)')
+    axD1.set_xlim(-10, 30)
+    axD1.set_ylim(0, 120)
+    axD1.set_facecolor('antiquewhite')
+    axD1.text(0, 1, 'D', transform=axD1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    leafcnt = len(leafsms.subtract(l1sms))
+    l1cnt = len(l1sms.subtract(leafsms))
+    leafl1cnt = len(leafsms.intersect(l1sms, u=True))
+
+    leafcnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'leaf') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+    l1cnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'L1') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+    leafl1cnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'L1+leaf') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+
+    axD3 = fig3.add_axes([0.1, 0.3, 0.1, 0.175])
+    v = venn2(subsets=(l1cnt, leafcnt, leafl1cnt),
+              set_labels='L1 leaf'.split(),
+              set_colors=(colour['L1'], colour['leaf']), alpha=1, ax=axD3)
+    for i in '01 10 11 A B'.split():
+        v.get_label_by_id(i).set_text('')
+
+    leafcnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'leaf') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+    l1cnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'L1') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+    leafl1cnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'L1+leaf') & (lcnts.Layer == 'L1'), 'count'].to_list()[0]
+
+    axD3 = fig3.add_axes([0.5, 0.3, 0.1, 0.175])
+    v = venn2(subsets=(l1cnt, leafcnt, leafl1cnt),
+              set_labels='L1 leaf'.split(),
+              set_colors=(colour['L1'], colour['leaf']), alpha=1, ax=axD3)
+    for i in '01 10 11 A B'.split():
+        v.get_label_by_id(i).set_text('')
+
+    axD2 = fig3.add_axes([0.1, 0.06, 0.5, 0.175])
+    axD2 = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axD2, zorder=0, palette=[colour['L2'], colour['leaf'], colour['L2+leaf'], 'grey'])
+    axD2 = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axD2, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L2'], colour['leaf'], colour['L2+leaf'], 'grey'], s=10)
+    axD2 = cleanax(axD2)
+    plt.setp(axD2.lines, linewidth=1)
+    # plt.setp(axD2.collections, sizes=[20])
+    axD2.set_xticks(gtvals)
+    # axD2.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
+    # axD2.legend(frameon=False, ncol=3)
+    axD2.legend(frameon=False, ncol=3, loc='upper center')
+    axD2.set_xlim(-10, 30)
+    axD2.set_ylim(0, 120)
+    # axD2.tick_params(axis='y', left=False, labelleft=False)
+    axD2.set_xlabel('Minimum alternate reads')
+    axD2.set_ylabel('SM-branch pairs (%)')
+    axD2.set_facecolor('lavender')
+    # axD2.text(0, 1, 'F', transform=axD2.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    leafcnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'leaf') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+    l2cnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'L2') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+    leafl1cnt = lcnts.loc[(lcnts['gt'] == 1) & (lcnts.tissue == 'L2+leaf') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+
+    axD4 = fig3.add_axes([0.1, 0.06, 0.1, 0.175])
+    v = venn2(subsets=(l2cnt, leafcnt, leafl1cnt),
+              set_labels='L2 leaf '.split(),
+              set_colors=(colour['L2'], colour['leaf']), alpha=1, ax=axD4)
+    for i in '01 10 11 A B'.split():
+        v.get_label_by_id(i).set_text('')
+
+    leafcnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'leaf') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+    l1cnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'L2') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+    leafl1cnt = lcnts.loc[(lcnts['gt'] == 20) & (lcnts.tissue == 'L2+leaf') & (lcnts.Layer == 'L2'), 'count'].to_list()[0]
+
+    axD4 = fig3.add_axes([0.5, 0.06, 0.1, 0.175])
+    v = venn2(subsets=(l2cnt, leafcnt, leafl1cnt),
+              set_labels='L2 leaf '.split(),
+              set_colors=(colour['L2'], colour['leaf']), alpha=1, ax=axD4)
+    for i in '01 10 11 A B'.split():
+        v.get_label_by_id(i).set_text('')
+
+    # </editor-fold>
+
+    # Test venn-diagram after genotyping
+    df = pd.read_table(allsmrc, index_col=[0, 1, 2])
+    dfmask = dfmask = df[[f"{b}{t}" for b in branches for t in [f"_l1", f"_l2", '']]].copy()
+    dfmask[dfmask < 1] = -1
+    dfmask[dfmask != -1] = 1
+    dfmask[dfmask == -1] = 0
+    l1sms = dfmask[[f"{b}{t}" for b in branches for t in [f"_l1"]]].copy()
+    l1sms = set(l1sms.loc[l1sms.apply(sum, axis=1) > 0].index.values)
+    l2sms = dfmask[[f"{b}{t}" for b in branches for t in [f"_l2"]]].copy()
+    l2sms = set(l2sms.loc[l2sms.apply(sum, axis=1) > 0].index.values)
+    leafsms = dfmask[[f"{b}{t}" for b in branches for t in [f""]]].copy()
+    leafsms = set(leafsms.loc[leafsms.apply(sum, axis=1) > 0].index.values)
+    # venn3(subsets=[l1sms, l2sms, leafsms], set_colors=[colour['L1'], colour['L2'],colour['leaf']], set_labels=['L1', 'L2', 'leaf'], alpha=1)
 
 
-    axF = fig3.add_axes([0.55, 0.06, 0.425, 0.175])
-    axF = sns.lineplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', hue='tissue', legend=False, ax=axF, zorder=0, palette=[colour['L2'], colour['leaf'], 'black', 'grey'])
-    axF = sns.scatterplot(lcnts.loc[(lcnts.Layer == 'L2') & (lcnts.tissue != 'None')], x='gt', y='count', style='tissue', hue='tissue', markers=['o', '^', 's', '*', '8',  'p', 'd'], ax=axF, edgecolor='black', linewidth=0, zorder=1, palette=[colour['L2'], colour['leaf'], 'black', 'grey'], s=10)
-    axF = cleanax(axF)
-    plt.setp(axF.lines, linewidth=1)
-    # plt.setp(axF.collections, sizes=[20])
-    axF.set_xticks(gtvals)
-    # axF.legend(frameon=False, ncols=1, bbox_to_anchor=[0.35, 0.6])
-    axF.legend(frameon=False, ncol=3)
-    axF.set_ylim(0, 100)
-    # axF.tick_params(axis='y', left=False, labelleft=False)
-    axF.set_xlabel('Minimum alternate reads')
-    axF.set_ylabel('SM-branch pairs (%)')
-    axF.set_facecolor('lavender')
-    # axF.text(0, 1, 'F', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    # fig = plt.figure(figsize=[4, 5], dpi=300)
+    # <editor-fold desc="E: Counts of Leaf/L2/shared sms per branch">
+    l2leafcnt = dict()
+    for b in branches:
+        df = allsmdata.loc[(allsmdata.branch == b) & (allsmdata.tissue != 'L1')].copy()
+        df.drop_duplicates(subset='chromosome position alt_allele'.split(), inplace=True)
+        l2leafcnt[bnamedict[b]] = Counter(df.organ)
+    l2leafcnt = pd.DataFrame(l2leafcnt).T
+    l2leafcnt.fillna(0, inplace=True)
+    l2leafcnt.reset_index(inplace=True)
+    l2leafcnt = l2leafcnt.melt(id_vars='index')
+    l2leafcnt.loc[l2leafcnt.variable == 'fruit', 'variable'] = 'L2'
+    l2leafcnt.sort_values(['index'], inplace=True)
+    # fig = plt.figure(figsize=[5, 3])
+    # ax = fig.add_subplot()
+    axwidth = barwidth*21/pltwidth
+
+    axE = fig3.add_axes([0.7, 0.06, 0.29, 0.415])
+    axE = sns.barplot(data=l2leafcnt, x='value', y='index', hue='variable', hue_order=['shared', 'L2', 'leaf'], palette=[colour['fruit'], colour['L2'], colour['leaf']], orient='h', ax=axE)
+    axE = cleanax(axE)
+    axE.legend(title='', frameon=False, loc='lower left', bbox_to_anchor=[0.5, 0.5])
+    axE.set_xlabel('somatic mutations')
+    axE.set_ylabel('branch')
+    axE.set_xticks(ticks=range(0, 25, 5))
+    axE.text(0, 1, 'E', transform=axE.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # plt.tight_layout()
+    # plt.savefig(f'{cwd}/../leaf_l2_shared_sm_cnt.png', dpi=300)
 
     # </editor-fold>
 
 
-    # <editor-fold desc="G: AF plots of L2/leaf specific mutations">
+    plt.savefig(f"{figout}/fig2.png", dpi=300)
+    plt.savefig(f"{figout}/fig2.pdf", dpi=300)
+    plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="Figure 3 plots">
+
+    # <editor-fold desc="Read data and save summary stats">
+    df = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/umap_coordinates.txt')
+    df.columns = 'UMAP_1 UMAP_2 branch bc cluster'.split()
+    df.loc[df.branch == 'wt1', 'branch'] = 'wt_1'
+    df.loc[df.branch == 'wt19', 'branch'] = 'wt_19'
+
+    clsanno = {'L1': (3, 10),
+               'L2': (0, 1, 2, 4, 5, 6),
+               'L3': (7, 8, 13, 14),
+               'Other': (9, 11, 12)}
+    clscols = deque()
+    clscols.extend(list(zip(clsanno['L1'], sns.blend_palette([colour['L1', 'SNV'], colour['L1', 'Indel']], n_colors=len(clsanno['L1']))[::-1])))
+    clscols.extend(list(zip(clsanno['L2'], sns.blend_palette([colour['L2', 'SNV'], colour['L2', 'Indel']], n_colors=len(clsanno['L2']))[::-1])))
+    clscols.extend(list(zip(clsanno['L3'], sns.blend_palette([colour['leaf', 'SNV'], colour['leaf', 'Indel']], n_colors=len(clsanno['L3']))[::-1])))
+    clscols.extend(list(zip(clsanno['Other'], sns.blend_palette(['lightgrey', 'grey'], n_colors=len(clsanno['Other'])))))
+    clscols = dict(clscols)
+    df['clscols'] = [clscols[i] for i in df.cluster]
+    df['celltype'] = 'Other'
+    for l in 'L1 L2 L3'.split():
+        df.loc[df.cluster.isin(clsanno[l]), 'celltype'] = l
+
+    # Save summary stats
+    atlasjsondata = dict()
+    atlasjsondata['Number of Total cells'] = df.shape[0]
+    atlasjsondata['Number of cells in each branch'] = df.groupby('branch').bc.nunique().to_dict()
+    atlasjsondata['Number of cells of each celltype'] = df.celltype.value_counts().to_dict()
+    atlasjsondata['Percent of cells of each celltype'] = ((df.celltype.value_counts()/df.shape[0])*100).apply(round, ndigits=1).to_dict()
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/atlas_sm_stats.json', 'w') as fout:
+        json.dump(atlasjsondata, fout, indent=2)
+
+    # </editor-fold>
+
+    dpi = 100
+    fig4 = plt.figure(figsize=[7.24, 8], dpi=dpi)
+    trans = mtransforms.ScaledTranslation(-20/dpi, 5/dpi, fig4.dpi_scale_trans)
+
+
+    # <editor-fold desc="A: Draw cell-population scatter plot">
+    axA = deque()
+    for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
+        bdf = df.loc[df.branch == b]
+        # ax = fig4.add_axes([0.08 + ((i%2)*0.3), 0.725 - ((i//2) * 0.3), 0.225, 0.225])
+        ax = fig4.add_axes([0.06 + (i*0.235), 0.75 - ((i//24) * 0), 0.22, 0.22])
+        for j in range(0, max(df.cluster)+1):
+            bdfi = bdf.loc[bdf.cluster == j]
+            if bdfi.shape[0] > 0:
+                ax.text(np.median(bdfi.UMAP_1), np.median(bdfi.UMAP_2), j, weight="normal")
+        ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=2, c=bdf.clscols, linewidth=0.1)
+        if i == 0:
+            ax.set_ylabel('UMAP 2')
+        else:
+            ax.tick_params(left=False, labelleft=False)
+        ax.set_xlabel('UMAP 1')
+        if i % 2 == 0:
+            pass
+        ax.set_title(bnamedict[b], pad=8, fontdict={'fontweight': 700})
+        ax = cleanax(ax)
+        ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.set_xlabel('UMAP 1')
+        axA.append(ax)
+        ax.spines['left'].set_visible(False)
+    # ax = axA[2]
+    # for c in [('L1', 10), ('L2', 6), ('L3', 14), ('Other', 11)]:
+    #     ax.plot([], [], linewidth=5, c=clscols[c[1]], label=c[0])
+    # ax.legend(frameon=False, ncol=4, loc='upper left', bbox_to_anchor=[0, -0.25], alignment='center')
+    # ylabyc = axA[0].transAxes.transform([0, 0.5])[1]/100
+    # axA[0].yaxis.set_label_coords(0.25, ylabyc, transform=fig4.dpi_scale_trans)
+    # ylabyc = axA[2].transAxes.transform([0, 0.5])[1]/100
+    # axA[2].yaxis.set_label_coords(0.25, ylabyc, transform=fig4.dpi_scale_trans)
+    # ylabyc = axA[0].transAxes.transform([0, 1])[1]/100
+    # axA[0].text(0.2, ylabyc, 'A', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    axA[0].text(-0.10, 1, 'A', transform=axA[0].transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    axleg = fig4.add_axes([0.06, 0.65, 0.915, 0.05])
+    ax = axleg
+    for k, v in clsanno.items():
+        for c in v:
+            ax.plot([], [], linewidth=5, c=clscols[c], label=c)
+    legendhandels = ax.get_legend_handles_labels()
+    L1leg = ax.legend(legendhandels[0][:2], legendhandels[1][:2], title='L1/Epidermis', bbox_to_anchor=[0, 1], bbox_transform=ax.transAxes, loc='upper left', ncol=1, alignment='left', frameon=False)
+    L2leg = ax.legend(legendhandels[0][2:8], legendhandels[1][2:8], title='L2/Mesophyll', bbox_to_anchor=[0.15, 1], bbox_transform=ax.transAxes, loc='upper left', ncol=3, alignment='left', frameon=False)
+    L3leg = ax.legend(legendhandels[0][8:12], legendhandels[1][8:12], title='L3/Vascular', bbox_to_anchor=[0.45, 1], bbox_transform=ax.transAxes, loc='upper left', ncol=2, alignment='left', frameon=False)
+    otherleg = ax.legend(legendhandels[0][12:], legendhandels[1][12:], title='Other', bbox_to_anchor=[0.68, 1], bbox_transform=ax.transAxes, loc='upper left', ncol=2, alignment='left', frameon=False)
+    ax.add_artist(L1leg)
+    ax.add_artist(L2leg)
+    ax.add_artist(L3leg)
+    ax.spines[:].set_visible(False)
+    ax.set_xlim(0, 1)
+    ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+
+    # </editor-fold>
+
+    #
+    # # <editor-fold desc="OBSOLETE: C: Presence of alt reads at SM positions">
+    # with open(f'{cwd}/../rna.alt_readcount.pickle', 'rb') as f:
+    #     mutsfilt, rnahm, isohm = pickle.load(f).values()
+    # axC = deque()
+    # ax = fig4.add_axes([0.8, 0.645, 0.19, 0.33])
+    # cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
+    # ax = sns.heatmap(mutsfilt, linewidths=0.5, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, cbar=False, ax=ax)
+    # # ax.hlines([8], *ax.get_xlim(), color='k')
+    # # ax.vlines([7], *ax.get_ylim(), color='k')
+    # ax.set_ylabel('')
+    # ax.set_xlabel('')
+    # axC.append(ax)
+    #
+    # # rnahm = getmutlist(rnapos)
+    # # ax = plt.subplot2grid((4, 1), (2, 0), rowspan=1, colspan=1)
+    # ax = fig4.add_axes([0.8, 0.5225, 0.19, 0.11])
+    # ax = sns.heatmap(rnahm, linewidths=0.5, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=rnahm.index, cbar_kws={'label': 'scRNA-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
+    # ax.set_ylabel('RNA-Seq')
+    # ylabyc = ax.transAxes.transform([0, 0.5])[1]/100
+    # ax.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
+    # ax.set_xlabel('')
+    #
+    # # isohm = getmutlist(isopos)
+    # # ax = plt.subplot2grid((4, 1), (3, 0), rowspan=1, colspan=1)
+    # ax = fig4.add_axes([0.8, 0.4, 0.19, 0.11])
+    # ax = sns.heatmap(isohm, linewidths=0.5, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=isohm.index, cbar_kws={'label': 'scIso-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
+    # ax.set_ylabel('Iso-Seq')
+    # ax.set_xlabel('SNVs')
+    # ylabyc = ax.transAxes.transform([0, 0.5])[1]/100
+    # ax.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
+    # # ax.set_xticks()
+    # ylabyc = axC[0].transAxes.transform([0, 1])[1]/100
+    # axC[0].text(5, ylabyc, 'C', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # # </editor-fold>
+    #
+
+    # <editor-fold desc="Create summary stats">
+    scjsondata = dict()
+    # TODO: Fix summary statistics output
+    # Get number of SNVs in four branches
+    expsmpos = allsmdata.loc[[True if alt[0] not in '+-' else False for alt in allsmdata.alt_allele] & (allsmdata.branch.isin(['wt_1', 'wt_19', 'mut_11_1', 'mut_15']))]
+    pos = set(zip(expsmpos.chromosome, expsmpos.position, expsmpos.alt_allele))
+    scjsondata["Number of SNPs in the 4 branches"] = len(pos)
+
+    alltrans = pd.concat([rnatrans, isotrans])
+    alltrans = alltrans.loc[alltrans.position != 4335333]
+    alltrans.sort_values('chromosome position alt_allele'.split(), inplace=True)
+    alltrans = alltrans.merge(allsmdata, on='chromosome position alt_allele'.split(), how='left')
+    alltransanno = {}
+    for grp in alltrans.groupby('chromosome position alt_allele'.split()):
+        alltransanno[grp[0]] = tuple(grp[1].tissue.unique())
+    scjsondata["SM counts with reads"] = len(alltransanno)
+    scjsondata["SM counts in tissue with reads"] = {'_'.join(k): v for k, v in Counter(alltransanno.values()).items()}
+
+    # Count number of cells with SNVs and their layers
+    bcs = pd.read_table(smbcs, header=None)
+    bcs = bcs.loc[~bcs[3].isna()]
+    bcs[0] = bcs[0].apply(str.lower)
+    bcs.sort_values([1, 2], inplace=True)
+    bcdf = pd.DataFrame()
+    for i, b in enumerate(['wt_1', 'wt_19', 'mut_11_1', 'mut_15']):
+        bnamebcs = bcs.loc[bcs[0] == b]
+        bnamebcs = set([f'{s1}_{i+1}' for s in bnamebcs[3].to_list() for s1 in s.split(',')])
+        bnamedf = df.loc[df.bc.isin(bnamebcs)]
+        bcdf = pd.concat([bcdf, bnamedf])
+
+    # Write sc seq stats
+    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/sc_seq_stats.json', 'w') as fout:
+        json.dump(scjsondata, fout, indent=2)
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="D: Clusters with mutated cells">
+    # bcs = pd.read_table(smbcs, header=None)
+    # bcs[0] = bcs[0].apply(str.lower)
+    # bcs.sort_values([1, 2], inplace=True)
+    # bcs = bcs.loc[~bcs[3].isna()]
+    rsmbcs = pd.read_table(smbcs, header=None)
+    rsmbcs[0] = rsmbcs[0].apply(str.lower)
+    rsmbcs.sort_values([1, 2], inplace=True)
+    rsmbcs = rsmbcs.loc[~rsmbcs[3].isna()]
+
+    ismbcs = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/bcs_with_sm_reads.txt', header=None)
+    ismbcs[0] = ismbcs[0].apply(str.lower)
+    ismbcs.sort_values([1, 2], inplace=True)
+    ismbcs = ismbcs.loc[~ismbcs[3].isna()]
+    bcs = deque()
+    for grp in pd.concat([rsmbcs, ismbcs]).groupby([0, 1, 2]):
+        bcs.append(list(grp[0]) + [','.join(set([j for i in grp[1][3] for j in i.split(',')]))])
+    bcs = pd.DataFrame(bcs)
+    bcs.sort_values([1, 2])
+
+    # bcs = bcs.loc[bcs[2].isin((11957090, 19101663))]
+    scind = dict(zip(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [1, 2, 3, 4]))
+    axD = deque()
+    for j, grp in enumerate(bcs.groupby([1, 2])):
+        # if grp[0] not in (('CUR1G', 11957090), ('CUR6G', 19101663)):
+        #     continue
+        for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
+            bdf = df.loc[df.branch == b].copy()
+            bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
+            bdf['zorder'] = 0
+            bdf['psize'] = 0.5
+            bdf['lwd'] = 0
+            bcb = grp[1].loc[grp[1][0] == b, 3]
+
+            if bcb.shape[0] > 0:
+                bcb = list(grp[1].loc[grp[1][0] == b, 3])[0].replace('-1', f'-1_{scind[b]}').split(',')
+                if grp[0] == ('CUR6G', 3442340) and b == 'wt_19':
+                    print(grp[0], b, bcb)
+                    bcb.remove('TTCATTGCAAAGACTA-1_2') # Remove the barcode which has mis-aligned reads resulting in wrong genotyping
+                bdf['clscols'] = [clscols[r.cluster] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
+                bdf['lwd'] = [0.5 if r.bc in bcb else r.lwd for r in bdf.itertuples()]
+                bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
+                bdf['psize'] = [30 if r.bc in bcb else 0.5 for r in bdf.itertuples()]
+                bdf.sort_values('zorder', inplace=True)
+            ax = fig4.add_axes([0.06 + (i*0.235), 0.51 - (j*0.1), 0.22, 0.09])
+            ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.psize, c=bdf.clscols, linewidth=bdf.lwd, edgecolor='black')
+            ax = cleanax(ax)
+            ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+            ax.spines[:].set_visible(False)
+            if i == 0:
+                ax.set_ylabel(f'{grp[0][0]}:{grp[0][1]}'.replace('CUR', 'Chr').replace('G', ''))
+            if i != 0:
+                ax.set_ylabel('')
+            axD.append(ax)
+            # if j == 5:
+            #     ax.set_xlabel(bnamedict[b])
+    axD[0].text(-0.1, 1.1, 'B', transform=axD[0].transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+
+
+    # bdf = df.loc[df.branch == 'mut_11_1'].copy()
+    # bdf['zorder'] = 0
+    # bdf['s'] = 0.5
+    # bdf['lwd'] = 0
+    #
+    # bcb = list(bcs.loc[(bcs[1] == 'CUR6G') & (bcs[2] == 19101663) & (bcs[0] == 'mut_11_1'), 3])[0].replace('-1', f'-1_3').split(',')
+    # bdf['clscols'] = [r.clscols if r.bc in bcb else [0.8, 0.8, 0.8, 1]  for r in bdf.itertuples()]
+    # bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
+    # bdf['s'] = [10 if r.bc in bcb else r.s for r in bdf.itertuples()]
+    # bdf['lwd'] = [0.5 if r.bc in bcb else r.lwd for r in bdf.itertuples()]
+    # bdf.sort_values('zorder', inplace=True)
+    # axD = fig4.add_axes([0.75, 0.075, 0.24, 0.225])
+    # axD.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.s, c=bdf.clscols, linewidth=bdf.lwd, edgecolor='black')
+    # # ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.s, c=bdf.clscols, linewidth=bdf.lw, edgecolor='white')
+    # axD = cleanax(axD)
+    # axD.set_title(f'mut_11_1')
+    # axD.set_xlabel('UMAP 1')
+    # axD.set_ylabel('UMAP 2')
+    # ylabyc = axD.transAxes.transform([0, 0.5])[1]/100
+    # axD.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
+    # ylabyc = axD.transAxes.transform([0, 1])[1]/100
+    # axD.text(5, ylabyc, 'D', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # </editor-fold>
+
+
+    plt.savefig(f"{figout}/fig3.png", dpi=300)
+    plt.savefig(f"{figout}/fig3.pdf", dpi=300)
+    plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="Selected supplementary plots">
+
+    # <editor-fold desc="Heterogeneity variation in regions with SM and background variation">
+    # Added sample info in the VCF
+    syrivcf = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/syri.vcf'
+    syrivcfnew = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/nuc_div/syri.sample.vcf'
+    with open(syrivcf, 'r') as fin:
+        with open(syrivcfnew, 'w') as fout:
+            changeversion = True
+            for line in fin:
+                if changeversion:
+                    fout.write('##fileformat=VCFv4.2\n')
+                    changeversion = False
+                    continue
+                if line[:2] == "##":
+                    fout.write(line)
+                elif line[:2] == "#C":
+                    fout.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+                    fout.write(f'{line.strip()}\tFORMAT\tORA\tCUR\n')
+                elif 'SYN' in line:
+                    if '<' not in line:
+                        fout.write(f'{line.strip()}\tGT\t1/1\t0/0\n')
+    os.chdir('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/nuc_div/')
+    Popen(f'bgzip syri.sample.vcf'.split())
+    Popen(f'tabix syri.sample.vcf.gz'.split())
+    Popen(f'vcftools --gzvcf syri.sample.vcf.gz  --window-pi 10000 --out cur_vs_ora'.split())
+    syrisyn = deque()
+    with open(syriout, 'r') as f:
+        for line in f:
+            line = line.strip().split()
+            if line[10] == 'SYNAL':
+                syrisyn.append(line[:3])
+    syrisyn = pd.DataFrame(syrisyn)
+    syrisyn[[1, 2]] = syrisyn[[1, 2]].astype(int)
+    syrisyn.columns = 'Chromosome Start End'.split()
+    synpr = pr.PyRanges(syrisyn)
+
+    # Select SNV positions
+    # smpos = datafilter.loc[datafilter.type=='SNV'].drop_duplicates(subset='chromosome position alt_allele'.split())
+    # Select all positions
+    smpos = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
+    smtype = dict(zip(smpos.chromosome.astype('str') + "_" + smpos.position.astype('str'), smpos.type))
+    smdf = smpos['chromosome position'.split()].copy()
+    smdf['end'] = smpos['position']
+    smdf.columns = 'Chromosome Start End'.split()
+    smpr = pr.PyRanges(smdf)
+    smsyn = smpr.overlap(synpr).as_df()
+    smpi = pd.DataFrame()
+    for row in smsyn.itertuples(index=False):
+        os.chdir('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/nuc_div/')
+        Popen(f'vcftools --gzvcf syri.sample.vcf.gz --chr {row[0]} --from-bp {row[1]-1100}  --to-bp {row[2]+1100} --window-pi 100 --out {row[0]}_{row[1]}'.split())
+        rb = int(np.floor(row[1]/100)) * 100
+        rbins = np.arange(rb-1000, rb+1200, 100)
+        rdf = pd.DataFrame(zip([row[0]]*(len(rbins)-1), rbins[:-1], rbins[1:]))
+        rdf[1] += 1
+        rdf.columns = 'CHROM  BIN_START  BIN_END'.split()
+        pidf = pd.read_table(f'{row[0]}_{row[1]}.windowed.pi')
+        rdf = rdf.merge(pidf, how='left')
+        rdf.fillna(0, inplace=True)
+        rdf['index'] = range(-10, 11)
+        rdf['position'] = f'{row[0]}_{row[1]}'
+        smpi = pd.concat([smpi, rdf])
+    smpi['type'] = [smtype[p] for p in smpi.position]
+
+    # smpi = smpi.pivot(index='position', columns='index', values='PI')
+    meanPI = np.mean(pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/nuc_div/cur_vs_ora.windowed.pi').PI)
+    fig = plt.figure(figsize=[4, 4], dpi=300)
+    ax = fig.add_subplot(2, 1, 1)
+    ax = sns.pointplot(smpi.loc[smpi.type=='SNV'], x='index', y='PI', ax=ax, errorbar='ci')
+    ax.set_title('SNVs')
+    plt.setp(ax.lines, linewidth=1)
+    plt.setp(ax.collections, sizes=[10])
+    ax = cleanax(ax)
+    ax.set_ylabel('Nucleotide divresity')
+    ax.set_xlabel('Genomic region bin (x100 bp)')
+    ax.set_ylim([0, 0.015])
+    ax.axhline(meanPI, linewidth=0.5, color='black', linestyle='dashed', zorder=0)
+    ax = fig.add_subplot(2, 1, 2)
+    ax = sns.pointplot(smpi.loc[smpi.type=='Indel'], x='index', y='PI', ax=ax, errorbar='ci')
+    ax.set_title('Indels')
+    plt.setp(ax.lines, linewidth=1)
+    plt.setp(ax.collections, sizes=[10])
+    ax = cleanax(ax)
+    ax.set_ylabel('Nucleotide divresity')
+    ax.set_xlabel('Genomic region bin (x100 bp)')
+    ax.set_ylim([0, 0.015])
+    ax.axhline(meanPI, linewidth=0.5, color='black', linestyle='dashed', zorder=0)
+    plt.tight_layout(h_pad=5)
+    plt.savefig(f'{cwd}/../all_sm_nuc_diversity.png', dpi=300)
+    plt.savefig(f'{cwd}/../all_sm_nuc_diversity.pdf', dpi=300)
+    plt.close()
+
+    # # Code for plotting histogram on log scale
+    # _, bins = np.histogram(np.array(list(binalt.values())) + 0.0000001, bins=100)
+    # logbins = np.logspace(np.log10(bins[0]), np.log10(bins[-1]), len(bins))
+    # plt.hist(np.array(list(binalt.values())) + 0.0000001, bins=logbins)
+    # plt.xscale('log')
+    # plt.yscale('log')
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="I: Dendrogram for SMs in L1 and L2">
+    # hierarchical clustering between branches (this would show whether the SMs fit the morphology of the tree)
+    # fig = plt.figure(figsize=[3, 5], dpi=300)
+    fig1 = plt.figure()
+    axwidth = barwidth*10/pltwidth
+    # axB1 = fig1.add_axes([0.05, 0.275, 0.2, 0.125])
+    # axB1 = fig1.add_axes([0.05, 0.275, 0.2, 0.125])
+    axB1 = fig1.add_subplot(2, 1, 1)
+    axB2 = fig1.add_subplot(2, 1, 2)
+    axdict = {0: axB1, 1: axB2}
+    for i, l in enumerate('L1 L2'.split()):
+        pos = datafilter.loc[datafilter.Layer.isin([l, 'shared']), ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+        # pos = datafilter.loc[datafilter.Layer == l, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+        alts = {(row[0], row[1], row[3]) for row in pos.itertuples(index=False)}
+        branchpos = np.zeros([7, len(alts)], dtype=int)
+
+        for j, branch in enumerate(branches):
+            bdf = pos.loc[pos.branch == branch]
+            balts = {(row[0], row[1], row[3]) for row in bdf.itertuples(index=False)}
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[j, k] = 1
+        ## Get distances for hierarchical clustering
+        AM = pdist(branchpos, metric='hamming')
+        # AM = pdist(branchpos, lambda u, v : 1 - (sum((u==1) & (v==1))/len(u)))
+        Z = linkage(AM, method='ward')
+        ax = axdict[i]
+        # dendrogram(optimal_leaf_ordering(Z, AM), link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+        dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+        ax.spines[:].set_visible(False)
+        ax.tick_params(left=False, labelleft=False)
+        # ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=ax.get_xticks(), rotation=90)
+        ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+        ax.set_ylabel(l)
+    # axB1.text(0, 1, 'I', transform=axB1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    plt.savefig(f'{cwd}/../sm_branch_clustering.png', dpi=300)
+    plt.savefig(f'{cwd}/../sm_branch_clustering.pdf', dpi=300)
+    plt.close()
+    # # Get maximum spanning tree
+    # # Get adjacency matrix for minimum spanning tree
+    # AM2 = 30 - squareform(AM)
+    # np.fill_diagonal(AM2, 0)
+    # g = ig.Graph.Weighted_Adjacency(AM2, mode="undirected")
+    # g.vs['name'] = branches
+    # inv_weight = [1./w for w in g.es["weight"]]
+    # T = g.spanning_tree(weights=inv_weight)
+    # print(T.is_connected())
+    #
+    # ax = fig.add_subplot(2, 2, 2)
+    # ig.plot(g, target=ax, layout='davidson_harel', vertex_label=g.vs["name"], edge_width=np.log1p(g.es['weight']), vertex_size=0.2)
+    # ax.set_xlabel('branch connectivity')
+    # ax = fig.add_subplot(2, 2, 4)
+    # ig.plot(T, target=ax, layout='davidson_harel', vertex_label=T.vs["name"], edge_width=np.log1p(T.es['weight']), vertex_size=0.2)
+    # ax.set_xlabel('Maximum spanning tree')
+    # plt.tight_layout(h_pad=2, w_pad=3)
+    # plt.savefig(f'{cwd}/sm_branch_clustering.png')
+    # plt.close()
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Example plot showing mutations having higher AF in L1 in all branches">
+    pos = ('CUR1G', 34111279, '+AT')
+    # cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
+    # branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
+    readcnt = defaultdict(dict)
+    for bname, bid in bnamedict.items():
+        # for l in ('l1', 'l2', 'l3'):
+        for l in ('l1', 'l2'):
+            with open(f'{allsmrcdir}/{bname}.{l}.all_sm_in_all_samples.b30.q10.read_count.txt', 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    if line[0] == pos[0]:
+                        if int(line[1]) == pos[1]:
+                            try:
+                                index = line.index(pos[2])
+                            except ValueError:
+                                readcnt[bid][l] = 0
+                                break
+                            readcnt[bid][l] = int(line[index+1])
+                            break
+                    else:
+                        readcnt[bid][l] = 0
+                        break
+    pltdf = pd.DataFrame(readcnt).T
+    pltdf.columns = 'L1 L2'.split()
+    fig = plt.figure(figsize=[5, 2], dpi=300)
+    ax = fig.add_subplot()
+    ax = cleanax(ax)
+    ax = pltdf.plot.bar(ax=ax, color=colour)
+    ax.set_ylabel("Allele Frequency")
+    ax.set_title("Layer specific somatic mutation present in all branches")
+    ax.legend(frameon=False)
+    ax.tick_params(axis='x', rotation=0)
+    ax = cleanax(ax)
+    plt.savefig(f"{cwd}/../layer_conserved_somatic_mutation_allele_frequency.png")
+    plt.savefig(f"{cwd}/../layer_conserved_somatic_mutation_allele_frequency.pdf")
+    plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="K: Correlation of SM count against branch length and branching events count from the primary branching">
+    branchlength = {'wt_1': (0.93 + 1.25 + 1.5),
+                    'wt_7': (0.93 + 1.25 + 1.0),
+                    'wt_18': (0.93 + 2.25),
+                    'wt_19': (3.13),
+                    'mut_11_1': (0.77 + 0.92 + 1.51 + 0.1),
+                    'mut_11_2': (0.77 + 0.92 + 1.51 + 0.2),
+                    'mut_15': (0.77 + 0.92 + 0.08 + 1.45)}
+    # branchcount = {'wt_1': 3,
+    #                'wt_7': 3,
+    #                'wt_18': 3,
+    #                'wt_19': 2,
+    #                'mut_11_1': 4,
+    #                'mut_11_2': 4,
+    #                'mut_15': 4}
+    df = datafilter.copy()
+    df.set_index('chromosome position alt_allele'.split(), inplace=True)
+    # Filter positions that are in branches
+
+    grp = datafilter.groupby('chromosome position alt_allele'.split()).nunique()
+    grp = grp.loc[grp.branch == 7]
+    df = df.loc[~df.index.isin(grp.index)]
+    df = df.reset_index()
+
+    # branchsmcnt = dict()
+    layersmcount = defaultdict(dict)
+    for l in 'L1 L2'.split():
+        layersmcount[l] = {branch: df.loc[df.branch==branch].loc[df.Layer.isin([l, 'shared'])].shape[0] for branch in branches}
+    #
+    # mutsinallL1 = allsmpivot.loc[:, [b+'_L1' for b in branches]]              # Get all positions that are in L1
+    # allsmmatfilt = allsmpivot.loc[mutsinallL1.apply(sum, axis=1) != 7]        # Filter positions that are in all L1
+    #
+    # for branch in branches:
+    #     bdf = allsmmatfilt.loc[:, [f'{branch}_{l}' for l in ['L1', 'L2', 'leaf']]]
+    #     bdf = bdf.loc[(bdf != 0).any(axis=1)]
+    #     branchsmcnt[branch] = bdf.shape[0]
+    #     layersmcount['L1'][branch] = sum(allsmmatfilt[f'{branch}_L1'])
+    #     layersmcount['L2'][branch] = sum(allsmmatfilt[f'{branch}_L2'])
+    #     layersmcount['leaf'][branch] = sum(allsmmatfilt[f'{branch}_leaf'])
+
+    # fig = plt.figure(figsize=[3, 3], dpi=300)
+    # ax = fig.add_subplot(4, 2, 1)
+    # ax = sns.regplot(x=[branchlength[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    # r, p = sp.stats.spearmanr([branchlength[b] for b in branches], [branchsmcnt[b] for b in branches])
+    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+    # # ax.set_xlabel('branch length (in m)')
+    # ax.set_ylabel('Total number of SM')
+    # ax = cleanax(ax)
+    # ax = fig.add_subplot(4, 2, 2)
+    # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[branchsmcnt[b] for b in branches], ax=ax, label='All', color=colour['any'])
+    # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [branchsmcnt[b] for b in branches])
+    # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+    # # ax.set_xlabel('Number of branching event')
+    # ax = cleanax(ax)
+    # for l in ['L1', 'L2', 'leaf']:
+    # ax = fig.add_subplot(2, 1, i)
+    # ax = fig.add_subplot()
+    # 0.62, 0.075, 0.1, 0.1]
+    fig = plt.figure(figsize=[4, 4])
+    # axD = fig1.add_axes([0.8, 0.075, 0.2, 0.1])
+    axD = fig.add_subplot()
+    for i, l in enumerate(['L1', 'L2']):
+        axD = sns.regplot(x=[branchlength[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=axD, label=l, color=colour[l], scatter_kws={'s': 5}, ci=None)
+        r, p = spearmanr([branchlength[b] for b in branches], [layersmcount[l][b] for b in branches])
+        axD.text(.6, .2 - (i/10), 'r={:.2f}, p={:.2g}'.format(r, p), transform=axD.transAxes, label=l, color=colour[l])
+        axD.set_ylabel(f'SMs')
+        axD = cleanax(axD)
+        i += 1
+        # ax = fig.add_subplot(4, 2, i)
+        # ax = sns.regplot(x=[branchcount[b] for b in branches], y=[layersmcount[l][b] for b in branches], ax=ax, label=l, color=colour[l])
+        # r, p = sp.stats.spearmanr([branchcount[b] for b in branches], [layersmcount[l][b] for b in branches])
+        # ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p), transform=ax.transAxes)
+        # ax = cleanax(ax)
+        # i+=1
+        # # ax.set_ylabel(f'Number of SM in {l}')
+        # if l == 'leaf':
+        #     ax.set_xlabel('Number of branching event')
+    # plt.tight_layout(h_pad=2, w_pad=2)
+    axD.legend(frameon=True).remove()
+    axD.set_xlabel('Branch length (in m)')
+    plt.tight_layout()
+    # axD.text(0, 1, 'K', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    plt.savefig(f'{cwd}/../branch_sm_correlation.png', dpi=300)
+    plt.savefig(f'{cwd}/../branch_sm_correlation.pdf', dpi=300)
+    plt.close()
+    # </editor-fold>
+
+
+    # <editor-fold desc="E: AF plots of L2/leaf specific mutations">
     # Get SMs in each tissue type
     smslist = dict()
     df = allsmdata.set_index('chromosome position alt_allele'.split()).copy()
@@ -1785,208 +2310,36 @@ def mutation_spectra():
     poscnts = poscnts.loc[poscnts.position != 20360183]
     # Generate the plot for SNPs
     pltdf = poscnts.loc[[i[0] not in '+-' for i in poscnts.alt_allele]]
-    axG = fig3.add_axes([0.1, 0.06, 0.3, 0.175])
-    axG = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=axG, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': 'black'}, s=10)
-    axG.set_xlim(-0.05, 1.05)
-    axG.set_ylim(-0.05, 1.05)
-    axG = cleanax(axG)
-    axG.legend(frameon=False).remove()
-    axG.text(0, 1, 'G', transform=axG.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    fig = plt.figure(figsize=[3, 6])
+    # axE = fig3.add_axes([0.65,  0.29, 0.3, 0.175])
+    axE = fig.add_subplot(2, 1, 1)
+    axE = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=axE, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': colour['L2+leaf']}, s=10)
+    axE.plot([0, 1], [0, 1], linestyle='dotted', color='lightgrey', zorder=0, lw=1)
+    axE.set_xlim(-0.05, 1.05)
+    axE.set_ylim(-0.05, 1.05)
+    axE = cleanax(axE)
+    # axE.legend(frameon=False).remove()
+    axE.set_title('SNVs')
+    # axE.text(0, 1, 'E', transform=axE.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # Generate the plot for Indels
     pltdf = poscnts.loc[[i[0] in '+-' for i in poscnts.alt_allele]]
-    fig, ax = plt.subplots()
-    ax = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=ax, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': 'black'}, s=10)
+    # fig, ax = plt.subplots()
+    ax = fig.add_subplot(2, 1, 2)
+    ax = sns.scatterplot(pltdf, x='L2', y='leaf', hue='Group', ax=ax, linewidth=0, zorder=1, palette={'L2': colour['L2'], 'leaf': colour['leaf'], 'both': colour['L2+leaf']}, s=10)
+    ax.plot([0, 1], [0, 1], linestyle='dotted', color='lightgrey', zorder=0, lw=1)
     ax.set_xlim(-0.05, 1.05)
     ax.set_ylim(-0.05, 1.05)
-    ax = cleanax(axG)
-    ax.legend(frameon=False).remove()
-    plt.savefig(f'{cwd}/../l2_leaf_allele_freq_indels.png', dpi=300)
-    plt.close()
-    # </editor-fold>
-
-    plt.savefig("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/fig3.png", dpi=300)
-    plt.close()
-    # </editor-fold>
-
-
-    # <editor-fold desc="Figure 4 plots">
-    dpi = 100
-    fig4 = plt.figure(figsize=[7.24, 6], dpi=dpi)
-
-    df = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/umap_coordinates.txt')
-    df.columns = 'UMAP_1 UMAP_2 branch bc cluster'.split()
-    df.loc[df.branch == 'wt1', 'branch'] = 'wt_1'
-    df.loc[df.branch == 'wt19', 'branch'] = 'wt_19'
-    clscols = mcm.tab20(range(df.cluster.nunique()))
-    df['clscols'] = [clscols[i-1] for i in df.cluster]
-
-    # <editor-fold desc="A: Draw cell-population scatter plot">
-    axA = deque()
-    for i, b in enumerate(['wt_1', 'wt_19', 'mut_11_1', 'mut_15']):
-        bdf = df.loc[df.branch == b]
-        ax = fig4.add_axes([0.08 + ((i%2)*0.3), 0.725 - ((i//2) * 0.325), 0.25, 0.25])
-        for j in range(1, max(df.cluster)+1):
-            bdfi = bdf.loc[bdf.cluster == j]
-            if bdfi.shape[0] > 0:
-                ax.text(np.mean(bdfi.UMAP_1), np.mean(bdfi.UMAP_2), j-1, weight="bold")
-        ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=0.5, c=bdf.clscols)
-        if i >1:
-            ax.set_xlabel('UMAP 1')
-        if i % 2 == 0:
-            ax.set_ylabel('UMAP 2')
-        ax.set_title(b, pad=0)
-        ax = cleanax(ax)
-        axA.append(ax)
-    ax = axA[2]
-    for i in range(1, max(df.cluster)+1):
-        ldf = df.loc[df.cluster == i]
-        ax.scatter([], [], s=40, c=list(ldf.clscols)[0], label=i-1)
-    ax.legend(frameon=False, ncol=7, loc='upper left', bbox_to_anchor=[0, -0.25], alignment='left')
-    ylabyc = axA[0].transAxes.transform([0, 0.5])[1]/100
-    axA[0].yaxis.set_label_coords(0.25, ylabyc, transform=fig4.dpi_scale_trans)
-    ylabyc = axA[2].transAxes.transform([0, 0.5])[1]/100
-    axA[2].yaxis.set_label_coords(0.25, ylabyc, transform=fig4.dpi_scale_trans)
-    ylabyc = axA[0].transAxes.transform([0, 1])[1]/100
-    axA[0].text(0.2, ylabyc, 'A', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    # </editor-fold>
-
-
-    # <editor-fold desc="B: Cell population in cluster">
-    cnts = df.groupby('branch').cluster.value_counts()
-    cnts = pd.DataFrame(cnts)
-    cnts.columns = ['count']
-    cnts.reset_index(inplace=True)
-    cnts = cnts.pivot(index='cluster', columns='branch')
-    cnts.fillna(0, inplace=True)
-    cnts = cnts.apply(lambda x: x/sum(x), axis=0)
-    cnts = cnts.droplevel(level=0, axis=1)
-    cnts = cnts[['wt_1', 'wt_19', 'mut_11_1', 'mut_15']]
-    axB = fig4.add_axes([0.12, 0.075, 0.51, 0.175])
-    y_bot = np.array([0] * 4, dtype='float')
-    for row in cnts.itertuples():
-        axB.barh(y=['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], width=row[1:], left=y_bot, color=clscols[row[0]-1], edgecolor='black', linewidth=0.5)
-        y_bot += row[1:]
-    axB.set_xlabel('Cells (in %)')
-    axB.set_ylabel('Branches')
-    axB.set_xlim([0, 1])
-    axB = cleanax(axB)
-    ylabyc = axB.transAxes.transform([0, 0.5])[1]/100
-    axB.yaxis.set_label_coords(0.25, ylabyc, transform=fig4.dpi_scale_trans)
-    ylabyc = axB.transAxes.transform([0, 1])[1]/100
-    axB.text(0.2, ylabyc, 'B', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    # </editor-fold>
-
-
-    # <editor-fold desc="C: Presence of alt reads at SM positions">
-    with open(f'{cwd}/../rna.alt_readcount.pickle', 'rb') as f:
-        mutsfilt, rnahm, isohm = pickle.load(f).values()
-    axC = deque()
-    ax = fig4.add_axes([0.8, 0.645, 0.19, 0.33])
-    ax = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, cbar=False, ax=ax)
-    # ax.hlines([8], *ax.get_xlim(), color='k')
-    # ax.vlines([7], *ax.get_ylim(), color='k')
-    ax.set_ylabel('')
-    ax.set_xlabel('')
-    axC.append(ax)
-
-    # rnahm = getmutlist(rnapos)
-    # ax = plt.subplot2grid((4, 1), (2, 0), rowspan=1, colspan=1)
-    ax = fig4.add_axes([0.8, 0.5225, 0.19, 0.11])
-    ax = sns.heatmap(rnahm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=rnahm.index, cbar_kws={'label': 'scRNA-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
-    ax.set_ylabel('RNA-Seq')
-    ylabyc = ax.transAxes.transform([0, 0.5])[1]/100
-    ax.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
-    ax.set_xlabel('')
-
-    # isohm = getmutlist(isopos)
-    # ax = plt.subplot2grid((4, 1), (3, 0), rowspan=1, colspan=1)
-    ax = fig4.add_axes([0.8, 0.4, 0.19, 0.11])
-    ax = sns.heatmap(isohm, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=isohm.index, cbar_kws={'label': 'scIso-Seq', 'fraction': 0.05}, cbar=False, ax=ax)
-    ax.set_ylabel('Iso-Seq')
-    ax.set_xlabel('SNVs')
-    ylabyc = ax.transAxes.transform([0, 0.5])[1]/100
-    ax.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
-    # ax.set_xticks()
-    ylabyc = axC[0].transAxes.transform([0, 1])[1]/100
-    axC[0].text(5, ylabyc, 'C', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-    # </editor-fold>
-
-
-    # <editor-fold desc="D: Clusters with mutated cells">
-    bcs = pd.read_table(smbcs, header=None)
-    bcs[0] = bcs[0].apply(str.lower)
-    bcs.sort_values([1, 2], inplace=True)
-    bcs = bcs.loc[~bcs[3].isna()]
-
-    bdf = df.loc[df.branch == 'mut_11_1'].copy()
-    bdf['zorder'] = 0
-    bdf['s'] = 0.5
-    # bdf['lw'] = 1
-
-    bcb = list(bcs.loc[(bcs[1]=='CUR6G') & (bcs[2] == 19101663) & (bcs[0] == 'mut_11_1'), 3])[0].replace('-1', f'-1_3').split(',')
-    bdf['clscols'] = [[0, 0, 0, 1] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
-    bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
-    bdf['s'] = [8 if r.bc in bcb else r.s for r in bdf.itertuples()]
-    # bdf['lw'] = [2 if r.lw in bcb else r.s for r in bdf.itertuples()]
-    bdf.sort_values('zorder', inplace=True)
-    axD = fig4.add_axes([0.75, 0.075, 0.24, 0.225])
-    axD.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.s, c=bdf.clscols)
-    # ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.s, c=bdf.clscols, linewidth=bdf.lw, edgecolor='white')
-    axD = cleanax(axD)
-    axD.set_title(f'mut_11_1')
-    axD.set_xlabel('UMAP 1')
-    axD.set_ylabel('UMAP 2')
-    ylabyc = axD.transAxes.transform([0, 0.5])[1]/100
-    axD.yaxis.set_label_coords(5.2, ylabyc, transform=fig4.dpi_scale_trans)
-    ylabyc = axD.transAxes.transform([0, 1])[1]/100
-    axD.text(5, ylabyc, 'D', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # </editor-fold>
-
-    plt.savefig("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/fig4.png", dpi=300)
+    ax = cleanax(ax)
+    ax.set_title('Indels')
+    # ax.legend(frameon=False).remove()
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../l2_leaf_allele_freq.png', dpi=300)
+    plt.savefig(f'{cwd}/../l2_leaf_allele_freq.pdf', dpi=300)
     plt.close()
     # </editor-fold>
 
 
-    # <editor-fold desc="Plot BCs containing SMs for all SMs">
-    bcs = pd.read_table(smbcs, header=None)
-    bcs[0] = bcs[0].apply(str.lower)
-    bcs.sort_values([1, 2], inplace=True)
-    bcs = bcs.loc[~bcs[3].isna()]
-    fig = plt.figure(figsize=[10, 14], dpi=300)
-    for j, grp in enumerate(bcs.groupby([1, 2])):
-        for i, b in enumerate(['wt_1', 'wt_19', 'mut_11_1', 'mut_15']):
-            bdf = df.loc[df.branch == b].copy()
-            bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
-            bdf['zorder'] = 0
-            bcb = grp[1].loc[grp[1][0] == b, 3]
-            if bcb.shape[0] > 0:
-                bcb = list(grp[1].loc[grp[1][0] == b, 3])[0].replace('-1', f'-1_{i+1}').split(',')
-                bdf['clscols'] = [[0, 0, 0, 1] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
-                bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
-                bdf.sort_values('zorder', inplace=True)
-                print(grp[0], sum(bdf.zorder))
-            # ax = fig4.add_axes([0.45 + (i*0.15), 0.5 - (j*0.15), 0.1, 0.1])
-            ax = fig.add_axes([0.05 + (i*0.25), 0.88 - (j*0.14), 0.2, 0.09])
-            ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=0.5, c=bdf.clscols)
-            # for j in range(1, max(df.cluster)+1):
-            #     bdfi = bdf.loc[bdf.cluster == j]
-            #     if bdfi.shape[0] > 0:
-            #         ax.text(np.mean(bdfi.UMAP_1), np.mean(bdfi.UMAP_2), j, weight="bold")
-            ax = cleanax(ax)
-            ax.set_xlabel('UMAP 1')
-            ax.set_title(f'{grp[0][0]} {grp[0][1]} {b}')
-            if i == 0:
-                ax.set_ylabel('UMAP 2')
-            if i != 0:
-                ax.set_yticks([])
-                ax.spines['left'].set_visible(False)
-    plt.savefig(f'{cwd}/all_sm_containing_bcs.png')
-    plt.close()
-    # </editor-fold>n
-
-
-    # <editor-fold desc="Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2">
+    # <editor-fold desc="IMPORTANT DO NOT DELETE: Heatmap comparing allele frquencies of somatic variations in leaf, L1 and L2">
     # IMPORTANT DO NOT DELETE: This section creates the all_sm_in_all_samples.read_counts.txt and all_sm_in_all_samples.alelle_freq.txt files required for main figures
     ## get allsmmat regions for use with BAM-readcount
     df = allsmdata['chromosome position position'.split()].drop_duplicates()
@@ -2075,217 +2428,376 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Plot genotyping calls">
+    # <editor-fold desc="B: Cell population percentage in cluster">
+    cnts = df.groupby('branch').cluster.value_counts()
+    cnts = pd.DataFrame(cnts)
+    cnts.columns = ['count']
+    cnts.reset_index(inplace=True)
+    cnts = cnts.pivot(index='cluster', columns='branch')
+    cnts.fillna(0, inplace=True)
+    cnts = cnts.apply(lambda x: x/sum(x), axis=0)
+    cnts = cnts.droplevel(level=0, axis=1)
+    # cnts = cnts[['wt_1', 'wt_19', 'mut_11_1', 'mut_15']]
+    border = ['mut_11_1', 'mut_15', 'wt_19', 'wt_1']
+    cnts = cnts[border]
+    fig = plt.figure(figsize=[4,2])
+    # axB = fig4.add_axes([0.725, 0.875, 0.26, 0.075])
+    axB = fig.add_subplot()
+    y_bot = np.array([0] * 4, dtype='float')
+    for row in cnts.itertuples():
+        axB.barh(y=border, width=row[1:], left=y_bot, color=clscols[row[0]], edgecolor='black', linewidth=0.5)
+        y_bot += row[1:]
+    axB.set_xlabel('Cells (in %)')
+    axB.set_ylabel('')
+    axB.set_xlim([0, 1])
+    axB = cleanax(axB)
+    ylabyc = axB.transAxes.transform([0, 0.5])[1]/100
+    axB.yaxis.set_label_coords(0.25, ylabyc, transform=fig.dpi_scale_trans)
+    axB.set_yticks(labels=[bnamedict[i.get_text()] for i in axB.get_yticklabels()], ticks=axB.get_yticks())
+    # ylabyc = axB.transAxes.transform([0, 1])[1]/100
+    # axB.text(0.2, ylabyc, 'B', transform=fig4.dpi_scale_trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    # axB.text(-0.1, 1, 'B', transform=axB.transAxes, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    plt.savefig(f'{cwd}/../cell_population_in_cluster.png', dpi=300)
+    plt.savefig(f'{cwd}/../cell_population_in_cluster.pdf', dpi=300)
+    plt.close()
+    # </editor-fold>
 
-    # Read SMs in L1, L2 and leaves
-    df = pd.read_table(allsmrc, index_col=[0, 1, 2])
-    gtvals = [1, 2, 5, 10, 15, 20]
-    lcomb = {'l1': '100',
-             'l2'  : '010',
-             'leaf' : '001',
-             'l1_l2'  : '110',
-             'l1_leaf' : '101',
-             'l2_leaf'  : '011',
-             'l1_l2_leaf': '111'
-             }
-    gtcnts = pd.DataFrame()
-    for gt in gtvals:
-        dfmask = df[[f"{b}{l}" for b in branches for l in ["_l1", "_l2", '']]].copy()
-        dfmask[dfmask<=gt] = -1
-        dfmask[dfmask!=-1] = 1
-        dfmask[dfmask==-1] = 0
-        gtdict = {'SNP': defaultdict(int), 'Indel': defaultdict(int)}
-        fig = plt.figure(figsize=[9, 9])
-        for i, b in enumerate(branches):
-            bsm = allsmdata.loc[allsmdata.branch == b]
-            bsm = bsm.set_index('chromosome position alt_allele'.split())
-            for j, t in enumerate('SNP Indel'.split()):
-                # Plots SNP heatmaps
-                bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
-                bdf = bdf.loc[bdf.index.isin(bsm.index)]
-                bdf = bdf.loc[bdf.apply(sum, axis=1) > 0]
-                bdf.sort_values(list(bdf.columns), inplace=True)
-                l = list(bdf.apply(lambda x: f'{x[0]}{x[1]}{x[2]}', axis=1))
-                for k, v in lcomb.items():
-                    gtdict[t][k] += l.count(v)
-                ax = fig.add_subplot(2, 7, i+1+(j*7))
-                ax = sns.heatmap(bdf, ax=ax, cbar=False, linewidth=1, linecolor='red')
-                ax.set_yticklabels('')
-                ax.set_ylabel(t)
-        plt.suptitle(f'Genetype RC > {gt}')
-        plt.tight_layout()
-        plt.savefig(f'{cwd}/genotyping.rc_{gt}.png')
-        plt.close()
-        gtdict = pd.DataFrame(gtdict)
-        gtdict['gt'] = gt
-        gtdict.reset_index(names='tissue', inplace=True)
-        gtdict['SNP'] = (gtdict['SNP']*100)/sum(gtdict['SNP'])
-        gtdict['Indel'] = (gtdict['Indel']*100)/sum(gtdict['Indel'])
-        gtcnts = pd.concat([gtcnts, gtdict])
 
-    fig = plt.figure(figsize=[4, 5], dpi=300)
-    ax = fig.add_subplot(2, 1, 1)
-    ax = sns.pointplot(gtcnts, x='gt', y='SNP', hue='tissue', ax=ax)
-    ax = cleanax(ax)
-    ax.set_ylim([-5, 80])
-    plt.setp(ax.lines, linewidth=1)
-    plt.setp(ax.collections, sizes=[10])
-    ax.legend(frameon=False, ncols=2)
-    ax.set_xlabel('Minimum read count')
-    ax.set_ylabel('SNP SMs (%)')
-    ax.grid(zorder=0)
-    ax.set_axisbelow(True)
+    # <editor-fold desc="C: Presence of alt reads at SM positions">
+    def getsmafplot(transdata, mutsdf, ax):
+        transdata['data'] = 'rna'
+        transdata = transdata.loc[transdata.position != 4335333].copy()
+        transdata.sort_values('chromosome position alt_allele'.split(), inplace=True)
+        transum = transdata.groupby('chromosome position alt_allele branch'.split()).agg('sum')
+        transum.reset_index(inplace=True)
+        transum['af'] = transum.ac / transum.rc
+        transum = transum.merge(mutsdf, on='chromosome position alt_allele'.split(), how='left')
+        transum['Layer'] = ['L1' if t == 'L1' else 'L2/leaf' for t in transum.tissue]
+        transum['Branch'] = transum.branch_x == transum.branch_y
+        transum.loc[transum.Branch == True, 'Branch'] = 'Match'
+        transum.loc[transum.Branch == False, 'Branch'] = 'Mismatch'
+        ax = sns.scatterplot(x=transum.rc, y=transum.af, hue=transum['Layer'], palette={'L1': colour['L1'], 'L2/leaf': colour['L2']}, style=transum['Branch'], markers={'Match': 'o', 'Mismatch': 'X'}, ax=ax)
+        return ax
+    # END
 
-    ax = fig.add_subplot(2, 1, 2)
-    ax = sns.pointplot(gtcnts, x='gt', y='Indel', hue='tissue', ax=ax)
-    ax = cleanax(ax)
-    ax.set_ylim([-5, 80])
-    ax.legend('', frameon=False)
-    plt.setp(ax.lines, linewidth=1)
-    plt.setp(ax.collections, sizes=[10])
-    ax.set_xlabel('Minimum read count')
-    ax.set_ylabel('Indel SMs (%)')
-    ax.grid(zorder=0)
-    ax.set_axisbelow(True)
+    with open(f'{cwd}/../rna.alt_readcount.pickle', 'rb') as f:
+        mutsfilt, rnahm, isohm, rnatrans, isotrans, mutsdf = pickle.load(f).values()
 
-    plt.tight_layout()
-    plt.savefig(f'{cwd}/../genotyping_counts.png')
+    fig = plt.figure(figsize=[2, 4])
+    # axC1 = fig4.add_axes([0.725, 0.65, 0.26, 0.15])
+    axC1 = fig.add_subplot(2, 1, 1)
+    axC1 = getsmafplot(rnatrans, mutsdf, axC1)
+    axC1 = cleanax(axC1)
+    axC1.set_xlabel('')
+    axC1.set_xlabel('scRNA-Seq Read Count')
+    axC1.set_ylabel('Allele frequency')
+    handles, labels = axC1.get_legend_handles_labels()
+    axC1.legend(handles=getvalues(handles, [1,2,4,5]), labels=getvalues(labels, [1,2,4,5]), frameon=False, loc='upper right')
+    # axC1.text(-0.1, 1, 'C', transform=axC1.transAxes, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # axC2 = fig4.add_axes([0.725, 0.425, 0.26, 0.15])
+    axC2 = fig.add_subplot(2, 1, 2)
+    axC2 = getsmafplot(isotrans, mutsdf, axC2)
+    axC2 = cleanax(axC2)
+    axC2.legend().remove()
+    axC2.set_xlabel('scISO-Seq Read Count')
+    axC2.set_ylabel('Allele frequency')
+    plt.savefig(f'{cwd}/../alt_reads_sm_positions.png', dpi=300)
+    plt.savefig(f'{cwd}/../alt_reads_sm_positions.pdf', dpi=300)
     plt.close()
 
     # </editor-fold>
 
 
-    # <editor-fold desc="Heterogeneity variation in regions with SM and background variation">
-    # Added sample info in the VCF
-    syrivcf = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/syri.vcf'
-    syrivcfnew = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/syri.sample.vcf'
-    with open(syrivcf, 'r') as fin:
-        with open(syrivcfnew, 'w') as fout:
-            changeversion = True
+    # <editor-fold desc="Genomic width covered by scRNA-seq and scISO-seq at different read depths">
+    tmpbnamedict = {'WT_1': 'B2',
+                    'WT_19': 'B4',
+                    'MUT_15': 'B5',
+                    'MUT_11_1': 'B6'}
+    # read scRNA read depth
+    rnabasecov = defaultdict(dict)
+    for s in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
+        with open(f'{scrnadir}/{s}/{s}.merged.depth.hist') as fin:
             for line in fin:
-                if changeversion:
-                    fout.write('##fileformat=VCFv4.2\n')
-                    changeversion = False
-                    continue
-                if line[:2] == "##":
-                    fout.write(line)
-                elif line[:2] == "#C":
-                    fout.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
-                    fout.write(f'{line.strip()}\tFORMAT\tORA\tCUR\n')
-                elif 'SYN' in line:
-                    if '<' not in line:
-                        fout.write(f'{line.strip()}\tGT\t1/1\t0/0\n')
+                line = line.strip().split()
+                if line[1] == '0': continue
+                rnabasecov[s][int(line[1])] = int(line[0])
+    # read scISO read depth
+    isobasecov = defaultdict(dict)
+    for s in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
+        with open(f'{scisodir}/{s}/{s}.iso_seq.depth.hist') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if line[1] == '0': continue
+                isobasecov[s][int(line[1])] = int(line[0])
+    # Save figures
+    fig = plt.figure(figsize=[5, 5], dpi=300)
+    for i, s in enumerate('WT_1 WT_19 MUT_11_1 MUT_15'.split()):
+        ax = fig.add_subplot(2, 2, i+1)
+        xvalues = np.array(list(rnabasecov[s].keys()))
+        yvalues = np.array(list(rnabasecov[s].values()))
+        ax.plot(xvalues, yvalues, label='scRNA-seq')
 
-    syrisyn = deque()
-    with open(syriout, 'r') as f:
-        for line in f:
-            line = line.strip().split()
-            if line[10] == 'SYNAL':
-                syrisyn.append(line[:3])
-    syrisyn = pd.DataFrame(syrisyn)
-    syrisyn[[1, 2]] = syrisyn[[1, 2]].astype(int)
-    syrisyn.columns = 'Chromosome Start End'.split()
-    synpr = pr.PyRanges(syrisyn)
-
-    # Select SNP positions
-    # smpos = datafilter.loc[datafilter.type=='SNP'].drop_duplicates(subset='chromosome position alt_allele'.split())
-    # Select all positions
-    smpos = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
-    smtype = dict(zip(smpos.chromosome.astype('str') + "_" + smpos.position.astype('str'), smpos.type))
-    smdf = smpos['chromosome position'.split()].copy()
-    smdf['end'] = smpos['position']
-    smdf.columns = 'Chromosome Start End'.split()
-    smpr = pr.PyRanges(smdf)
-    smsyn = smpr.overlap(synpr).as_df()
-    smpi = pd.DataFrame()
-    for row in smsyn.itertuples(index=False):
-        os.chdir('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/')
-        # Popen(f'vcftools --gzvcf syri.sample.vcf --chr {row[0]} --from-bp {row[1]-1100}  --to-bp {row[2]+1100} --window-pi 100 --out {row[0]}_{row[1]}'.split())
-        rb = int(np.floor(row[1]/100)) * 100
-        rbins = np.arange(rb-1000, rb+1200, 100)
-        rdf = pd.DataFrame(zip([row[0]]*(len(rbins)-1), rbins[:-1], rbins[1:]))
-        rdf[1] += 1
-        rdf.columns = 'CHROM  BIN_START  BIN_END'.split()
-        pidf = pd.read_table(f'{row[0]}_{row[1]}.windowed.pi')
-        rdf = rdf.merge(pidf, how='left')
-        rdf.fillna(0, inplace=True)
-        rdf['index'] = range(-10, 11)
-        rdf['position'] = f'{row[0]}_{row[1]}'
-        smpi = pd.concat([smpi, rdf])
-    smpi['type'] = [smtype[p] for p in smpi.position]
-    # smpi = smpi.pivot(index='position', columns='index', values='PI')
-    meanPI = np.mean(pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/cur_vs_ora.windowed.pi').PI)
-    fig = plt.figure(figsize=[4, 4], dpi=300)
-    ax = fig.add_subplot(2, 1, 1)
-    ax = sns.pointplot(smpi.loc[smpi.type=='SNP'], x='index', y='PI', ax=ax)
-    ax.set_title('SNP')
-    plt.setp(ax.lines, linewidth=1)
-    plt.setp(ax.collections, sizes=[10])
-    ax = cleanax(ax)
-    ax.set_ylabel('Nucleotide divresity')
-    ax.set_xlabel('Genomic region bin (x100 bp)')
-    ax.set_ylim([0, 0.015])
-    ax.axhline(meanPI, linewidth=0.5, color='black', linestyle='dashed', zorder=0)
-    ax = fig.add_subplot(2, 1, 2)
-    ax = sns.pointplot(smpi.loc[smpi.type=='Indel'], x='index', y='PI', ax=ax)
-    ax.set_title('Indel')
-    plt.setp(ax.lines, linewidth=1)
-    plt.setp(ax.collections, sizes=[10])
-    ax = cleanax(ax)
-    ax.set_ylabel('Nucleotide divresity')
-    ax.set_xlabel('Genomic region bin (x100 bp)')
-    ax.set_ylim([0, 0.015])
-    ax.axhline(meanPI, linewidth=0.5, color='black', linestyle='dashed', zorder=0)
+        xvalues = np.array(list(isobasecov[s].keys()))
+        yvalues = np.array(list(isobasecov[s].values()))
+        ax.plot(xvalues, yvalues, label='scISO-seq')
+        ax.set_xscale('log')
+        # ax.set_yscale('log')
+        ax.set_xlabel('Read depth')
+        ax.set_ylabel('Bases')
+        ax = cleanax(ax)
+        ax.legend(frameon=False)
+        ax.set_title(tmpbnamedict[s])
+    plt.suptitle('Base count', fontsize=BIGGER_SIZE)
     plt.tight_layout()
-    plt.savefig(f'{cwd}/all_sm_nuc_diversity.png', dpi=300)
+    plt.savefig(f'{cwd}/../scrna_sciso_base_count.pdf')
+    plt.savefig(f'{cwd}/../scrna_sciso_base_count.png')
     plt.close()
 
-    # # Code for plotting histogram on log scale
-    # _, bins = np.histogram(np.array(list(binalt.values())) + 0.0000001, bins=100)
-    # logbins = np.logspace(np.log10(bins[0]), np.log10(bins[-1]), len(bins))
-    # plt.hist(np.array(list(binalt.values())) + 0.0000001, bins=logbins)
-    # plt.xscale('log')
-    # plt.yscale('log')
+    fig = plt.figure(figsize=[5, 5], dpi=300)
+    for i, s in enumerate('WT_1 WT_19 MUT_11_1 MUT_15'.split()):
+        print(np.sum(np.array(list(rnabasecov[s].values()))), np.sum(np.array(list(isobasecov[s].values()))))
+        ax = fig.add_subplot(2, 2, i+1)
+        xvalues = np.array(list(rnabasecov[s].keys()))
+        maxy = np.sum(np.array(list(rnabasecov[s].values())))
+        yvalues = maxy - np.cumsum(np.array([0] + list(rnabasecov[s].values()))[:-1])
+        ax.plot(xvalues, yvalues, label='scRNA-seq')
+
+        xvalues = np.array(list(isobasecov[s].keys()))
+        maxy = np.sum(np.array(list(isobasecov[s].values())))
+        yvalues = maxy - np.cumsum(np.array([0] + list(isobasecov[s].values()))[:-1])
+        ax.plot(xvalues, yvalues, label='scISO-seq')
+        ax.set_xscale('log')
+        # ax.set_yscale('log')
+        ax.set_xlabel('Read depth')
+        ax.set_ylabel('Bases')
+        ax = cleanax(ax)
+        ax.legend(frameon=False)
+        ax.set_title(tmpbnamedict[s])
+    plt.suptitle('Cumulative base count (number of bases with at least X reads)', fontsize=BIGGER_SIZE)
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../scrna_sciso_cumulative_base_count.pdf')
+    plt.savefig(f'{cwd}/../scrna_sciso_cumulative_base_count.png')
+    plt.close()
+
+    
+    # Count number of bases sequenced by scRNAseq and scISOseq
+    # get positions sequenced with scRNA
+    basecnts = defaultdict(dict)
+    for s in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
+        print(s)
+        onlyrna = 0
+        onlyiso = 0
+        rnaiso = 0
+        rnapos = defaultdict(deque)
+        print('read rna')
+        with open(f'{scrnadir}/{s}/{s}.merged.depth.txt') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if line[2] == '0': continue
+                rnapos[line[0]].append(line[1])
+        for k in rnapos.keys():
+            rnapos[k] = set(rnapos[k])
+        isopos = defaultdict(deque)
+        print('read iso')
+        with open(f'{scisodir}/{s}/{s}.iso_seq.depth.txt') as fin:
+            for line in fin:
+                line = line.strip().split()
+                if line[2] == '0': continue
+                isopos[line[0]].append(line[1])
+        for k in isopos.keys():
+            isopos[k] = set(isopos[k])
+        allchr = set(list(rnapos.keys()) + list(isopos.keys()))
+        for k in allchr:
+            onlyrna += len(set(rnapos[k]).difference(isopos[k]))
+            onlyiso += len(set(isopos[k]).difference(rnapos[k]))
+            rnaiso += len(set(rnapos[k]).intersection(isopos[k]))
+        basecnts[s] = [onlyrna, onlyiso, rnaiso]
+        print(basecnts)
+    basecnts = {'WT_1': [16182302, 10519084, 43420994], 'WT_19': [19386734, 8236102, 45881356], 'MUT_11_1': [16606297, 8979212, 37445450], 'MUT_15': [18748963, 9421568, 27997357]}
+    basecnts = {'wt_1': [16182302, 10519084, 43420994], 'wt_19': [19386734, 8236102, 45881356], 'mut_11_1': [16606297, 8979212, 37445450], 'mut_15': [18748963, 9421568, 27997357]}
+    basecntdf = pd.DataFrame(basecnts).T
+    basecntdf.reset_index(inplace=True)
+    basecntdf.columns = 'Branch scRNA-seq scISO-seq Both'.split()
+    basecntdf = basecntdf.melt(id_vars='Branch')
+    fig, ax = plt.subplots(figsize=[3, 3], dpi=300)
+    ax = sns.barplot(basecntdf, x='Branch', y='value', hue='variable', order=['wt_1', 'wt_19', 'mut_15', 'mut_11_1'], ax=ax)
+    ax.set_xticklabels([bnamedict[k] for k in ['wt_1', 'wt_19', 'mut_15', 'mut_11_1']])
+    ax.set_xlabel('Branch')
+    ax.set_ylabel('Number of bases (in $10^{7}$)')
+    ax.set_ylabel('SMs (x$10^{-8}$/Mbp)')
+    ax.legend(frameon=False)
+    plt.tight_layout(pad=0.1)
+    ax = cleanax(ax)
+    plt.savefig(f'{cwd}/../scrna_sciso_base_sets.pdf')
+    plt.savefig(f'{cwd}/../scrna_sciso_base_sets.png')
+    plt.close()
 
     # </editor-fold>
 
 
-    # <editor-fold desc="Example plot showing mutations having higher AF in L1 in all branches">
-    pos = ('CUR1G', 34111279, '+AT')
-    # cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
-    # branches = ['wt_1', 'wt_7', 'wt_18', 'wt_19', 'mut_11_1', 'mut_11_2', 'mut_15']
-    readcnt = defaultdict(dict)
-    for bname in branches:
-        # for l in ('l1', 'l2', 'l3'):
-        for l in ('l1', 'l2'):
-            with open(f'{allsmrcdir}/{bname}.{l}.all_sm_in_all_samples.b30.q10.read_count.txt', 'r') as fin:
-                for line in fin:
-                    line = line.strip().split()
-                    if line[0] == pos[0]:
-                        if int(line[1]) == pos[1]:
-                            try:
-                                index = line.index(pos[2])
-                            except ValueError:
-                                readcnt[bname][l] = 0
-                                break
-                            readcnt[bname][l] = int(line[index+1])
-                            break
-                    else:
-                        readcnt[bname][l] = 0
-                        break
-    pltdf = pd.DataFrame(readcnt).T
-    pltdf.columns = 'L1 L2'.split()
-    fig = plt.figure(figsize=[5, 2], dpi=300)
-    ax = fig.add_subplot()
-    ax = cleanax(ax)
-    ax = pltdf.plot.bar(ax=ax, color=colour)
-    ax.set_ylabel("Allele Frequency")
-    ax.set_title("Layer specific somatic mutation present in all branches")
-    ax.legend(frameon=False)
-    ax.tick_params(axis='x', rotation=0)
-    ax = cleanax(ax)
-    plt.savefig(f"{cwd}/layer_conserved_somatic_mutation_allele_frequency.png")
+    # <editor-fold desc="Plot BCs containing SMs for all SMs">
+    rsmbcs = pd.read_table(smbcs, header=None)
+    rsmbcs[0] = rsmbcs[0].apply(str.lower)
+    rsmbcs.sort_values([1, 2], inplace=True)
+    rsmbcs = rsmbcs.loc[~rsmbcs[3].isna()]
+
+    ismbcs = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/bcs_with_sm_reads.txt', header=None)
+    ismbcs[0] = ismbcs[0].apply(str.lower)
+    ismbcs.sort_values([1, 2], inplace=True)
+    ismbcs = ismbcs.loc[~ismbcs[3].isna()]
+    bcs = deque()
+    for grp in pd.concat([rsmbcs, ismbcs]).groupby([0, 1, 2]):
+        bcs.append(list(grp[0]) + [','.join(set([j for i in grp[1][3] for j in i.split(',')]))])
+    bcs = pd.DataFrame(bcs)
+    bcs.sort_values([1, 2])
+
+    smbcslist = bcs
+
+    scind = dict(zip(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [1, 2, 3, 4]))
+    selected = pd.DataFrame()
+    fig = plt.figure(figsize=[6, 9], dpi=300)
+    pltcnt = 0
+    for j, grp in enumerate(bcs.groupby([1, 2])):
+        for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
+            pltcnt += 1
+            bdf = df.loc[df.branch == b].copy()
+            bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
+            bdf['zorder'] = 0
+            bdf['psize'] = 0.5
+            bdf['lwd'] = 0
+            bcb = grp[1].loc[grp[1][0] == b, 3]
+            if bcb.shape[0] > 0:
+                bcb = list(grp[1].loc[grp[1][0] == b, 3])[0].replace('-1', f'-1_{scind[b]}').split(',')
+                if grp[0] == ('CUR6G', 3442340) and b == 'wt_19':
+                    bcb.remove('TTCATTGCAAAGACTA-1_2') # Remove the barcode which has mis-aligned reads resulting in wrong genotyping
+                bdf['clscols'] = [clscols[r.cluster] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
+                bdf['lwd'] = [0.5 if r.bc in bcb else r.lwd for r in bdf.itertuples()]
+                bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
+                bdf['psize'] = [30 if r.bc in bcb else 0.5 for r in bdf.itertuples()]
+                tmp = bdf.loc[bdf.bc.isin(bcb)].copy()
+                tmp['chromosome'] = grp[0][0]
+                tmp['position'] = grp[0][1]
+                selected = pd.concat([selected, tmp])     # To compare selected BCs distribution for SM and WT alleles
+                # selected = pd.concat([selected, bdf.loc[bdf.bc.isin(bcb)]])     # To compare selected BCs distribution for SM and WT alleles
+                bdf.sort_values('zorder', inplace=True)
+            # ax = fig.add_axes([0.05 + (i*0.25), 0.87 - (j*0.17), 0.2, 0.11])
+            ax = fig.add_subplot(6, 4, pltcnt)
+            ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.psize, c=bdf.clscols, linewidth=bdf.lwd, edgecolor='black')
+            ax = cleanax(ax)
+            ax.set_xlabel('UMAP 1')
+            # ax.set_title(f'{grp[0][0]} {grp[0][1]} {b}')
+            ax.set_title(bnamedict[b], pad=8, fontdict={'fontweight': 700})
+            if i == 0:
+                ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+            if i != 0:
+                ax.set_yticks([])
+                ax.spines['left'].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../all_sm_containing_bcs.with_iso.png')
+    plt.savefig(f'{cwd}/../all_sm_containing_bcs.with_iso.pdf')
     plt.close()
+
+
+    rsmbcs = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/bcs_with_wt_reads.txt', header=None)
+    rsmbcs[0] = rsmbcs[0].apply(str.lower)
+    rsmbcs.sort_values([1, 2], inplace=True)
+    rsmbcs = rsmbcs.loc[~rsmbcs[3].isna()]
+
+    ismbcs = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/bcs_with_wt_reads.txt', header=None)
+    ismbcs[0] = ismbcs[0].apply(str.lower)
+    ismbcs.sort_values([1, 2], inplace=True)
+    ismbcs = ismbcs.loc[~ismbcs[3].isna()]
+    bcs = deque()
+    for grp in pd.concat([rsmbcs, ismbcs]).groupby([0, 1, 2]):
+        bcs.append(list(grp[0]) + [','.join(set([j for i in grp[1][3] for j in i.split(',')]))])
+    bcs = pd.DataFrame(bcs)
+    wtbcslist = bcs
+
+    # bcs = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/bcs_with_wt_reads.txt', header=None)
+
+    selectedwt = pd.DataFrame()
+    fig = plt.figure(figsize=[6, 9], dpi=300)
+    pltcnt = 0
+    for j, grp in enumerate(bcs.groupby([1, 2])):
+        for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
+            pltcnt += 1
+            bdf = df.loc[df.branch == b].copy()
+            bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
+            bdf['zorder'] = 0
+            bdf['psize'] = 0.5
+            bdf['lwd'] = 0
+            bcb = grp[1].loc[grp[1][0] == b, 3]
+            if bcb.shape[0] > 0:
+                bcb = list(grp[1].loc[grp[1][0] == b, 3])[0].replace('-1', f'-1_{scind[b]}').split(',')
+                bdf['clscols'] = [clscols[r.cluster] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
+                bdf['lwd'] = [0.5 if r.bc in bcb else r.lwd for r in bdf.itertuples()]
+                bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
+                bdf['psize'] = [30 if r.bc in bcb else 0.5 for r in bdf.itertuples()]
+                bdf.sort_values('zorder', inplace=True)
+                tmp = bdf.loc[bdf.bc.isin(bcb)].copy()
+                tmp['chromosome'] = grp[0][0]
+                tmp['position'] = grp[0][1]
+                selectedwt = pd.concat([selectedwt, tmp])     # To compare selected BCs distribution for SM and WT alleles
+                # selectedwt = pd.concat([selectedwt, bdf.loc[bdf.bc.isin(bcb)]])     # To compare selected BCs distribution for SM and WT alleles
+                # print(grp[0], sum(bdf.zorder))
+            # ax = fig.add_axes([0.05 + (i*0.25), 0.87 - (j*0.17), 0.2, 0.11])
+            ax = fig.add_subplot(6, 4, pltcnt)
+            ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.psize, c=bdf.clscols, linewidth=bdf.lwd, edgecolor='black')
+            ax = cleanax(ax)
+            ax.set_xlabel('UMAP 1')
+            ax.set_title(bnamedict[b], pad=8, fontdict={'fontweight': 700})
+            if i == 0:
+                ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+            if i != 0:
+                ax.set_yticks([])
+                ax.spines['left'].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../all_wt_containing_bcs.with_iso.png')
+    plt.savefig(f'{cwd}/../all_wt_containing_bcs.with_iso.pdf')
+    plt.close()
+
+    # Only scRNA: fisher_exact([[1, 37], [15, 75]], alternative='less')
+    # both scRNA and scISO: fisher_exact([[3, 48], [22, 113]], alternative='less') p-value:0.046
+    # </editor-fold>
+
+
+    # <editor-fold desc="Correlation of number of cells with SM and WT alleles">
+    smcnts = selected.groupby('chromosome position'.split()).size()
+    wtcnts = selectedwt.groupby('chromosome position'.split()).size()/4
+        fig, ax = plt.subplots(figsize=[3, 3], dpi=300)
+        ax.scatter(wtcnts.values, smcnts.values, color='black')
+        ax.set_xlim([0, 35])
+        ax.set_ylim([0, 35])
+        plt.axline((0, 0), slope=1, linestyle='dashed', color='grey')
+        ax.set_xlabel("Average number of cells with WT allele")
+        ax.set_ylabel("Number of cells with SM allele")
+        ax = cleanax(ax)
+        plt.savefig(f'{cwd}/../sc_cell_count_sm_vs_wt.png')
+        plt.savefig(f'{cwd}/../sc_cell_count_sm_vs_wt.pdf')
+        plt.close()
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="TEMPORARY: Plot single cell clusters">
+    fig = plt.figure(figsize=[12, 12])
+    for i, b in enumerate(['wt_1', 'wt_19', 'mut_11_1', 'mut_15']):
+        bdf = df.loc[df.branch == b]
+        ax = fig.add_subplot(8, 8, (i*16) + 1)
+        ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=0.5, c=bdf.clscols)
+        ax.set_title(b)
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        for j in range(0, max(df.cluster)+1):
+            bdfi = bdf.loc[bdf.cluster == j]
+            ax = fig.add_subplot(8, 8, (i*16) + 1 + j + 1)
+            ax.scatter(bdfi.UMAP_1, bdfi.UMAP_2, s=0.5, c=bdfi.clscols)
+            ax.set_title(f'cluster {j}')
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../TMP_sc_cell_clusters_separated.png', dpi=600)
     # </editor-fold>
 
 
@@ -2401,8 +2913,9 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Other plots that does not seem too relevant in the current description">
-    # Distribution of SMs over the genome
+    # <editor-fold desc="Other plots that are not too informative">
+
+    # <editor-fold desc="Distribution of SMs over the genome">
     chrsize = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai', header=None)
     chrsize = chrsize.iloc[:8]
     pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
@@ -2442,7 +2955,90 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="Get correlation of mappability and SM. Ideally, this should not be different than the background distribution">
+    # <editor-fold desc="Plot genotyping calls">
+
+    # Read SMs in L1, L2 and leaves
+    df = pd.read_table(allsmrc, index_col=[0, 1, 2])
+    gtvals = [1, 2, 5, 10, 15, 20]
+    lcomb = {'l1': '100',
+             'l2'  : '010',
+             'leaf' : '001',
+             'l1_l2'  : '110',
+             'l1_leaf' : '101',
+             'l2_leaf'  : '011',
+             'l1_l2_leaf': '111'
+             }
+    gtcnts = pd.DataFrame()
+    for gt in gtvals:
+        dfmask = df[[f"{b}{l}" for b in branches for l in ["_l1", "_l2", '']]].copy()
+        dfmask[dfmask<=gt] = -1
+        dfmask[dfmask!=-1] = 1
+        dfmask[dfmask==-1] = 0
+        gtdict = {'SNP': defaultdict(int), 'Indel': defaultdict(int)}
+        fig = plt.figure(figsize=[9, 9])
+        for i, b in enumerate(branches):
+            bsm = allsmdata.loc[allsmdata.branch == b]
+            bsm = bsm.set_index('chromosome position alt_allele'.split())
+            for j, t in enumerate('SNP Indel'.split()):
+                # Plots SNP heatmaps
+                bdf = dfmask.loc[df.var_type == t][[f"{b}{l}" for l in ["_l1", "_l2", '']]].copy()
+                bdf = bdf.loc[bdf.index.isin(bsm.index)]
+                bdf = bdf.loc[bdf.apply(sum, axis=1) > 0]
+                bdf.sort_values(list(bdf.columns), inplace=True)
+                l = list(bdf.apply(lambda x: f'{x[0]}{x[1]}{x[2]}', axis=1))
+                for k, v in lcomb.items():
+                    gtdict[t][k] += l.count(v)
+                ax = fig.add_subplot(2, 7, i+1+(j*7))
+                ax = sns.heatmap(bdf, ax=ax, cbar=False, linewidth=1, linecolor='red')
+                ax.set_yticklabels('')
+                ax.set_ylabel(t)
+        plt.suptitle(f'Genetype RC > {gt}')
+        plt.tight_layout()
+        plt.savefig(f'{cwd}/genotyping.rc_{gt}.png')
+        plt.close()
+        gtdict = pd.DataFrame(gtdict)
+        gtdict['gt'] = gt
+        gtdict.reset_index(names='tissue', inplace=True)
+        gtdict['SNP'] = (gtdict['SNP']*100)/sum(gtdict['SNP'])
+        gtdict['Indel'] = (gtdict['Indel']*100)/sum(gtdict['Indel'])
+        gtcnts = pd.concat([gtcnts, gtdict])
+
+    fig = plt.figure(figsize=[4, 5], dpi=300)
+    ax = fig.add_subplot(2, 1, 1)
+    ax = sns.pointplot(gtcnts, x='gt', y='SNP', hue='tissue', ax=ax)
+    ax = cleanax(ax)
+    ax.set_ylim([-5, 80])
+    plt.setp(ax.lines, linewidth=1)
+    plt.setp(ax.collections, sizes=[10])
+    ax.legend(frameon=False, ncols=2)
+    ax.set_xlabel('Minimum read count')
+    ax.set_ylabel('SNP SMs (%)')
+    ax.grid(zorder=0)
+    ax.set_axisbelow(True)
+
+    ax = fig.add_subplot(2, 1, 2)
+    ax = sns.pointplot(gtcnts, x='gt', y='Indel', hue='tissue', ax=ax)
+    ax = cleanax(ax)
+    ax.set_ylim([-5, 80])
+    ax.legend('', frameon=False)
+    plt.setp(ax.lines, linewidth=1)
+    plt.setp(ax.collections, sizes=[10])
+    ax.set_xlabel('Minimum read count')
+    ax.set_ylabel('Indel SMs (%)')
+    ax.grid(zorder=0)
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/../genotyping_counts.png')
+    plt.close()
+
+    # </editor-fold>
+
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="OBSOLETE: Get correlation of mappability and SM. Ideally, this should not be different than the background distribution">
     # TODO: Fix it to work with the updated SM list
     # Read smpos same way as in repeat/gene overlap section above
     genmap = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.genmap.E0_K51.map.bedgraph'
@@ -2496,7 +3092,11 @@ def mutation_spectra():
 
 def merge_all_SM():
     """
-    Merge the list of SMs identified in leaf, layers, and all samples together
+    Merge the list of SMs identified in leaf, layers, and all samples together.
+
+    Currently, only the SM list merging, filtering and summarising sections of this
+    function are useful. All of the plotting sections are obsolete or not used in
+     the manuscript. These sections are updated and used in the mutation_spectra().
     """
 
     # <editor-fold desc="Define imports">
@@ -2570,7 +3170,6 @@ def merge_all_SM():
                             af[line[0], int(line[1]), alt] = 0
         return rc, af
     # END
-
 
     # </editor-fold>
 
@@ -3108,11 +3707,6 @@ def merge_all_SM():
     # </editor-fold>
 
 
-    # <editor-fold desc="Check the presence of somatic mutations in the scRNA data">
-    ## Done in python.iso_seq_analysis.get_allele_freq_at_sm_pos_plot
-    # </editor-fold>
-
-
     # <editor-fold desc="Grouping of SMs based on branching">
     # Generate the Figure 5 from Tomimoto and Satake, 2023
     l1cnts = defaultdict(int)
@@ -3247,28 +3841,19 @@ def expression_plots():
     BIGGER_SIZE = 8
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
     plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
-    plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+    plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
     plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
     plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
     plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
-    plt.rc('figure', titlesize=MEDIUM_SIZE)  # fontsize of the figure title
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
     plt.rc('font', family='Arial')  # fontsize of the figure title
     # </editor-fold>
 
     muts = pd.read_table(f'{cwd}/all_sm_in_all_samples.manually_selected.cleaned.csv', sep=',')
 
-    # <editor-fold desc="Plot Iso-Seq stats">
 
-    # Compare the coverage/read-count (etc) of iso-seq reads to the scrna seq reads
-    # (Older code (before Anshupa's analysis and removal of duplicates by isoseq3)
-    # is overwritten).
-    # scrna read count and clusters generated using Anshupa's analysis
-
+    # <editor-fold desc="Plot the read counts distribution of scRNA and scISO-seq reads">
     sdict2 = {'WT_1': 'wt1', 'WT_19': 'wt19', 'MUT_11_1': 'mut_11_1', 'MUT_15': 'mut_15'}
-    # CUTS = (10, 25, 50, 100)    # No nead to use CUTS as the new iso-seq analysis selects only good BCs
-    # fig=plt.figure(figsize=(6, 6))
-    # # Get BC read-count stats
-    # rcdf = pd.DataFrame()
     for i, (k, v) in enumerate(sdict2.items()):
         bcrc = pd.read_table(f'{scdir}/{v}_bc_readcnts.txt', header=None, delimiter=' ')
         df = pd.read_table(f'{isodir}/{k}/cnt.txt', header=None, delim_whitespace=True)
@@ -3278,34 +3863,19 @@ def expression_plots():
         isoillrc = pd.merge(bcrc, df, how='inner', on=[1])
         isoillrc.columns = "scRNA-rc BC scIso-rc".split()
         isoillrc['branch'] = k
-        g = sns.jointplot(data=isoillrc, x="scRNA-rc", y="scIso-rc", kind="hex")
+        g = sns.jointplot(data=isoillrc, x="scRNA-rc", y="scIso-rc", kind="hex", height=4)
         g.set_axis_labels("scRNA read count", "scIso-Seq read count")
         g.fig.suptitle(f"Read count in {k}")
-        g.savefig(f"{isodir}/{k}_bc_read_dist.png", dpi=300, transparent=True)
+        plt.tight_layout()
+        g.savefig(f"{cwd}/{k}_bc_read_dist.png", dpi=300, transparent=True)
+        g.savefig(f"{cwd}/{k}_bc_read_dist.pdf", dpi=300, transparent=True)
         plt.close()
-        # ax.set_title("Read count in cluster BC\nTotal Iso-Seq reads: {}".format(sum(isoillrc['0_y'])), fontdict={'fontsize': 8})
-        # i+=1
-        # ax = fig.add_subplot(3,2,i)
-        # ax.hist(isoillrc['0_y'], bins=100)
-        # ax.set_xlabel("scIso-Seq read count")
-        # ax.set_ylabel("Number of BC")
-        # i+=1
-        # for c in CUTS:
-        #     g = df.loc[(df[0]<1000) & (df[0]>=c)]
-        #     ax = fig.add_subplot(3, 2, i)
-        #     ax.set_title(i)
-        #     ax.hist(g[0], bins=100)
-        #     ax.set_xlim(0, 1000)
-        #     ax.set_title("Number of reads: {}\nNumber of cells: {}\ncutoff: {}".format(sum(g[0]), len(g[1]), c), fontdict={'fontsize':8})
-        #     i+=1
-        # plt.savefig(INDIR+s+"/bc_read_dist.pdf")
-        # plt.savefig(INDIR+s+"/bc_read_dist.png", transparent=True)
     # </editor-fold>
 
 
     # <editor-fold desc="Plot Alt-readcount frequency">
     df = muts.sort_values(['branch', 'chromosome', 'position'])
-    # # Get gene coordinates
+    # # Get gene coordinates (NOT FILTERING BASED ON GENES ANYMORE)
     # gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
     # genes = gff.filter(lambda x: x[2] == 'gene').saveas()
     # pos = df.copy()
@@ -3321,9 +3891,9 @@ def expression_plots():
     df = df.loc[[True if alt[0] not in '+-' else False for alt in df.alt_allele]]
     df = df.loc[df.branch.isin(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'])]
     pos = set(zip(df.chromosome, df.position, df.alt_allele))
-    clstids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [f'clstrs_{i}' for i in range(0, 14)])))
+    clstids = list(map(lambda x: f'{x[0]}_{x[1]}', product(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [f'clstrs_{i}' for i in range(0, 15)])))
 
-    # Read AF in rnaseq reads
+    # <editor-fold desc="Read AF in rnaseq reads">
     rnarc = pd.DataFrame()
     for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
         clsrc = sorted(glob(f'{rnadir}/{bname}/clstrs_*.rna.rc.txt'))
@@ -3352,13 +3922,14 @@ def expression_plots():
                                 clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': 0, 'af': 0}
             clsdf = pd.DataFrame(clsdf).transpose()
             clsname = cls.split('/')[-1].split(".")[0]
-            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            # clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]))])
             clsdf['cls'] = clsname
             clsdf['branch'] = sdict[bname]
             rnarc = pd.concat([rnarc, clsdf])
     rnarc.reset_index(level=[0, 1, 2], inplace=True)
     rnarc.columns = ['chromosome', 'position', 'alt_allele'] + list(rnarc.columns[3:])
-    rnatrans = rnarc.loc[rnarc.rc > 0].drop_duplicates(['chromosome', 'position', 'alt_allele'])
+    rnatrans = rnarc.loc[rnarc.rc > 0]
     rnarc = rnarc.loc[~(rnarc.af == 0)]
     rnarc['p'] = rnarc.chromosome.astype(str) + '_' + rnarc.position.astype(str) + '_' + rnarc.alt_allele.astype(str)
     rnarc['c'] = rnarc.branch.astype(str) + '_' + rnarc.cls.astype(str)
@@ -3367,8 +3938,10 @@ def expression_plots():
     rnapos.columns = ['p', 'c']
     rnapos = rnapos.merge(rnarc, how='outer', on=['p', 'c'])
     rnapos.loc[rnapos.rc.isna(), ['rc', 'ac', 'af']] = 0
+    # </editor-fold>
 
-    # Read AF in isoseq reads
+
+    # <editor-fold desc="Read AF in isoseq reads">
     isorc = pd.DataFrame()
     for bname in ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15'):
         clsrc = sorted(glob(f'{isodir}/{bname}/clstrs_*.iso_seq.rc.txt'))
@@ -3397,13 +3970,14 @@ def expression_plots():
                                 clsdf[line[0], int(line[1]), alt] = {'rc': int(line[3]), 'ac': 0, 'af': 0}
             clsdf = pd.DataFrame(clsdf).transpose()
             clsname = cls.split('/')[-1].split(".")[0]
-            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            # clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]) - 1)])
+            clsname = '_'.join(['clstrs', str(int(clsname.split('_')[1]))])
             clsdf['cls'] = clsname
             clsdf['branch'] = sdict[bname]
             isorc = pd.concat([isorc, clsdf])
     isorc.reset_index(level=[0, 1, 2], inplace=True)
     isorc.columns = ['chromosome', 'position', 'alt_allele'] + list(isorc.columns[3:])
-    isotrans = isorc.loc[isorc.rc > 0].drop_duplicates(['chromosome', 'position', 'alt_allele'])
+    isotrans = isorc.loc[isorc.rc > 0]
     isorc = isorc.loc[~(isorc.af == 0)]
     # isorc = isorc.loc[~(isorc.ac < 2)]
     isorc['p'] = isorc.chromosome.astype(str) + '_' + isorc.position.astype(str) + '_' + isorc.alt_allele.astype(str)
@@ -3413,7 +3987,13 @@ def expression_plots():
     isopos.columns = ['p', 'c']
     isopos = isopos.merge(isorc, how='left', on=['p', 'c'])
     isopos.loc[isopos.rc.isna(), ['rc', 'ac', 'af']] = 0
+    # </editor-fold>
 
+
+    # <editor-fold desc="Filter and cluster somatic mutations">
+    # Remove position genotyped because of mismapping reads
+    rnapos = rnapos.loc[rnapos.p != 'CUR7G_4335333_A']
+    isopos = isopos.loc[isopos.p != 'CUR7G_4335333_A']
     mutsfilt = df.copy()
     mutsfilt['p'] = mutsfilt.chromosome.astype(str) + '_' + mutsfilt.position.astype(str) + '_' + mutsfilt.alt_allele.astype(str)
     mutsfilt = mutsfilt.loc[mutsfilt.p.isin(set(isopos.p) | set(rnapos.p))]
@@ -3461,10 +4041,11 @@ def expression_plots():
     snps[1] -= 1
     snps.sort_values([0, 1], inplace=True)
     snps.to_csv(f'{cwd}/all_sm_snps_expressed.txt', index=False, header=False, sep='\t')
+    # </editor-fold>
 
+
+    # <editor-fold desc="Fig1 without splitting samples based on clusters">
     cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
-    plt.rc('font', size=6)
-    # Fig1 without splitting samples based on clusters
     def getmutlist(df):
         hassm = defaultdict(dict)
         for grp in df.groupby('p branch'.split()):
@@ -3473,6 +4054,8 @@ def expression_plots():
             else:
                 hassm[grp[0][0]][grp[0][1]] = 1
         rnahm = pd.DataFrame.from_dict(hassm)
+        tofillindex = [b for b in 'wt_1 wt_19 mut_11_1 mut_15'.split() if b not in rnahm.index.values]
+        rnahm = pd.concat([rnahm, pd.DataFrame([], index=tofillindex)])
         rnahm.fillna(0, inplace=True)
         rnahm = rnahm.loc['wt_1 wt_19 mut_11_1 mut_15'.split()]
         for c in mutsfilt.columns:
@@ -3486,7 +4069,6 @@ def expression_plots():
     ax = plt.subplot2grid((4, 1), (0, 0), rowspan=2, colspan=1, fig=fig)
     ax = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, cbar=False, ax=ax)
     ax.hlines([8], *ax.get_xlim(), color='k')
-    # ax.vlines([7], *ax.get_ylim(), color='k')
     ax.set_ylabel('Somatic mutation')
     ax.set_xlabel('')
 
@@ -3506,9 +4088,11 @@ def expression_plots():
     plt.close()
 
     with open(f'{cwd}/rna.alt_readcount.pickle', 'wb') as f:
-        pickle.dump({'mutsfilt': mutsfilt, 'rnahm': rnahm, 'isohm': isohm}, f)
+        pickle.dump({'mutsfilt': mutsfilt, 'rnahm': rnahm, 'isohm': isohm, 'rnatrans': rnatrans, 'isotrans': isotrans, 'mutsdf': df}, f)
+    # </editor-fold>
 
-    # Fig2 splitting samples based on clusters
+
+    # <editor-fold desc="Secondary figure splitting samples based on clusters">
     fig = plt.figure(figsize=[5, 12], dpi=300)
     ax = plt.subplot2grid((7, 1), (0, 0), rowspan=1, colspan=1, fig=fig)
     ax = sns.heatmap(mutsfilt, linewidths=0.1, linecolor='lightgrey', cmap=cmap, xticklabels=False, yticklabels=mutsfilt.index, cbar_kws={'label': 'Somatic mutation', 'fraction': 0.05}, ax=ax)
@@ -3546,21 +4130,8 @@ def expression_plots():
     # plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.pdf')
     plt.savefig('/srv/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_af_in_iso_seq_clusters.png')
     plt.close()
-
-
-    # <editor-fold desc="Create summary stats">
-    isojsondata = dict()
-    isojsondata["Number of SNPs in the 4 branches"] = len(pos)
-    alltrans = pd.concat([rnatrans, isotrans]).drop_duplicates('chromosome position alt_allele'.split())
-    alltrans = alltrans.merge(df, on='chromosome position alt_allele'.split(), how='left')
-    alltransanno = {}
-    for grp in alltrans.groupby('chromosome position alt_allele'.split()):
-        alltransanno[grp[0]] = tuple(grp[1].tissue.unique())
-    isojsondata["SM counts with reads"] = len(alltransanno)
-    isojsondata["SM counts in tissue with reads"] = {'_'.join(k): v for k, v in Counter(alltransanno.values()).items()}
-    with open('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/iso_seq_stats.json', 'w') as fout:
-        json.dump(isojsondata, fout, indent=2)
     # </editor-fold>
+
 
     ## Positions plotted:
     # CUR7G 4335333 Intergene
@@ -3572,7 +4143,6 @@ def expression_plots():
     # CUR5G 14960198    Intron
 
     # </editor-fold>
-
 
     return
 # END
