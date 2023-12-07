@@ -3,16 +3,17 @@ indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemb
 cd $indir
 #gffread cur.pasa_out.gff -T > cur.pasa_out.gtf # Using the PASA out GFF for now, will need to udpate it when the final annotation is ready
 gffread cur.pasa_out.sort.protein_coding.3utr.gff3 -T > cur.pasa_out.sort.protein_coding.3utr.gtf
+gffread cur.pasa_out.3utr.gene_rrna.sort.gff3 -T > cur.pasa_out.3utr.gene_rrna.sort.gtf
 
 # can edit the gff file manually to add UTRs
 /netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/scripts/python/add_3UTR_to_gff_files.py
 
-# Changing cellranger to newer version (04.08.2024)
+# Changing cellranger to newer version (10.08.2024)
 cellranger=/srv/netscratch/dep_mercier/grp_schneeberger/software/cellranger-7.1.0/bin/cellranger
 # Rerunning with older version (08.08.2024)
-cellranger=/srv/netscratch/dep_mercier/grp_schneeberger/software/cellranger-5.0.0/bin/cellranger
+#cellranger=/srv/netscratch/dep_mercier/grp_schneeberger/software/cellranger-5.0.0/bin/cellranger
 # Cellranger index
-nohup $cellranger mkref --genome=cur --fasta cur.genome.v1.fasta --genes=cur.pasa_out.sort.protein_coding.3utr.gtf --nthreads=20 &
+nohup $cellranger mkref --genome=cur --fasta cur.genome.v1.fasta --genes=cur.pasa_out.3utr.gene_rrna.sort.gtf --nthreads=20 &
 
 ## Step 2: Perform barcode-correction and get cell count using cellranger count
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scrna/bigdata/
@@ -28,18 +29,17 @@ for sample in ${samples[@]}; do
 #    mv $f  $(echo $f | sed -r 's/_H.{8}_/_/')
 #  done
   cd $cwd
-  mkdir -p ${sample}_cr5
-  cd ${sample}_cr5
+  mkdir -p ${sample}_cr7
+  cd ${sample}_cr7
   sample_list=$(ls ${indir}/${sample}/*fastq.gz  | sed 's/^.*\///g' |sed 's/_S.*$//g' | sort -u | tr '\n' ',' | sed 's/,$//g')
   echo $sample_list
-
   bsub -q multicore20 -R "span[hosts=1] rusage[mem=10000]" -M 10000 -oo ${sample}.log -eo ${sample}.err "
     $cellranger count --id=$sample \
       --fastqs=${indir}/${sample} \
       --transcriptome=$refdir \
       --sample=$sample_list \
       --expect-cells 3500 \
-      --include-introns \
+      --include-introns true \
       --jobmode=lsf --maxjobs=10000 --jobinterval=1 --mempercore=10 \
       2>&1  > cellranger.log
   "
@@ -108,7 +108,7 @@ STAR --runThreadN 30 \
 # </editor-fold>
 
 
-# <editor-fold desc="Separate cellranger output BAM to clusters and get check for SMs">
+# <editor-fold desc="Separate cellranger output BAM to clusters and check for SMs">
 indir=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/
 refcur=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta
@@ -118,9 +118,13 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
     cd $cwd
     cd $s
     bsub -q multicore40 -n 40 -R "span[hosts=1] rusage[mem=50000]" -M 60000 -oo ${s}.log -eo ${s}.err "
-#        samtools view -@ 40 -F 1024 -O BAM ${indir}/${s}/${s}/outs/possorted_genome_bam.bam \
+        # Use the BAM generated using cellranger-7
+#        samtools view -@ 40 -F 1024 -O BAM ${indir}/${s}_cr7/${s}/outs/possorted_genome_bam.bam \
 #        | samtools sort -@ 40 -t CB -O BAM -o ${s}.dedup.cb_sorted.bam -
-#        for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+#        samtools sort -@ 40 -O BAM -o ${s}.dedup.pos_sorted.bam ${s}.dedup.cb_sorted.bam
+#        samtools index -@ 40 ${s}.dedup.pos_sorted.bam
+        # Get clustrs list using python.scrna_analysis.splitbambybc
+#        for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
 #            samtools view -@ 40 -D CB:clstrs_\${i}_bcs.txt -O BAM ${s}.dedup.cb_sorted.bam \
 #            | samtools sort -@ 40 - \
 #            > clstrs_\${i}_bcs.bam
@@ -128,16 +132,44 @@ for s in WT_1 WT_19 MUT_11_1 MUT_15; do
 #            /srv/netscratch/dep_mercier/grp_schneeberger/software/anaconda3_2021/envs/mgpy3.8/bin/hometools pbamrc -n 1 -b 0 -q 0 -w 0 -I -f $refcur -l $muts clstrs_\${i}_bcs.bam clstrs_\${i}.rna.rc.txt &
 #        done
 #        wait
-        samtools sort -@ 40 -O BAM -o ${s}.dedup.pos_sorted.bam ${s}.dedup.cb_sorted.bam
+        samtools merge -@ 40 -f -O BAM ${s}.merged.bam clstrs_*_bcs.bam
+        samtools index -@ 40  ${s}.merged.bam
     "
 done
+# </editor-fold>
 
+# Get read depth across the genome
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd $cwd; cd $s
+#    samtools depth -d 0 -o ${s}.merged.depth.txt --reference $refcur ${s}.merged.bam &
+    cut -f 3 ${s}.merged.depth.txt | sort -n | uniq -c > ${s}.merged.depth.hist &
+done
+
+
+# <editor-fold desc="Get pileup data at SM SNP positions that are expressed">
+cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/
+smfin=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_snps_expressed.txt
+for s in WT_1 WT_19 MUT_11_1 MUT_15; do
+    cd ${cwd}/${s}
+    rm all_sm_snp_expressed.pileup
+    while IFS=$'\t' read -r -a r; do
+        samtools mpileup -A -d 100000 -q 0 -Q 0 -f $refcur --output-extra CB -r ${r[0]}:${r[2]}-${r[2]} ${s}.dedup.pos_sorted.bam >> all_sm_snp_expressed.pileup
+    done < $smfin
+done
 # </editor-fold>
 
 
 # <editor-fold desc="Get upregulated and downregulated genes in cluster">
+# TODO: Update for the latest files
 cwd='/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/'
 cd cwd
+hometools xls2csv cluster_markers_res0.5_with_GeneNames_annotations_20230919.xlsx cluster_markers_res0.5_with_GeneNames_annotations_20230919.tsv -s all -n
+cp cluster_Enrichment_res0.5_with_GeneNames_annotations_20230919.xlsx tmp.xls
+# Remove sheet 1 with cluster annotation from tmp.xls
+hometools xls2csv tmp.xls cluster_Enrichment_res0.5_with_GeneNames_annotations_20230919.tsv -s all -n
+
+
+
 hometools xls2csv cluster_markers_res0.5.xlsx cluster_markers_res0.5.tsv -s all -n
 
 tail +2 cluster_markers_res0.5.tsv \

@@ -1,3 +1,6 @@
+# <editor-fold desc="OBSOLETE: OLD code for manual filtering and quality assessment of BCs">
+
+# <editor-fold desc="Define imports">
 # select barcodes with high number of UMIs and sufficient numbers of reads mapping the genome
 SAMPLES = ('WT_1', 'WT_19', 'MUT_11_1', 'MUT_15')
 CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/barcodes/'
@@ -13,6 +16,9 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 from scipy.stats import gaussian_kde
+
+# </editor-fold>
+
 
 def readbam(b, wd):
     # print(b)
@@ -30,7 +36,7 @@ def readbam(b, wd):
             rc -= 1
             continue
         if not r.is_unmapped:
-            m+=1
+            m += 1
     return(bc, rc, len(set(um)), 0 if rc ==0 else m/rc)
 #END
 
@@ -138,6 +144,7 @@ def getcellplots(pltname='scrna_bc_stats.pdf'):
 # Get plots for
 sampleout = getcellplots()
 
+
 with open(CWD+'sampleout.pickle', 'rb') as f:
     sampleout = pickle.load(f)
 # Number of BCs per sample:
@@ -186,21 +193,21 @@ for sample in SAMPLES:
 for sample in SAMPLES:
     with open(CWD + sample + "/" + 'good_bcs_list.txt', 'w') as fout:
         fout.write("\n".join(bcslist4[sample]))
+# </editor-fold>
 
 
-def splitbambybc():
+def bamBCanalysis():
     """
-        Read the BCs for each cluster and splits the raw cellranger output BAM file
-        to get cluster specific bam file
+        Using cluster information from Anshupa, split the cellranger bam file and genotype SMs
     """
-    # <editor-fold desc="Define import">
 
+    # <editor-fold desc="Define Imports">
+    import pandas as pd
     # </editor-fold>
 
 
-    # <editor-fold desc="Define defaults and constants">
-    crout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/'
-
+    # <editor-fold desc="Define constants">
+    # crout = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/get_cells/'
     cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/'
     clstfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bcs_clstr_id.txt'
     sdict = {'WT_1': 'wt1',
@@ -209,20 +216,74 @@ def splitbambybc():
              'MUT_15': 'mut_15'}
     # </editor-fold>
 
+
     # <editor-fold desc="Split the cellranger output bam file and get read count at SM positions">
+    # Read the BCs for each cluster and splits the raw cellranger output BAM file
+    # to get cluster specific bam file
     for i, (k, v) in enumerate(sdict.items()):
         # Read BCs
-        bcclt = pd.read_table(f'/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/{v}_bcs_clstr_id.txt', delimiter=' ')
+        bcclt = pd.read_table(clstfin.format(v=v), delimiter=' ')
         bcclt.columns = ['clst', 'bc']
         for grp in bcclt.groupby('clst'):
             # df = grp[1]['bc'].apply(revcomp)
             df = grp[1]['bc']
             df = df.astype(str) + '-1'
             df.to_csv(f'{cwd}/{k}/clstrs_{grp[0]}_bcs.txt', header=False, index=False)
-            # Get read count at SM position: SH/scrna_analysis.sh:118
+        # Get read count at SM position: SH/scrna_analysis.sh:118
+    # </editor-fold>
+    return
+# END
+
+
+def get_rna_reads_with_sm():
+    """
+    For each cluster, get pileup data for the SM SNPs that are expressed and find cells containing that SM
+    """
+    # <editor-fold desc="Define import">
+    import pandas as pd
+    from hometools.classes import snvdata
     # </editor-fold>
 
 
+    # <editor-fold desc="Define defalts">
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/scrna_clusters/'
+    cwd = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/'
+    smfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_snps_expressed.txt'
+    branches = 'WT_1 WT_19 MUT_11_1  MUT_15'.split()
+    # </editor-fold>
 
+
+    # <editor-fold desc="Get SM containing barcodes">
+    # Get pileup data SH/scrna_analysis.sh:140
+    muts = pd.read_table(smfin, header=None)
+    with open(f'{indir}/bcs_with_sm_reads.txt', 'w') as fout, open(f'{indir}/bcs_with_wt_reads.txt', 'w') as f1out:
+        for b in branches:
+            with open(f'{indir}/{b}/all_sm_snp_expressed.pileup', 'r') as fin:
+                print(b)
+                for line in fin:
+                    line = line.strip().split()
+                    alt = list(muts.loc[(muts[0] == line[0]) & (muts[2] == int(line[1])), 3])[0]
+                    snp = snvdata(line[:6])
+                    cells = line[6].split(',')
+                    for i in snp.gapindex[::-1]:
+                        cells.pop(i)
+                    # Get barcodes with SM alleles
+                    smcells = deque()
+                    if alt.upper() in snp.bases or alt.lower() in snp.bases:
+                        for i in range(len(cells)):
+                            if snp.bases[i] in [alt.upper(), alt.lower()]:
+                                smcells.append(cells[i])
+                    smcells = set(list(smcells))
+                    fout.write(f'{b}\t{line[0]}\t{line[1]}\t{",".join(smcells)}\n')
+                    # Get barcodes with WT alleles
+                    wtcells = deque()
+                    if '.' in snp.bases or ',' in snp.bases:
+                        for i in range(len(cells)):
+                            if snp.bases[i] in '.,':
+                                wtcells.append(cells[i])
+                    wtcells = set(list(wtcells))
+                    f1out.write(f'{b}\t{line[0]}\t{line[1]}\t{",".join(wtcells)}\n')
+
+    # </editor-fold>
     return
 # END
