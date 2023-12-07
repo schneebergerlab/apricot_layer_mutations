@@ -127,6 +127,7 @@ def get_transcriptome_variants():
 # </editor-fold>
 
 
+# <editor-fold desc="OBSELETE: Function to plot correlation between scRNA read counts and scISO read counts">
 def get_iso_seq_stats():
     """
         Compare the coverage/read-count (etc) of iso-seq reads to the scrna seq reads
@@ -195,8 +196,7 @@ def get_iso_seq_stats():
     plt.close()
     return
 # END
-get_iso_seq_stats()
-
+# </editor-fold>
 
 
 def get_allele_freq_at_sm_pos_plot():
@@ -207,15 +207,7 @@ def get_allele_freq_at_sm_pos_plot():
     # <editor-fold desc="Define import">
     from hometools.hometools import revcomp
     from subprocess import Popen, PIPE
-    import os
-    from collections import defaultdict, deque
     import pandas as pd
-    from itertools import product
-    from matplotlib import colors as mcolors
-    from matplotlib import pyplot as plt
-    from scipy.cluster.hierarchy import linkage, optimal_leaf_ordering, leaves_list
-    from scipy.spatial.distance import pdist
-    import seaborn as sns
     # </editor-fold>
 
 
@@ -249,7 +241,69 @@ def get_allele_freq_at_sm_pos_plot():
     return
 # END
 
+def get_iso_reads_with_sm():
+    """
+    For each cluster, get pileup data for the SM SNPs that are expressed and find cells/barcodes containing that SM
+    """
+    # <editor-fold desc="Define import">
+    import pandas as pd
+    from hometools.classes import snvdata
+    from hometools.hometools import readfasta
+    from tqdm import tqdmp
+    # </editor-fold>
 
+
+    # <editor-fold desc="Define defalts">
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/isoseq/get_cells/'
+    smfin = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_snps_expressed.txt'
+    branches = 'WT_1 WT_19 MUT_11_1  MUT_15'.split()
+    # </editor-fold>
+
+    # <editor-fold desc="Get mapping of read-name to barcode">
+    bcids = dict()
+    for b in branches:
+        breads = dict()
+        for cls in tqdm(range(15)):
+            for r in readfasta(f'{indir}/{b}/clstrs_{cls}_reads.fa.gz').keys():
+                r = r.split('\t')
+                breads[r[0]] = revcomp(r[1].split(':')[2])
+        bcids[b] = breads
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Get SM containing barcodes">
+    # Get pileup data SH/scrna_analysis.sh:140
+    muts = pd.read_table(smfin, header=None)
+    with open(f'{indir}/bcs_with_sm_reads.txt', 'w') as fout, open(f'{indir}/bcs_with_wt_reads.txt', 'w') as f1out:
+        for i, b in enumerate(branches):
+            with open(f'{indir}/{b}/all_sm_snp_expressed.pileup', 'r') as fin:
+                for line in fin:
+                    line = line.strip().split()
+                    alt = list(muts.loc[(muts[0] == line[0]) & (muts[2] == int(line[1])), 3])[0]
+                    snp = snvdata(line[:6])
+                    cells = [f'{bcids[b][m]}-1' for m in line[6].split(',')]
+                    for i in snp.gapindex[::-1]:
+                        cells.pop(i)
+                    # Get barcodes with SM alleles
+                    smcells = deque()
+                    if alt.upper() in snp.bases or alt.lower() in snp.bases:
+                        for i in range(len(cells)):
+                            if snp.bases[i] in [alt.upper(), alt.lower()]:
+                                smcells.append(cells[i])
+                    smcells = set(list(smcells))
+                    fout.write(f'{b}\t{line[0]}\t{line[1]}\t{",".join(smcells)}\n')
+                    # Get barcodes with WT alleles
+                    wtcells = deque()
+                    if '.' in snp.bases or ',' in snp.bases:
+                        for i in range(len(cells)):
+                            if snp.bases[i] in '.,':
+                                wtcells.append(cells[i])
+                    wtcells = set(list(wtcells))
+                    f1out.write(f'{b}\t{line[0]}\t{line[1]}\t{",".join(wtcells)}\n')
+    # </editor-fold>
+    return
+# END
 # <editor-fold desc="OBSOLETE: Get statistics for Iso-seq reac counts across chromosomes, genes, etc">
 # Get cluster-specific read stats
 s_cls_rc = {}
