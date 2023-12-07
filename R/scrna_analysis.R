@@ -10,6 +10,7 @@ library(ggplot2)
 library(ggpubr)
 library(cowplot)
 
+# OBSOLETE: INITIAL ATTEMPTS TO ANALYSE scRNA DATA -----------
 gff <- import.gff3('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/EVM_PASA/pasa_on_mancur/cur.pasa_out.sort.protein_coding.3utr.gff3')
 gffgenes <- gff[gff@elementMetadata$type == 'gene']
 garb <- seqnames(gffgenes)
@@ -655,10 +656,18 @@ seuobj.combined.sct <- IntegrateData(anchorset = seuobj.anchors, normalization.m
 # DE Analysis
 ################################################################################
 # Load object created by Anshupa and get BCs and clusters
-load('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/clusterObj_umap_res0.5.RData')
+load('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/clusterObj_umap_res0.6_20230919.RData')
+# Get UMAP coordinates
+umap <- data.frame(int.combinedClst[["umap"]]@cell.embeddings)
 orig.ident = int.combinedClst@meta.data$orig.ident
+clustid <- as.numeric(Idents(int.combinedClst)) - 1
 bcs <- names(Idents(int.combinedClst))
-clustid <- as.numeric(Idents(int.combinedClst))
+umap['orig.ident'] <- orig.ident
+umap['bcs'] <- bcs
+umap['clustid'] <- clustid
+
+write.table(umap, '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/umap_coordinates.txt', quote=FALSE, row.names=FALSE, sep='\t')
+
 wt1.bcs <- gsub('-.*', '', bcs[grep('_1', bcs)])
 wt1.clst <- clustid[grep('_1', bcs)]
 wt19.bcs <- gsub('-.*', '', bcs[grep('_2', bcs)])
@@ -684,5 +693,13 @@ for(s in samples){
 
 # Plot read count distribution at genes with SM
 geneids = c('Gene.10343', 'Gene.23204', 'Gene.27798', 'Gene.7081')
-plt <- VlnPlot(int.combinedClst, features = geneids, assay="RNA", split.by='orig.ident', combine=TRUE, ncol=2)
-ggsave("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_expression_in_clusters.png", width=12, height=8)
+plt1 <- VlnPlot(int.combinedClst, features = geneids[1], assay="RNA", split.by='orig.ident', ncol=1)
+plt2 <- VlnPlot(int.combinedClst, features = geneids[2], assay="RNA", split.by='orig.ident', ncol=1)
+plt3 <- VlnPlot(int.combinedClst, features = geneids[3], assay="RNA", split.by='orig.ident', ncol=1)
+plt4 <- VlnPlot(int.combinedClst, features = geneids[4], assay="RNA", split.by='orig.ident', ncol=1)
+plt <- (plt1 + plt2 + plt3 + plt4)
+ggsave("/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/gene_expression_sm_genes_in_clusters.png", width=12, height=12, dpi=300)
+
+
+FeaturePlot(int.combinedClst, features=c('Gene.45137', 'Gene.16252', 'Gene.25771', 'Gene.35517'), cols=c('lightgrey', 'black'), split.by = 'orig.ident')
+FeaturePlot(int.combinedClst, features=c('Gene.37527', 'Gene.33899', 'Gene.45137'), split.by = 'orig.ident')
