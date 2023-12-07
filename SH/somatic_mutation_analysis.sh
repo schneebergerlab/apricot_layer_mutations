@@ -51,6 +51,7 @@ done
 
 # </editor-fold>
 
+
 # <editor-fold desc="Cluster WT and SM protein structures>
 cwd=/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/structurome/smeffect/
 cd $cwd
