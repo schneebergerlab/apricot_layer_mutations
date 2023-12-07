@@ -1,85 +1,4 @@
 # Functions to analyse the sequencing data from the sequencing of layer-enriched dna
-def plot_snp_af():
-    """
-    This function plots the allele frequencies of the MUT_11_1 SNPs/indels in the corresponding layers
-    """
-    from collections import defaultdict, deque
-    from matplotlib import pyplot as plt
-    from matplotlib import collections as mc
-    CWD = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/'
-    LS = ['l1', 'l2', 'l3']
-    MUTS = {}
-    BD = {'A': 4, 'C': 5, 'G': 6, 'T': 7}
-    # Reads leaf mutations
-    with open(f'{CWD}mut_11_1.mutations.regions', 'r') as fin:
-        for line in fin:
-            line = line.strip().split()
-            MUTS[(line[0], int(line[1]))] = (line[3], line[4], int(line[5]), round(float(line[6]), 4))
-    MUT_AF = defaultdict(dict)
-    for k, v in MUTS.items():
-        MUT_AF[k]['leaf'] = v[3]
-    for l in LS:
-        with open(f'{CWD}mut_11_1_{l}/read_count_at_leaf_mut_pos.txt', 'r') as fin:
-            for line in fin:
-                line = line.strip().split()
-                if MUTS[(line[0], int(line[1]))][1] in {'A', 'C', 'G', 'T'}:
-                    MUT_AF[(line[0], int(line[1]))][l] = round(int(line[BD[MUTS[(line[0], int(line[1]))][1]]])/int(line[3]), 4)
-                else:
-                    c = 0
-                    if len(line) > 9:
-                        for i in range(9, len(line), 2):
-                            if line[i] == MUTS[(line[0], int(line[1]))][1]:
-                                c = round(int(line[i+1])/int(line[3]), 4)
-                    MUT_AF[(line[0], int(line[1]))][l] = c
-    snp_lines = deque()
-    indel_lines = deque()
-    TYPE = ['leaf', 'l1', 'l2', 'l3']
-    for k, v in MUT_AF.items():
-        if MUTS[k][1] in {'A', 'C', 'G', 'T'}:
-            snp_lines.append([(t, MUT_AF[k][TYPE[t]]) for t in range(4)])
-        else:
-            indel_lines.append([(t, MUT_AF[k][TYPE[t]]) for t in range(4)])
-    # Plot SNPs and indels
-    lc = mc.LineCollection(snp_lines, colors=['purple', 'lightgrey', 'purple', 'purple', 'lightgrey'] + ['purple']*4 + ['red', 'purple', 'lightgrey'], linewidths=2)
-    fig = plt.figure(figsize=[5, 4])
-    ax = fig.add_subplot()
-    ax.set_xlim([-0.1, 3.1])
-    ax.set_ylim([-0.1, 1])
-    ax.add_collection(lc)
-    ax.set_xticks([0, 1, 2, 3])
-    ax.set_xticklabels(labels=['leaf', 'layer-1', 'layer-2', 'layer-3'])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_xlabel("Sample")
-    ax.set_ylabel("Allele Frequency")
-    ax.plot([], [], color='purple', label='High AF present in layers')
-    ax.plot([], [], color='grey', label='Low AF absent in layers')
-    ax.plot([], [], color='red', label='High AF absent in layers')
-    ax.set_title("Distribution of somatic SNPs in fruits")
-    plt.legend(frameon=False, bbox_to_anchor=(1, 0.95))
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/snps_in_layers.pdf')
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/snps_in_layers.png', dpi=600)
-    plt.close()
-    lc = mc.LineCollection(indel_lines, colors='royalblue', linewidths=2)
-    fig = plt.figure(figsize=[5, 4])
-    ax = fig.add_subplot()
-    ax.set_xlim([-0.1, 3.1])
-    ax.set_ylim([-0.1, 1])
-    ax.add_collection(lc)
-    ax.set_xticks([0, 1, 2, 3])
-    ax.set_xticklabels(labels=['leaf', 'layer-1', 'layer-2', 'layer-3'])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_xlabel("Sample")
-    ax.set_ylabel("Allele Frequency")
-    ax.set_title("Distribution of somatic indels in fruits")
-    plt.legend(frameon=False, bbox_to_anchor=(1, 0.95))
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/indels_in_layers.pdf')
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/indels_in_layers.png', dpi=600)
-    plt.close()
-plot_snp_af()
-
 
 def plot_snp_af_all_branch():
     """
@@ -171,6 +90,9 @@ def plot_snp_af_all_branch():
     plt.close()
     return
 plot_snp_af_all_branch()
+
+
+# <editor-fold desc="test_allele_frequency_variation">
 
 def test_allele_frequency_variation(cwd, bname, leafrc, step):
     '''
@@ -329,6 +251,7 @@ with Pool(processes=8) as pool:
     pool.starmap(partial(test_allele_frequency_variation, step=1), params)
 with Pool(processes=8) as pool:
     pool.starmap(partial(test_allele_frequency_variation, step=2), params)
+# </editor-fold>
 
 
 # <editor-fold desc="OBSOLETE: layer_specific_sm_calling">
@@ -2440,7 +2363,7 @@ layer_specific_gene_conversion_all_samples(cwd, 'mut_11_2', {'l1': (30, 200), 'l
 layer_specific_gene_conversion_all_samples(cwd, 'mut_15', {'l1': (40, 220), 'l2': (30, 220), 'l3': (40, 220)})
 
 
-# <editor-fold desc="OLD FUNCTION FOR FINDING GENES OVERLAPPING SMS">
+# <editor-fold desc="OBSOLETE: OLD FUNCTION FOR FINDING GENES OVERLAPPING SMS">
 def genes_overlapping_sms():
     '''
     Find genes overlapping layer specific somatic mutations. The gene responsible
@@ -2472,6 +2395,8 @@ def genes_overlapping_sms():
 # END
 # </editor-fold>
 
+
+# <editor-fold desc="OBSOLETE: Function to try to find layer-specific indels using MANTA">
 def get_layer_specific_svs():
     '''
     Get layer-specifc SVs (indels) by comparing L1 and L2 joint called SVs by MANTA.
@@ -2600,6 +2525,7 @@ def get_mut_branch_specific_svs():
                                     mutsom[k].append(s)
     return
 # END
+# </editor-fold>
 
 
 def get_te_insertions_stats():
