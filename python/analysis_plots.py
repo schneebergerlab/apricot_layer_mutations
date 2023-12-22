@@ -1903,7 +1903,7 @@ def mutation_spectra():
     for j, grp in enumerate(bcs.groupby([1, 2])):
         # if grp[0] not in (('CUR1G', 11957090), ('CUR6G', 19101663)):
         #     continue
-        smid = smids.loc[(smids.Chromosome == grp[0][0]) & (smids.position == grp[0][1]), 'ID'].tolist()[0]
+        smid = smids.loc[(smids.Chromosome == grp[0][0]) & (smids.Position == grp[0][1]), 'SM ID'].tolist()[0]
         for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
             bdf = df.loc[df.branch == b].copy()
             bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
@@ -2622,6 +2622,8 @@ def mutation_spectra():
 
 
     # <editor-fold desc="Plot BCs containing SMs for all SMs">
+    smids = pd.read_excel('/local/goel/Dropbox/projects/apricot_leaf/manuscript/supplementary_tables.xlsx', sheet_name='table S4 Allele_frequency', skiprows=1)
+
     rsmbcs = pd.read_table(smbcs, header=None)
     rsmbcs[0] = rsmbcs[0].apply(str.lower)
     rsmbcs.sort_values([1, 2], inplace=True)
@@ -2638,12 +2640,13 @@ def mutation_spectra():
     bcs.sort_values([1, 2])
 
     smbcslist = bcs
-
     scind = dict(zip(['wt_1', 'wt_19', 'mut_11_1', 'mut_15'], [1, 2, 3, 4]))
     selected = pd.DataFrame()
     fig = plt.figure(figsize=[6, 9], dpi=300)
     pltcnt = 0
     for j, grp in enumerate(bcs.groupby([1, 2])):
+        smid = smids.loc[(smids.Chromosome == grp[0][0]) & (smids.Position == grp[0][1]), 'SM ID'].tolist()[0]
+        print(smid)
         for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
             pltcnt += 1
             bdf = df.loc[df.branch == b].copy()
@@ -2674,7 +2677,8 @@ def mutation_spectra():
             # ax.set_title(f'{grp[0][0]} {grp[0][1]} {b}')
             ax.set_title(bnamedict[b], pad=8, fontdict={'fontweight': 700})
             if i == 0:
-                ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+                # ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+                ax.set_ylabel(smid.replace('SM', 'SM '))
             if i != 0:
                 ax.set_yticks([])
                 ax.spines['left'].set_visible(False)
@@ -2705,6 +2709,7 @@ def mutation_spectra():
     fig = plt.figure(figsize=[6, 9], dpi=300)
     pltcnt = 0
     for j, grp in enumerate(bcs.groupby([1, 2])):
+        smid = smids.loc[(smids.Chromosome == grp[0][0]) & (smids.Position == grp[0][1]), 'SM ID'].tolist()[0]
         for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
             pltcnt += 1
             bdf = df.loc[df.branch == b].copy()
@@ -2733,7 +2738,8 @@ def mutation_spectra():
             ax.set_xlabel('UMAP 1')
             ax.set_title(bnamedict[b], pad=8, fontdict={'fontweight': 700})
             if i == 0:
-                ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+                # ax.set_ylabel(f'{grp[0][0]} {grp[0][1]}')
+                ax.set_ylabel(smid.replace('SM', 'SM '))
             if i != 0:
                 ax.set_yticks([])
                 ax.spines['left'].set_visible(False)
@@ -3851,9 +3857,9 @@ def expression_plots():
         isoillrc = pd.merge(bcrc, df, how='inner', on=[1])
         isoillrc.columns = "scRNA-rc BC scIso-rc".split()
         isoillrc['branch'] = k
-        g = sns.jointplot(data=isoillrc, x="scRNA-rc", y="scIso-rc", kind="hex", height=4)
+        g = sns.jointplot(data=isoillrc, x="scRNA-rc", y="scIso-rc", kind="hex", height=3)
         g.set_axis_labels("scRNA read count", "scIso-Seq read count")
-        g.fig.suptitle(f"Read count in {k}")
+        g.fig.suptitle(f"Read count in {bnamedict[k.lower()]}")
         plt.tight_layout()
         g.savefig(f"{cwd}/{k}_bc_read_dist.png", dpi=300, transparent=True)
         g.savefig(f"{cwd}/{k}_bc_read_dist.pdf", dpi=300, transparent=True)
@@ -4336,14 +4342,34 @@ def axillary_stats_plots():
     # </editor-fold>
 
 
+    # <editor-fold desc="Get number of reads and size for raw scRNA-seq data">
+    indir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/reads/leaf_scrna/bigdata/'
+    outdir = '/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/axillary_plots/'
+    stats = defaultdict(dict)
+    for branch in 'WT_1 WT_19 MUT_11_1 MUT_15'.split():
+        for i in [1, 2]:
+            total_size, total_cnt = 0, 0
+            for f in glob(f'{indir}/{branch}/*R{i}_001.fastq.gz'):
+                print(branch, f)
+                sizes = get_fastq_readsizes(f)
+                total_size += sum(sizes)
+                total_cnt += len(sizes)
+            stats[branch.lower()][i] = {'size': total_size, 'count': total_cnt}
 
-    def get_leaf_fastq_stats():
-        """
-        Get the sequencing read stats for the leaf sample sequencing
-        """
+    for branch in 'mut_11_1  mut_15   wt_1    wt_19'.split():
+        stats[branch] = {'size': stats[branch][1]['size'] + stats[branch][2]['size'],
+                         'count': stats[branch][1]['count'] + stats[branch][2]['count']}
+    stats_flat = undict(stats)[0]
+    df = pd.DataFrame(stats_flat)
+    df = df.pivot(index=[0], columns=[1]).reset_index()
+    df.columns = 'branch sequenced_reads sequenced_bases'.split()
+    df['coverage'] = df['sequenced_bases']/242500000
+    df.to_csv(f'{outdir}/scrna_sequencing_stats.tsv', sep='\t', index=False, header=True)
+    # </editor-fold>
 
-        return
-    # END
+    # <editor-fold desc="Get number of reads and size for raw scISO-seq data">
+        # done using bash commands at SH/iso_seq_analysis.sh:9
+    # </editor-fold>
 
     return
 # END

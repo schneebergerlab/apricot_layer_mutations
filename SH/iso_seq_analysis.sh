@@ -6,6 +6,19 @@ ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/pro
 ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4876/4876_C_run545_CCS.bam MUT_11_1.iso_seq.ccs.bam
 ln -s /srv/biodata/dep_mercier/grp_schneeberger/reads/Apricot/layer_specific/project_4954/4954_A_run545_CCS.bam MUT_15.iso_seq.ccs.bam
 
+# get number of sequenced reads and the total number of sequenced bases
+for sample in WT_1 WT_19 MUT_11_1 MUT_15; do
+    echo $sample
+    samtools view ${sample}.iso_seq.ccs.bam | cut -f10 | awk '{cnt+=1; sum+=length} END {print cnt"\t"sum}'
+#    WT_1
+#    3859715	4819826384
+#    WT_19
+#    3207718	4242948737
+#    MUT_11_1
+#    3466465	4659087759
+#    MUT_15
+#    2527498	3512316975
+done
 
 # <editor-fold desc="Pre-process Iso-Seq reads">
 
