@@ -321,7 +321,7 @@ def mutation_spectra():
     import seaborn as sns
     import igraph as ig
     import pybedtools as bt
-    from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
+    from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list, set_link_color_palette
     from scipy.spatial.distance import squareform, pdist
     from scipy.sparse.csgraph import minimum_spanning_tree
     from scipy.sparse import triu, csr_matrix
@@ -336,6 +336,11 @@ def mutation_spectra():
     from tqdm import tqdm
     import os
     import pyranges as pr
+    import re
+    from Bio.Phylo.TreeConstruction import DistanceMatrix, DistanceTreeConstructor
+    from Bio.Phylo import draw as pdraw
+    from Bio.Phylo import to_networkx
+    import networkx
     from itertools import combinations
     # </editor-fold>
 
@@ -369,6 +374,14 @@ def mutation_spectra():
     plt.rc('font', family='Arial')  # fontsize of the figure title
     plt.rcParams['pdf.fonttype'] = 42
     plt.rcParams['ps.fonttype'] = 42
+    scovs = {'wt_1':  {'l1': (40, 240), 'l2': (20, 180)},
+             'wt_7':  {'l1': (30, 180), 'l2': (30, 180)},
+             'wt_18': {'l1': (40, 200), 'l2': (30, 180)},
+             'wt_19': {'l1': (40, 220), 'l2': (40, 220)},
+             'mut_11_1': {'l1': (20, 160), 'l2': (20, 150)},
+             'mut_11_2': {'l1': (30, 200), 'l2': (20, 180)},
+             'mut_15': {'l1': (40, 220), 'l2': (30, 220)}}
+    genomesize = 233151598
     # </editor-fold>
 
 
@@ -410,7 +423,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    # <editor-fold desc="OLD: Read and filter layer SM calls">
+    # <editor-fold desc="OBSOLETE: Read and filter layer SM calls">
 
     datafilter = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/layer_samples/all_layer_somatic_variants.filtered.txt')
     # Annotate SMs as L1, L2 or shared
@@ -599,7 +612,7 @@ def mutation_spectra():
     yticksl = yticks*10000000
     axF.set_yticks(yticks[1:-1])
     axF.set_yticklabels(yticksl[1:-1])
-    plt.tick_params(axis='x', bottom=False, labelbottom=False)
+    axF.tick_params(axis='x', bottom=False, labelbottom=False)
     axF = cleanax(axF)
     axF.text(0, 1, 'C', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
@@ -879,13 +892,42 @@ def mutation_spectra():
 
 
     # <editor-fold desc="F: SMs overlapping genes, TEs, and intergenic, annotations">
+
+    # # <editor-fold desc="DO NOT DELETE. Get uncallable regions. Ran once not needed again.">
+    # def get_uncallable_regions(fi, fo, rng):
+    #     with open(fi, 'r') as fin, open(fo, 'w') as fout:
+    #         for line in tqdm(fin):
+    #             line = line.strip().split()
+    #             if rng[0] <= int(line[3]) <= rng[1]: continue
+    #             fout.write(f'{line[0]}\t{int(line[1])-1}\t{int(line[1])}\n')
+    #     return
+    # # END
+    # # Get positions that are uncallable in each of the layer samples
+    # fins2 = deque()
+    # for n, b in bnamedict.items():
+    #     for l in 'l1 l2'.split():
+    #         fins2.append([f'./layer_samples/{n}/{n}_{l}/bam_read_counts_b30_q10.bt2.txt', f"{b}_{l}_uncallable_positions.bed", scovs[n][l]])
+    # with Pool(processes=7) as pool:
+    #     pool.starmap(get_uncallable_regions, fins2)
+    #
+    # # Merge the BED regions
+    # for n, b in bnamedict.items():
+    #     for l in 'l1 l2'.split():
+    #         with open(f'{b}_{l}_uncallable_positions.merged.bed', 'w') as fout:
+    #             p = Popen(f'bedtools merge -i {b}_{l}_uncallable_positions.bed '.split(), stdout=fout)
+    #             p.wait()
+    # # </editor-fold>
+
     gff = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.pasa_out.sort.protein_coding.3utr.gff3').saveas()
     te_rep = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/annotations/v1/cur/repeat/RepeatMasker/cur.genome.v1.fasta.ann.gff3').saveas()
 
     genes = gff.filter(lambda x: x[2] == 'gene').saveas()
-    cds = gff.filter(lambda x: x[2] == 'CDS').saveas()
-    intron = genes.subtract(gff.filter(lambda x: x[2] not in {'gene', 'mRNA'})).saveas()
-    utr = gff.filter(lambda x: x[2] in {'five_prime_UTR', 'three_prime_UTR'}).saveas()
+    cds = gff.filter(lambda x: x[2] == 'CDS').sort().saveas()
+    intron = genes.subtract(gff.filter(lambda x: x[2] not in {'gene', 'mRNA'})).sort().saveas()
+    utr = gff.filter(lambda x: x[2] in {'five_prime_UTR', 'three_prime_UTR'}).sort().saveas()
+    # Get intergenic as the genomic region other than CDS + UTR + INTRON + TE_REP
+    intergenic = bt.BedTool('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.bed').filter(lambda x: 'CUR' in x[0]).saveas()
+    intergenic = intergenic.subtract(cds.cat(utr).cat(intron).cat(te_rep).sort().merge())
 
     pos = datafilter.copy()
     pos['start'] = pos.position - 1
@@ -918,25 +960,30 @@ def mutation_spectra():
     anno[g.anno == 'cds'] = 'cds'
     pos['anno'] = anno
 
-    # Fisher's exact test shows that the CDS have lower than expected number of SMs
-    regsize = dict()
-    regsize['cds'] = sum([int(b[2])-int(b[1])+1 for b in cds.sort().merge()])
-    regsize['utr'] = sum([int(b[2])-int(b[1])+1 for b in utr.sort().merge()])
-    regsize['intron'] = sum([int(b[2])-int(b[1])+1 for b in intron.sort().merge()])
-    regsize['te'] = sum([int(b[2])-int(b[1])+1 for b in te_rep.sort().merge()])
-    regsize['intergenic'] = 233151598 - sum(regsize.values())
-    genomesize = sum([v for v in regsize.values()])
     annotypes = 'cds utr intron te intergenic'.split()
+    regsize = defaultdict(deque)
+    for n, b in bnamedict.items():
+        print(b)
+        for l in 'l1 l2'.split():
+            regsize['cds'].append(sum([int(b[2])-int(b[1])+1 for b in cds.sort().merge().subtract(f'{b}_{l}_uncallable_positions.merged.bed')]))
+            regsize['utr'].append(sum([int(b[2])-int(b[1])+1 for b in utr.sort().merge().subtract(f'{b}_{l}_uncallable_positions.merged.bed')]))
+            regsize['intron'].append(sum([int(b[2])-int(b[1])+1 for b in intron.sort().merge().subtract(f'{b}_{l}_uncallable_positions.merged.bed')]))
+            regsize['te'].append(sum([int(b[2])-int(b[1])+1 for b in te_rep.sort().merge().subtract(f'{b}_{l}_uncallable_positions.merged.bed')]))
+            regsize['intergenic'].append(sum([int(b[2])-int(b[1])+1 for b in intergenic.sort().merge().subtract(f'{b}_{l}_uncallable_positions.merged.bed')]))
+
+
+    # Fisher's exact test shows that the CDS have lower than expected number of SMs
     stats = deque()
+    chrom_genome_size = 228047739
     for l in 'L1 L2'.split():
         poscnt = pos.loc[pos.Layer == l].anno.value_counts()
         for a in annotypes:
-            stats.append((l, a, poscnt[a], regsize[a], *fisher_exact(np.array([[poscnt[a], regsize[a]], [sum(poscnt), genomesize]]),
-                                                                     alternative='less')))
+            stats.append((l, a, poscnt[a], np.mean(regsize[a]), *fisher_exact(np.array([[poscnt[a], np.mean(regsize[a])], [sum(poscnt), chrom_genome_size]]), alternative='greater')))
     stats = pd.DataFrame(stats)
     stats.columns = 'Layer anno count length odds pvalue'.split()
     stats['padjusted'] = multipletests(stats.pvalue, method='fdr_bh')[1]
     print(stats.loc[stats.padjusted < 0.05])
+
     xticks = ['cds', 'utr', 'intron', 'te', 'intergenic']
     axwidth = barwidth*10/pltwidth
     axH = fig1.add_axes([0.075, 0.3, axwidth, 0.125])
@@ -945,7 +992,7 @@ def mutation_spectra():
         y_bottom = [0]*5
         for t in 'SNV Indel'.split():
             cnts = pos.loc[(pos.Layer == l) & (pos.type == t), 'anno'].value_counts()
-            y = [(cnts[x]*1000000)/regsize[x] if x in cnts else 0 for x in xticks]
+            y = [(cnts[x]*1000000)/np.mean(regsize[x]) if x in cnts else 0 for x in xticks]
             axH.bar(np.arange(5) + bar_width*(i - 0.5), y, label=f'{l} {t}', bottom=y_bottom, color=colour[l, t], width=bar_width)
             y_bottom = y
     axH.set_xticks(np.arange(5))
@@ -1074,105 +1121,11 @@ def mutation_spectra():
     axJ.text(0, 1, 'I', transform=axJ.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
     # </editor-fold>
 
-
-    # <editor-fold desc="J: Grouping of SMs based on branching">
-    # Generate the Figure 5 from Tomimoto and Satake, 2023
-    l1cnts = defaultdict(int)
-    l2cnts = defaultdict(int)
-    shcnts = defaultdict(int)
-    for grp in datafilter.groupby('chromosome position alt_allele Layer'.split()):
-        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
-        if grp[0][3] == 'L1':
-            l1cnts[selb] += 1
-        elif grp[0][3] == 'L2':
-            l2cnts[selb] += 1
-        elif grp[0][3] == 'shared':
-            shcnts[selb] += 1
-
-    bkeys = set(list(l1cnts) + list(l2cnts) + list(shcnts))
-    bkeys = sorted(sorted(bkeys), key=lambda x: sum(x))
-
-    cnts = {'L1': l1cnts, 'L2': l2cnts, 'shared': shcnts}
-    sharedcnts = dict()
-    sharedcnts['L1'] = sum([v for k, v in cnts['L1'].items() if 1 < sum(k) < 7])
-    sharedcnts['L2'] = sum([v for k, v in cnts['L2'].items() if 1 < sum(k) < 7])
-
-    axwidth = barwidth*14/pltwidth
-    # [0.05, 0.3, 0.2226, 0.1]
-    axC0 = fig1.add_axes([0.05, 0.05, 0.025, 0.175])
-    axC1 = fig1.add_axes([0.085, 0.05, 0.325, 0.175])
-    axC2 = fig1.add_axes([0.44, 0.05, 0.15, 0.175])
-    axC3 = fig1.add_axes([0.63, 0.05, 0.15, 0.175])
-    axC4 = fig1.add_axes([0.82, 0.05, 0.15, 0.175])
-
-    crosspos = [1, 5, 6]
-    checkpos = [i for i in range(len(bkeys)) if i not in crosspos]
-    axC0.scatter(x=[1]*len(checkpos), y=checkpos, marker=r'$\checkmark$', color='black', s=20)
-    axC0.scatter(x=[1]*len(crosspos), y=crosspos, marker=r'$\chi$', color='red', s=20)
-    axC0.spines[:].set_visible(True)
-    axC0.tick_params(axis='both',
-                     which='both',
-                     left=False,
-                     top=False,
-                     labelleft=False,
-                     bottom=False,
-                     labelbottom=False)
-    axC0.set_yticks(ticks=range(15))
-    axC0.set_ylim([-0.5, 14.5])
-    axC0.grid(which='major', axis='y')
-    axC0.set_axisbelow(True)
-    axC0.set_ylabel('Matches tree branching')
-
-    ypos, xpos = np.where(np.array(bkeys)==1)
-    xpos = 6 - xpos
-    ypos = 14 - ypos
-    # xpos = 6 - xpos
-    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] not in crosspos], [y for i, y in enumerate(ypos) if y not in crosspos], marker='o', color='black', s=20)
-    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] in crosspos], [y for i, y in enumerate(ypos) if y in crosspos], marker='o', color='black', s=20)
-    axC1.set_xticks(ticks=range(7), rotation=45)
-    axC1.set_yticks(ticks=range(len(bkeys)))
-    axC1.set_xticklabels(labels=branchorder[::-1])
-    axC1.grid()
-    axC1.set_axisbelow(True)
-    axC1.set_xlim([-0.5, 6.5])
-    axC1.set_ylim([-0.5, 14.5])
-    axC1.tick_params(axis='y',
-                     which='both',
-                     left=False,
-                     top=False,
-                     labelleft=False)
-    axC1.tick_params(axis='x', rotation=45)
-    axC1.set_xticks(labels=[bnamedict[i.get_text()] for i in axC1.get_xticklabels()], ticks=axC1.get_xticks(), rotation=0)
-    axC1.set_xlabel('Branches with SMs')
-    axC1.spines[:].set_visible(False)
-    axdict = {0: axC2, 1: axC3, 2: axC4}
-    for i, l in enumerate('L1 L2 shared'.split()):
-        data = cnts[l]
-        total_cnt = sum(data.values())
-        ax = axdict[i]
-        # ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k]/total_cnt for k in bkeys[::-1]], color=colour[l], height=0.75)
-        ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k] for k in bkeys[::-1]], color=colour[l], height=0.75)
-        ax.tick_params(axis='y',
-                       which='both',
-                       left=False,
-                       top=False,
-                       labelleft=False)
-        ax.set_ylim([-0.5, 14.5])
-        ax.set_xlabel(f'{l} SMs')
-        ax.axhline(y=7.5, color='grey', linestyle='dotted')
-        ax=cleanax(ax)
-        ax.grid(which='major', axis='y')
-        ax.set_axisbelow(True)
-        # ax.set_xlim([0, [0.25, 0.25, 0.55][i]])
-        ax.set_xlim([0, 25])
-
-    axC0.text(0.25, 1, 'J', transform=axC0.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
-
-    # </editor-fold>
+    os.chdir('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/')
 
 
-    plt.savefig(f"{figout}/fig1.png", dpi=300)
-    plt.savefig(f"{figout}/fig1.pdf", dpi=300)
+    plt.savefig(f"fig1_v2.png", dpi=300)
+    plt.savefig(f"fig1_v2.pdf", dpi=300)
     plt.close()
     # </editor-fold>
 
@@ -1220,11 +1173,11 @@ def mutation_spectra():
         Z = linkage(AM, method='ward')
         ax = axdict[i]
         # dendrogram(optimal_leaf_ordering(Z, AM), link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
-        dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+        garb = dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
         ax.spines[:].set_visible(False)
         ax.tick_params(left=False, labelleft=False)
         # ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=ax.get_xticks(), rotation=90)
-        ax.set_xticks(labels=[branches[i] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=90)
+        ax.set_xticks(labels=[branches[i] for i in garb['leaves']], ticks=ax.get_xticks(), rotation=90)
         ax.set_title(l)
     axB1.text(0, 1, 'B', transform=axB1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
@@ -1308,10 +1261,10 @@ def mutation_spectra():
     axC3.set_xlim([-0.5, 13.5])
     axC3.set_ylim([-0.5, 6.5])
     axC3.tick_params(axis='x',
-                   which='both',
-                   bottom=False,
-                   top=False,
-                   labelbottom=False)
+                     which='both',
+                     bottom=False,
+                     top=False,
+                     labelbottom=False)
     axC3.set_xlabel('Selected branches')
     axC3.spines[:].set_visible(False)
     axC1.text(0, 1, 'C', transform=axC1.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
@@ -1405,6 +1358,532 @@ def mutation_spectra():
 
 
     # <editor-fold desc="Figure 2 plots">
+    barwidth = 0.125
+    dpi = 100
+    pltwidth = 7.24
+    fig2 = plt.figure(figsize=[pltwidth, 8.5], dpi=dpi)
+    trans = mtransforms.ScaledTranslation(-20/dpi, 5/dpi, fig2.dpi_scale_trans)
+    constructor = DistanceTreeConstructor()
+    treealgo = constructor.nj
+
+
+    # <editor-fold desc="A: Add tree image">
+    def getcntplt(ax, branch, bar_width):
+        # ax = fig1.add_axes(axispos)
+        y_bottom = [0]
+        ymax = 75
+        ax.set_xlim([-0.5, 0.5])
+        ax.set_ylim([0, ymax])
+        ax.set_yticks([0, ymax])
+        ax.tick_params(bottom=False, labelbottom=False)
+        ax.set_xlabel(bnamedict[branch], fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'bbox': {'pad': 1, 'fc': 'white', 'ec': 'white'}})
+        ax.set_yticklabels(labels=ax.get_yticklabels(), fontdict={'backgroundcolor': 'white', 'linespacing': 0, 'horizontalalignment': 'center', 'verticalalignment': 'center', 'bbox': {'pad': 1, 'fc': 'white', 'ec': 'white'}})
+        ax.spines[:].set_visible(False)
+        for l in ('L1', 'L2'):
+            for t in ('SNV', 'Indel'):
+                y = branchscnt[(l, t)][branch]
+                ax.bar([0], [y], label=f'{l} {t}', bottom=y_bottom, color=colour[(l, t)], width=bar_width)
+                y_bottom = [y_bottom[0] + y]
+        return ax
+    # END
+
+    tree = mpimg.imread(f'{cwd}/../tree_sketch_fruit_nolength.png')
+    axA = fig2.add_axes([0.03, 0.675, 0.4, 0.3])
+    axA.imshow(tree, aspect='auto')
+    axA.text(0, 1, 'A', transform=axA.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axA.spines[:].set_visible(False)
+    axA.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+
+    # branchscnt = {g[0]: defaultdict(int, g[1].branch.value_counts()) for g in datafilter.groupby(['Layer', 'type'])}
+    # bar_width = 0.75
+    # axwidth = (barwidth*1/pltwidth)/0.4
+    # axA1 = getcntplt(axA.inset_axes([0.9, 0.7, axwidth, 0.1]), 'wt_1', bar_width)
+    # axA2 = getcntplt(axA.inset_axes([0.9, 0.25, axwidth, 0.1]), 'wt_7', bar_width)
+    # axA3 = getcntplt(axA.inset_axes([0.75, 0.85, axwidth, 0.1]), 'wt_18', bar_width)
+    # axA4 = getcntplt(axA.inset_axes([0.45, 0.85, axwidth, 0.1]), 'wt_19', bar_width)
+    # axA5 = getcntplt(axA.inset_axes([0.25, 0.85, axwidth, 0.1]), 'mut_15', bar_width)
+    # axA6 = getcntplt(axA.inset_axes([0.1, 0.85, axwidth, 0.1]), 'mut_11_1', bar_width)
+    # axA7 = getcntplt(axA.inset_axes([0.1, 0.45, axwidth, 0.1]), 'mut_11_2', bar_width)
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="B: Cluster samples based on all SMs">
+    axB = fig2.add_axes([0.46, 0.675, 0.1, 0.3])
+    tissues = ['L1', 'L2']
+    # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in branches]
+
+    # samples = sorted(['_'.join(i) for i in product(branches, 'L1 L2'.split())], key=lambda x: x.rsplit('_', 1)[1])
+
+    unism = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
+    smcnt = unism.shape[0]
+    alts = set(unism.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+    branchpos = np.zeros([14, smcnt], dtype=int)
+    for i, l in enumerate('L1 L2'.split()):
+        for j, branch in enumerate(branches):
+            print(branch, l, (i*7) + j)
+            bdf = datafilter.loc[(datafilter.branch == branch) & (datafilter.Layer.isin([l, 'shared']))]
+            balts = set(bdf.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[(i*7) + j, k] = 1
+
+    AM = pdist(branchpos, metric='hamming')
+    # Lower triangle distance matrix (list of lists)
+    mat = [r[:i + 1] for i, r in enumerate(np.tril(squareform(AM)).tolist())]
+
+    dm = DistanceMatrix(names=btiss_lab, matrix=mat)
+
+    tree = treealgo(dm)
+    tree.ladderize()
+    tree.root.clades = tree.root.clades[::-1]
+    tree.root.clades[0].clades = tree.root.clades[0].clades[::-1]
+    cladel1 = tree.common_ancestor({"name": "B1_L1"}, {"name": "B7_L1"})
+    cladel2 = tree.common_ancestor({"name": "B4_L2"}, {"name": "B7_L2"})
+    cladel1.color = colour['L1']
+    cladel2.color = colour['L2']
+    pdraw(tree,
+          label_func=lambda x: x if 'Inner' not in x.name else '',
+          label_colors=lambda x: (colour['L1'] if 'L1' in x.name else colour['L2']) if type(x) != str else 'black',
+          axes=axB)
+
+    # Z = linkage(AM, method='ward')
+    # set_link_color_palette([colour['L2'], colour['L1'], 'black'])
+    # set_link_color_palette(['black'])
+    # garb = dendrogram(Z, ax=axB, leaf_font_size=SMALL_SIZE, orientation='left', above_threshold_color='black', count_sort='ascending')
+    axB.spines[:].set_visible(False)
+    axB.tick_params(left=False, labelleft=False)
+    axB.tick_params(bottom=False, labelbottom=False)
+    axB.set_xlabel('')
+    axB.set_ylabel('')
+    # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+    # ax.set_xticks()
+    # axB.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axB.get_yticks(), rotation=0)
+
+    # </editor-fold>
+
+    l1allsample = list()
+    l2allsample = list()
+    # # <editor-fold desc="C: Cluster samples based on all SMs except those that are present in all L1">
+    axC = fig2.add_axes([0.64, 0.675, 0.1, 0.3])
+    tissues = ['L1', 'L2']
+    # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in branches]
+
+    # samples = sorted(['_'.join(i) for i in product(branches, 'L1 L2'.split())], key=lambda x: x.rsplit('_', 1)[1])
+
+    unism = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
+    smcnt = unism.shape[0]
+    alts = set(unism.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+    branchpos = np.zeros([14, smcnt], dtype=int)
+    for i, l in enumerate('L1 L2'.split()):
+        for j, branch in enumerate(branches):
+            print(branch, l, (i * 7) + j)
+            bdf = datafilter.loc[(datafilter.branch == branch) & (datafilter.Layer.isin([l, 'shared']))]
+            balts = set(bdf.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[(i * 7) + j, k] = 1
+    # Remove positions present in all L1
+    # for b in branches:
+    #     btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
+    print(branchpos.shape)
+    l1allsample = list(np.where(sum(branchpos[:7, :]) == 7)[0])
+    l2allsample = list(np.where(sum(branchpos[7:, :]) == 7)[0])
+    branchpos = np.delete(branchpos, l1allsample + l2allsample, axis=1)
+    print(branchpos.shape)
+    # branchpos = np.delete(branchpos, np.where(sum(branchpos[7:, :]) == 7)[0], axis=1)
+    print(branchpos.shape)
+
+    AM = pdist(branchpos, metric='hamming')
+    # Lower triangle distance matrix (list of lists)
+    mat = [r[:i + 1] for i, r in enumerate(np.tril(squareform(AM)).tolist())]
+
+    dm = DistanceMatrix(names=btiss_lab, matrix=mat)
+    constructor = DistanceTreeConstructor()
+    tree = treealgo(dm)
+    tree.ladderize()
+    # tree.root.clades = tree.root.clades[::-1]
+    tree.root.clades[0].clades = tree.root.clades[0].clades[::-1]
+    cladel1 = tree.common_ancestor({"name": "B1_L1"}, {"name": "B7_L1"})
+    cladel2 = tree.common_ancestor({"name": "B4_L2"}, {"name": "B7_L2"})
+    cladel1.color = colour['L1']
+    cladel2.color = colour['L2']
+    pdraw(tree,
+          label_func=lambda x: x if 'Inner' not in x.name else '',
+          label_colors=lambda x: (colour['L1'] if 'L1' in x.name else colour['L2']) if type(x) != str else 'black',
+          axes=axC)
+
+    # Z = linkage(AM, method='ward')
+    # print(Z)
+    # set_link_color_palette([colour['L2'], colour['L1'], 'black'])
+    # set_link_color_palette(['black'])
+    #
+    # garb = dendrogram(Z, ax=axC, leaf_font_size=SMALL_SIZE, orientation='left',
+    #            above_threshold_color='black', count_sort='descending')
+    axC.spines[:].set_visible(False)
+    axC.tick_params(left=False, labelleft=False)
+    axC.tick_params(bottom=False, labelbottom=False)
+    axC.set_xlabel('')
+    axC.set_ylabel('')
+    # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+    # ax.set_xticks()
+    # print(leaves_list(Z))
+    # axC.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axC.get_yticks(), rotation=0)
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="D: Cluster subset of samples based on all SMs except those that are present in all L1">
+    # WT samples
+    axD = fig2.add_axes([0.82, 0.85, 0.1, 0.15])
+    tissues = ['L1', 'L2']
+    # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    wtbranches = ['wt_1', 'wt_7', 'wt_18']
+    btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in wtbranches]
+
+    # samples = sorted(['_'.join(i) for i in product(branches, 'L1 L2'.split())], key=lambda x: x.rsplit('_', 1)[1])
+
+    unism = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
+    smcnt = unism.shape[0]
+    alts = set(unism.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+    branchpos = np.zeros([len(wtbranches)*2, smcnt], dtype=int)
+    for i, l in enumerate('L1 L2'.split()):
+        for j, branch in enumerate(wtbranches):
+            print(branch, l, (i * len(wtbranches)) + j)
+            bdf = datafilter.loc[(datafilter.branch == branch) & (datafilter.Layer.isin([l, 'shared']))]
+            balts = set(bdf.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[(i * len(wtbranches)) + j, k] = 1
+    # Remove positions present in all L1
+    # for b in branches:
+    #     btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
+    print(branchpos.shape)
+    branchpos = np.delete(branchpos, l1allsample + l2allsample, axis=1)
+    #
+    # branchpos = np.delete(branchpos, np.where(sum(branchpos[:len(wtbranches), :]) == len(wtbranches))[0], axis=1)
+    # print(branchpos.shape)
+    # branchpos = np.delete(branchpos, np.where(sum(branchpos[len(wtbranches):, :]) == len(wtbranches))[0], axis=1)
+    print(branchpos.shape)
+
+    AM = pdist(branchpos, metric='hamming')
+    # Lower triangle distance matrix (list of lists)
+    mat = [r[:i + 1] for i, r in enumerate(np.tril(squareform(AM)).tolist())]
+
+    dm = DistanceMatrix(names=btiss_lab, matrix=mat)
+    constructor = DistanceTreeConstructor()
+    tree = treealgo(dm)
+    tree.ladderize()
+    # tree.root.clades = tree.root.clades[::-1]
+    # tree.root.clades[0].clades = tree.root.clades[0].clades[::-1]
+    cladel1 = tree.common_ancestor({"name": "B1_L1"}, {"name": "B2_L1"})
+    cladel2 = tree.common_ancestor({"name": "B1_L2"}, {"name": "B2_L2"})
+    cladel1.color = colour['L1']
+    cladel2.color = colour['L2']
+    pdraw(tree,
+          label_func=lambda x: x if 'Inner' not in x.name else '',
+          label_colors=lambda x: (colour['L1'] if 'L1' in x.name else colour['L2']) if type(x) != str else 'black',
+          axes=axD)
+    #
+    # Z = linkage(AM, method='ward')
+    # print(Z)
+    # set_link_color_palette([colour['L2'], colour['L1'], 'black'])
+    # set_link_color_palette(['black'])
+    #
+    # garb = dendrogram(Z, ax=axD, leaf_font_size=SMALL_SIZE, orientation='left',
+    #            above_threshold_color='black', count_sort='descending')
+    axD.spines[:].set_visible(False)
+    axD.tick_params(left=False, labelleft=False)
+    axD.tick_params(bottom=False, labelbottom=False)
+    axD.set_xlabel('')
+    axD.set_ylabel('')
+    # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+    # ax.set_xticks()
+    # print(leaves_list(Z))
+    # axD.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axD.get_yticks(), rotation=0)
+    # </editor-fold>
+
+
+    # <editor-fold desc="E: Cluster subset of samples based on all SMs except those that are present in all L1">
+    # MUT samples
+    axE = fig2.add_axes([0.82, 0.675, 0.1, 0.15])
+    tissues = ['L1', 'L2']
+    # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    mutbranches = ['mut_11_1', 'mut_11_2', 'mut_15']
+    btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in mutbranches]
+
+    # samples = sorted(['_'.join(i) for i in product(branches, 'L1 L2'.split())], key=lambda x: x.rsplit('_', 1)[1])
+
+    unism = datafilter.drop_duplicates(subset='chromosome position alt_allele'.split())
+    smcnt = unism.shape[0]
+    alts = set(unism.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+    branchpos = np.zeros([len(mutbranches)*2, smcnt], dtype=int)
+    for i, l in enumerate('L1 L2'.split()):
+        for j, branch in enumerate(mutbranches):
+            print(branch, l, (i * len(mutbranches)) + j)
+            bdf = datafilter.loc[(datafilter.branch == branch) & (datafilter.Layer.isin([l, 'shared']))]
+            balts = set(bdf.set_index(['chromosome', 'position', 'alt_allele']).index.values)
+            for k, alt in enumerate(alts):
+                if alt in balts:
+                    branchpos[(i * len(mutbranches)) + j, k] = 1
+    # Remove positions present in all L1
+    # for b in branches:
+    #     btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
+    print(branchpos.shape)
+    branchpos = np.delete(branchpos, l1allsample + l2allsample, axis=1)
+    # branchpos = np.delete(branchpos, np.where(sum(branchpos[:len(mutbranches), :]) == len(mutbranches))[0], axis=1)
+    # print(branchpos.shape)
+    # branchpos = np.delete(branchpos, np.where(sum(branchpos[len(mutbranches):, :]) == len(mutbranches))[0], axis=1)
+    print(branchpos.shape)
+
+    AM = pdist(branchpos, metric='hamming')
+    # Lower triangle distance matrix (list of lists)
+    mat = [r[:i + 1] for i, r in enumerate(np.tril(squareform(AM)).tolist())]
+
+    dm = DistanceMatrix(names=btiss_lab, matrix=mat)
+    constructor = DistanceTreeConstructor()
+    tree = treealgo(dm)
+    tree.ladderize()
+    tree.root.clades = tree.root.clades[::-1]
+    # tree.root.clades[0].clades = tree.root.clades[0].clades[::-1]
+    cladel1 = tree.common_ancestor({"name": "B5_L1"}, {"name": "B7_L1"})
+    cladel2 = tree.common_ancestor({"name": "B5_L2"}, {"name": "B7_L2"})
+    cladel1.color = colour['L1']
+    cladel2.color = colour['L2']
+    pdraw(tree,
+          label_func=lambda x: x if 'Inner' not in x.name else '',
+          label_colors=lambda x: (colour['L1'] if 'L1' in x.name else colour['L2']) if type(x) != str else 'black',
+          axes=axE)
+    # Z = linkage(AM, method='ward')
+    # set_link_color_palette([colour['L2'], colour['L1'], 'black'])
+    # set_link_color_palette(['black'])
+    #
+    # garb = dendrogram(Z, ax=axE, leaf_font_size=SMALL_SIZE, orientation='left',
+    #            above_threshold_color='black')
+    axE.spines[:].set_visible(False)
+    axE.tick_params(left=False, labelleft=False)
+    axE.tick_params(bottom=False, labelbottom=False)
+    axE.set_xlabel('')
+    axE.set_ylabel('')
+    # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+    # ax.set_xticks()
+    # print(leaves_list(Z))
+    # axE.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axE.get_yticks(), rotation=0)
+    # </editor-fold>
+
+
+
+    # plt.savefig('tmp2.png')
+
+    #
+    # allsmpivot = dict()
+    # for grp in allsmdata.groupby(by='chromosome position alt_allele'.split()):
+    #     df = grp[1].copy()
+    #     dfsamples = set(df.branch.astype(str) + '_' + df.tissue.astype(str))
+    #     allsmpivot[grp[0]] = {s: (1 if s in dfsamples else 0) for s in samples}
+    # allsmpivot = pd.DataFrame(allsmpivot).T
+    # # isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmpivot.index]
+    # # cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
+    # # sns.clustermap(allsmpivot, cmap=cmap, linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    # # plt.ylabel('')
+    # # plt.tight_layout()
+    # # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples.png', dpi=300)
+    # # plt.close()
+    # #
+    # # sns.clustermap(allsmpivot, cmap=cmap, linecolor='lightgrey', col_cluster=False, dendrogram_ratio=(0.05, 0.0), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
+    # # plt.ylabel('')
+    # # plt.tight_layout()
+    # # plt.savefig(f'{cwd}/all_sm_heatmap_in_all_samples_no_col_cluster.png', dpi=300)
+    # # plt.close()
+    #
+    #
+    # tissues = ['L1', 'L2']
+    # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
+    # btissm = dict()
+    # for c in allsmpivot.columns:
+    #     btissm[c] = set((allsmpivot.loc[allsmpivot[c] == 1]).index.values)
+    # allL1 = btissm[f'{branches[0]}_L1']
+    # for b in branches[1:]:
+    #     allL1 = allL1.intersection(btissm[f'{b}_L1'])
+    # # # Remove positions present in all L1
+    # # for b in branches:
+    # #     btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
+    #
+    # btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in branches]
+    # btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
+    # for i, a in enumerate(btiss):
+    #     for j, b in enumerate(btiss):
+    #         if i == j: continue
+    #         btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
+    #
+    # mask = np.zeros_like(btiss_mat, dtype=bool)
+    # mask[np.triu_indices_from(mask)] = True
+    #
+    # plt.close()
+    # fig = plt.figure()
+    # ax = fig.add_subplot()
+    # ax = sns.heatmap(btiss_mat[1:, :-1], mask=mask[1:, :-1], cmap=cmap, xticklabels=btiss_lab[:-1], yticklabels=btiss_lab[1:], linewidths=0.01, cbar=False, ax=ax)
+    #
+    # ax = fig.add_subplot(2, 2, 2)
+    # g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
+    # g.vs['bname'] = [bnamedict[i.rsplit("_", 1)[0]] for i in btiss]
+    # g.vs['tname'] = [colour[i.rsplit("_", 1)[1]] for i in btiss]
+    # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log10(np.array(g.es['weight']) + 1), layout=g.layout_auto(), margin=20, bbox=[100, 100], label_size=1, vertex_size=0.5)
+    # plt.tight_layout()
+    # plt.savefig('tmp.png')
+    #
+    # sns.heatmap(btiss_mat[1:, :-1], mask=mask, cmap=cmap, xticklabels=btiss, yticklabels=btiss, dendrogram_ratio=(0.05, 0.05), cbar_pos=None, linewidths=0.01, cbar=False)
+    # plt.tight_layout()
+    # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png', dpi=300)
+    # plt.close()
+    #
+    #
+    # # axdict = {0: axB1, 1: axB2}
+    # # for i, l in enumerate('L1 L2'.split()):
+    # #     pos = datafilter.loc[datafilter.Layer.isin([l, 'shared']), ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+    # #     # pos = datafilter.loc[datafilter.Layer == l, ['chromosome', 'position', 'branch', 'ref_allele', 'alt_allele']].copy()
+    # #     alts = {(row[0], row[1], row[3]) for row in pos.itertuples(index=False)}
+    # #     branchpos = np.zeros([7, len(alts)], dtype=int)
+    # #
+    # #     for j, branch in enumerate(branches):
+    # #         bdf = pos.loc[pos.branch == branch]
+    # #         balts = {(row[0], row[1], row[3]) for row in bdf.itertuples(index=False)}
+    # #         for k, alt in enumerate(alts):
+    # #             if alt in balts:
+    # #                 branchpos[j, k] = 1
+    # #     ## Get distances for hierarchical clustering
+    # #     AM = pdist(branchpos, metric='hamming')
+    # #     # AM = pdist(branchpos, lambda u, v : 1 - (sum((u==1) & (v==1))/len(u)))
+    # #     Z = linkage(AM, method='ward')
+    # #     ax = axdict[i]
+    # #     # dendrogram(optimal_leaf_ordering(Z, AM), link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+    # #     dendrogram(Z, link_color_func=lambda x: 'black', ax=ax, leaf_font_size=SMALL_SIZE)
+    # #     ax.spines[:].set_visible(False)
+    # #     ax.tick_params(left=False, labelleft=False)
+    # #     # ax.set_xticks(labels=[branches[i] for i in leaves_list(optimal_leaf_ordering(Z, AM))], ticks=ax.get_xticks(), rotation=90)
+    # #     ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
+    # #     ax.set_ylabel(l)
+    #
+    #
+    # #
+    # #
+    # # g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
+    # # g.vs['bname'] = [bnamedict[i.rsplit("_", 1)[0]] for i in btiss]
+    # # g.vs['tname'] = [colour[i.rsplit("_", 1)[1]] for i in btiss]
+    # # fig = plt.figure(figsize=[8, 8])
+    # # ax = fig.add_subplot(1, 1, 1)
+    # # ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), layout=g.layout_auto(), margin=0, bbox=[100, 100], vertex_size=0.4)
+    # # plt.tight_layout()
+    # # plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
+    # # plt.close()
+    #
+
+
+    # <editor-fold desc="J: Grouping of SMs based on branching">
+    # Generate the Figure 5 from Tomimoto and Satake, 2023
+    l1cnts = defaultdict(int)
+    l2cnts = defaultdict(int)
+    shcnts = defaultdict(int)
+    for grp in datafilter.groupby('chromosome position alt_allele Layer'.split()):
+        selb = tuple([1 if branch in grp[1].branch.to_list() else 0 for branch in branchorder])
+        if grp[0][3] == 'L1':
+            l1cnts[selb] += 1
+        elif grp[0][3] == 'L2':
+            l2cnts[selb] += 1
+        elif grp[0][3] == 'shared':
+            shcnts[selb] += 1
+
+    bkeys = set(list(l1cnts) + list(l2cnts) + list(shcnts))
+    bkeys = sorted(sorted(bkeys), key=lambda x: sum(x), reverse=True)
+
+    cnts = {'L1': l1cnts, 'L2': l2cnts, 'shared': shcnts}
+    sharedcnts = dict()
+    sharedcnts['L1'] = sum([v for k, v in cnts['L1'].items() if 1 < sum(k) < 7])
+    sharedcnts['L2'] = sum([v for k, v in cnts['L2'].items() if 1 < sum(k) < 7])
+
+    axwidth = barwidth*len(bkeys)/pltwidth
+    # [0.05, 0.3, 0.2226, 0.1]
+    axC0 = fig2.add_axes([0.05, 0.3, 0.025, axwidth])
+    axC1 = fig2.add_axes([0.085, 0.3, 0.275, axwidth])
+    axC2 = fig2.add_axes([0.39, 0.3, 0.15, axwidth])
+    axC3 = fig2.add_axes([0.58, 0.3, 0.15, axwidth])
+    axC4 = fig2.add_axes([0.77, 0.3, 0.15, axwidth])
+
+    crosspos = [7, 8, 13]
+    checkpos = [i for i in range(len(bkeys)) if i not in crosspos]
+    axC0.scatter(x=[1]*len(checkpos), y=checkpos, marker=r'$\checkmark$', color='black', s=20)
+    axC0.scatter(x=[1]*len(crosspos), y=crosspos, marker=r'$\chi$', color='red', s=20)
+    axC0.spines[:].set_visible(True)
+    axC0.tick_params(axis='both',
+                     which='both',
+                     left=False,
+                     top=False,
+                     labelleft=False,
+                     bottom=False,
+                     labelbottom=False)
+    axC0.set_yticks(ticks=range(15))
+    axC0.set_ylim([-0.5, 14.5])
+    axC0.grid(which='major', axis='y')
+    axC0.set_axisbelow(True)
+    axC0.set_ylabel('Matches tree branching')
+
+    ypos, xpos = np.where(np.array(bkeys) == 1)
+    xpos = 6 - xpos
+    ypos = 14 - ypos
+    # xpos = 6 - xpos
+    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] not in crosspos], [y for i, y in enumerate(ypos) if y not in crosspos], marker='o', color='black', s=20)
+    axC1.scatter([x for i, x in enumerate(xpos) if ypos[i] in crosspos], [y for i, y in enumerate(ypos) if y in crosspos], marker='o', color='black', s=20)
+    axC1.set_xticks(ticks=range(7), rotation=45)
+    axC1.set_yticks(ticks=range(len(bkeys)))
+    axC1.set_xticklabels(labels=branchorder[::-1])
+    axC1.grid()
+    axC1.set_axisbelow(True)
+    axC1.set_xlim([-0.5, 6.5])
+    axC1.set_ylim([-0.5, 14.5])
+    axC1.tick_params(axis='y',
+                     which='both',
+                     left=False,
+                     top=False,
+                     labelleft=False)
+    axC1.tick_params(axis='x', rotation=45)
+    axC1.set_xticks(labels=[bnamedict[i.get_text()] for i in axC1.get_xticklabels()], ticks=axC1.get_xticks(), rotation=0)
+    axC1.set_xlabel('Branches with SMs')
+    axC1.spines[:].set_visible(False)
+    axdict = {0: axC2, 1: axC3, 2: axC4}
+    for i, l in enumerate('L1 L2 shared'.split()):
+        data = cnts[l]
+        total_cnt = sum(data.values())
+        ax = axdict[i]
+        # ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k]/total_cnt for k in bkeys[::-1]], color=colour[l], height=0.75)
+        ax.barh(y=[str(b) for b in bkeys[::-1]], width=[data[k] for k in bkeys[::-1]], color=colour[l], height=0.75)
+        ax.tick_params(axis='y',
+                       which='both',
+                       left=False,
+                       top=False,
+                       labelleft=False)
+        ax.set_ylim([-0.5, 14.5])
+        ax.set_xlabel(f'{l} SMs')
+        ax.axhline(y=7.5, color='grey', linestyle='dotted')
+        ax=cleanax(ax)
+        ax.grid(which='major', axis='y')
+        ax.set_axisbelow(True)
+        # ax.set_xlim([0, [0.25, 0.25, 0.55][i]])
+        ax.set_xlim([0, 25])
+
+    axC0.text(0.25, 1, 'J', transform=axC0.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
+    # </editor-fold>
+
+    plt.savefig(f"fig2_v2.png", dpi=300)
+    plt.savefig(f"fig2_v2.pdf", dpi=300)
+    plt.close()
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Figure 3 plots">
     barwidth = 0.125
     pltwidth = 4.76
     dpi = 100
@@ -1724,13 +2203,13 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    plt.savefig(f"{figout}/fig2.png", dpi=300)
-    plt.savefig(f"{figout}/fig2.pdf", dpi=300)
+    plt.savefig(f"{figout}/fig3.png", dpi=300)
+    plt.savefig(f"{figout}/fig3.pdf", dpi=300)
     plt.close()
     # </editor-fold>
 
 
-    # <editor-fold desc="Figure 3 plots">
+    # <editor-fold desc="Figure 4 plots">
 
     # <editor-fold desc="Read data and save summary stats">
     df = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scrna/bigdata/sahu_analysis/analysis/umap_coordinates.txt')
@@ -1967,13 +2446,112 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    plt.savefig(f"{figout}/fig3.png", dpi=300)
-    plt.savefig(f"{figout}/fig3.pdf", dpi=300)
+    plt.savefig(f"{figout}/fig4.png", dpi=300)
+    plt.savefig(f"{figout}/fig4.pdf", dpi=300)
     plt.close()
     # </editor-fold>
 
 
     # <editor-fold desc="Selected supplementary plots">
+
+    # <editor-fold desc="Distribution of SMs over the genome">
+    chrsize = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai', header=None)
+    chrsize = chrsize.iloc[:8]
+
+    pos = deque()
+    for grp in datafilter.groupby('chromosome position alt_allele'.split()):
+        pos.append(list(grp[0]) + list(grp[1].type.unique()) + list(grp[1].Layer.unique()) + [grp[1].shape[0]])
+    pos = pd.DataFrame(pos)
+    pos.columns = 'chromosome position alt_allele type Layer nbranch'.split()
+    pos = pos.loc[['CUR' in c for c in pos.chromosome]]
+    # pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
+    # pos = pos.loc[['CUR' in c for c in pos.chromosome]]
+    chroms = pd.factorize(pos.chromosome)[1]
+    pos.chromosome = 7 - pd.factorize(pos.chromosome)[0]
+    margin = 0.2    # Change to adjust space between L1 and L2 tracks
+    pos.loc[pos.Layer == 'L1', 'chromosome'] += margin
+    pos.loc[pos.Layer == 'L2', 'chromosome'] -= margin
+    # pos['branch_type'] = ['wt' if 'wt' in b else 'mut' for b in pos.branch]
+
+    fig = plt.figure(figsize=[7, 5])
+    ax = fig.add_subplot()
+    ax = sns.scatterplot(pos, x='position', y='chromosome', hue='type', style='nbranch', markers=['o', 'X', 'X', 'X', 'X', 's'], zorder=1, size='nbranch', alpha=0.8, palette=['#540d6e', '#ee4266'], ax=ax)
+    ax.set_yticklabels([''] + list(chroms)[::-1])
+    ax.set_xlim([-1000000, max(chrsize[[1]].values)[0] + 1000000])
+    lab = True
+    for i in range(8):
+        if lab:
+            for j, l in enumerate(('L1', 'L2')):
+                ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=colour[(l, 'Indel')], label=l)
+            lab = False
+            continue
+        for j, l in enumerate(('L1', 'L2')):
+            ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=colour[(l, 'Indel')])
+    ax.legend(frameon=False)
+    ax.spines[:].set_visible(False)
+    ax.tick_params(left=False)
+    ax.set_ylabel(None)
+    ax.set_xlabel('Position (in 10Mb)', fontdict={'fontsize':10})
+    ax.set_ylabel('Chromosome', fontdict={'fontsize':10})
+    ax.set_title("Distribution of layer somatic mutations in the genome", fontdict={'fontsize':10})
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f'sm_dist_over_genome.png', dpi=300)
+    plt.savefig(f'sm_dist_over_genome.pdf', dpi=300)
+    plt.close()
+
+    # </editor-fold>
+
+
+    # <editor-fold desc="Read depth of filtered BAM">
+    def get_read_counts(fi, fo):
+        with open(fi, 'r') as fin, open(fo, 'w') as fout:
+            counts = [int(line.strip().split()[3]) for line in tqdm(fin)]
+            counts = Counter(counts)
+            for k,v in counts.items():
+                fout.write(f'{k}\t{v}\n')
+        return
+    # END
+
+    tmp_bdict = dict(zip([f'B{i}' for i in range(1, 8)], 'wt7 WT_1 wt18 WT_19 MUT_15 MUT_11_1 mut11_2'.split()))
+    fins = [(f"{n}/bam_read_counts_b30_q10.bt2.txt", f"{b}_read_counts.txt") for b, n in tmp_bdict.items()]
+    fins2 = deque()
+    for n, b in bnamedict.items():
+        for l in 'l1 l2'.split():
+            fins2.append([f'./layer_samples/{n}/{n}_{l}/bam_read_counts_b30_q10.bt2.txt', f"{b}_{l}_read_counts.txt"])
+
+    with Pool(processes=7) as pool:
+        pool.starmap(get_read_counts, fins)
+        pool.starmap(get_read_counts, fins2)
+
+    fig = plt.figure(figsize=[6, 8], dpi=300)
+    for i, b in enumerate(tmp_bdict):
+        # Get leaf plot
+        l = 'leaf'
+        df = pd.read_table(f"{b}_read_counts.txt", header=None)
+        df = df.loc[df[0] > 0]
+        df = df.loc[df[0] <= 300]
+        ax = fig.add_subplot(7, 3, (i*3)+1)
+        ax.bar(df[0], df[1])
+        ax = cleanax(ax)
+        ax.set_xlabel('Depth')
+        ax.set_ylabel('Frequency')
+        ax.set_title(f'{b} {l}')
+        # Get layer plot
+        for j, l in enumerate('l1 l2'.split()):
+            df = pd.read_table(f"{b}_{l}_read_counts.txt", header=None)
+            df = df.loc[df[0] > 0]
+            df = df.loc[df[0] <= 300]
+            ax = fig.add_subplot(7, 3, (i*3) + 2 + j)
+            ax.bar(df[0], df[1])
+            ax = cleanax(ax)
+            ax.set_xlabel('Depth')
+            ax.set_ylabel('Frequency')
+            ax.set_title(f'{b} {l}')
+    plt.tight_layout()
+    plt.savefig(f'{cwd}/mapping_depth_distribution_across_samples.pdf')
+
+    # </editor-fold>
+
 
     # <editor-fold desc="Heterogeneity variation in regions with SM and background variation">
     # Added sample info in the VCF
@@ -2565,7 +3143,7 @@ def mutation_spectra():
     plt.savefig(f'{cwd}/../scrna_sciso_cumulative_base_count.png')
     plt.close()
 
-    
+
     # Count number of bases sequenced by scRNAseq and scISOseq
     # get positions sequenced with scRNA
     basecnts = defaultdict(dict)
@@ -2908,44 +3486,6 @@ def mutation_spectra():
 
     # <editor-fold desc="Other plots that are not too informative">
 
-    # <editor-fold desc="Distribution of SMs over the genome">
-    chrsize = pd.read_table('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/data/assemblies/hifi_assemblies/cur.genome.v1.fasta.fai', header=None)
-    chrsize = chrsize.iloc[:8]
-    pos = datafilter.drop_duplicates(subset=['chromosome', 'position', 'alt_allele']).copy()
-    pos = pos.loc[['CUR' in c for c in pos.chromosome]]
-    chroms = pd.factorize(pos.chromosome)[1]
-    pos.chromosome = 7 - pd.factorize(pos.chromosome)[0]
-    margin = 0.2    # Change to adjust space between L1 and L2 tracks
-    pos.loc[pos.Layer == 'L1', 'chromosome'] += margin
-    pos.loc[pos.Layer == 'L2', 'chromosome'] -= margin
-    pos['branch_type'] = ['wt' if 'wt' in b else 'mut' for b in pos.branch]
-
-    sns.set(rc={"figure.figsize": (4, 6)}, font_scale=1.2)
-    sns.set_style(style='white')
-    ax = sns.scatterplot(pos, x='position', y='chromosome', hue='type', style='type', zorder=1, s=60, alpha=0.8)
-    ax.set_yticklabels([''] + list(chroms)[::-1])
-    ax.set_xlim([-1000000, max(chrsize[[1]].values)[0] + 1000000])
-    lab = True
-    for i in range(8):
-        if lab:
-            for j, l in enumerate(('L1', 'L2')):
-                ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=colour[l], label=l)
-            lab = False
-            continue
-        for j, l in enumerate(('L1', 'L2')):
-            ax.axhline(i+margin-(j*2*margin), 0, chrsize.iloc[7-i, 1]/max(chrsize[[1]].values)[0], linewidth=3, zorder=0, alpha=1, color=colour[l])
-    ax.legend(frameon=False)
-    ax.spines[:].set_visible(False)
-    ax.tick_params(left=False)
-    ax.set_ylabel(None)
-    ax.set_xlabel('Position (in 10Mb)')
-    ax.set_ylabel('Chromosome')
-    ax.set_title("Distribution of somatic mutations\n in the genome")
-    plt.tight_layout(pad=0.1)
-    plt.savefig(f'{cwd}/sm_dist_over_genome.png', dpi=600)
-    plt.close()
-
-    # </editor-fold>
 
 
     # <editor-fold desc="Plot genotyping calls">
@@ -3402,29 +3942,6 @@ def merge_all_SM():
     # </editor-fold>
 
 
-    # <editor-fold desc="Heatmap for presence/absence of SMs in different samples with and without clustering">
-    samples = sorted(['_'.join(i) for i in product(branches, 'leaf L1 L2'.split())], key=lambda x: x.rsplit('_', 1)[1])
-    allsmpivot = dict()
-    for grp in allsmmat.groupby(by='chromosome  position alt_allele'.split()):
-        df = grp[1].copy()
-        dfsamples = set(df.branch.astype(str) + '_' + df.tissue.astype(str))
-        allsmpivot[grp[0]] = {s: (1 if s in dfsamples else 0) for s in samples}
-    allsmpivot = pd.DataFrame(allsmpivot).T
-    isSNP = ['red' if v[2][0] in '+-' else 'blue' for v in allsmpivot.index]
-    cmap = sns.blend_palette(["white", colour['theme1']], as_cmap=True)
-    sns.clustermap(allsmpivot, cmap=cmap, linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
-    plt.ylabel('')
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_heatmap_in_all_samples.png', dpi=300)
-    plt.close()
-
-    sns.clustermap(allsmpivot, cmap=cmap, linecolor='lightgrey', col_cluster=False, dendrogram_ratio=(0.05, 0.0), linewidths=0.01, cbar_pos=None, figsize=(8, 10), row_colors=isSNP, yticklabels=False)
-    plt.ylabel('')
-    plt.tight_layout()
-    plt.savefig(f'{cwd}/all_sm_heatmap_in_all_samples_no_col_cluster.png', dpi=300)
-    plt.close()
-    # </editor-fold>
-
 
     # TODO: Fix this plot so that it works for data from all_sm
     # afvalues.columns = ['chromosome', 'position', 'alt_allele'] + list(afvalues.columns)[3:]
@@ -3450,43 +3967,6 @@ def merge_all_SM():
     # plt.tight_layout(rect=(0, 0, 1, 0.98))
     # plt.savefig(f'{cwd}/af_dist_layer_sm_in_leaf.png')
     # plt.close()
-
-
-    # <editor-fold desc="Heatmap and clustering of different samples based on shared SMs">
-    tissues = ['leaf', 'L1', 'L2']
-    btiss = ['_'.join([b, a]) for a in tissues for b in branches]
-    btissm = dict()
-    for c in allsmpivot.columns:
-        btissm[c] = set((allsmpivot.loc[allsmpivot[c] == 1]).index.values)
-    allL1 = btissm[f'{branches[0]}_L1']
-    for b in branches[1:]:
-        allL1 = allL1.intersection(btissm[f'{b}_L1'])
-    # Remove positions present in all L1
-    for b in branches:
-        btissm[f'{b}_L1'] = btissm[f'{b}_L1'].difference(allL1)
-
-    btiss_mat = np.zeros((len(btiss), len(btiss)), dtype='int')
-    for i, a in enumerate(btiss):
-        for j, b in enumerate(btiss):
-            btiss_mat[i][j] = len(btissm[a].intersection(btissm[b]))
-
-    sns.clustermap(btiss_mat, cmap=cmap, xticklabels=btiss, yticklabels=btiss, linecolor='lightgrey', dendrogram_ratio=(0.05, 0.05), cbar_pos=None, linewidths=0.01, figsize=(6, 6))
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_distribution.png', dpi=300)
-    plt.close()
-
-    for i in range(21):
-        btiss_mat[i, i] = 0
-    g = ig.Graph.Weighted_Adjacency(btiss_mat, mode='undirected')
-    g.vs['bname'] = [i.rsplit("_", 1)[0] for i in btiss]
-    g.vs['tname'] = [colour[i.rsplit("_", 1)[1]] for i in btiss]
-    fig = plt.figure(figsize=[8, 8])
-    ax = fig.add_subplot(1, 1, 1)
-    ig.plot(g, target=ax, vertex_label=g.vs["bname"], vertex_color=g.vs["tname"], edge_width=np.log1p(g.es['weight']), layout=g.layout_auto(), margin=0, bbox=[100, 100], vertex_size=0.4)
-    plt.tight_layout()
-    plt.savefig('/netscratch/dep_mercier/grp_schneeberger/projects/apricot_leaf/results/scdna/bigdata/variant_calling/all_sm_sharing.png')
-    plt.close()
-    # </editor-fold>
 
 
     # <editor-fold desc="Get dendrogram of branches based on SM clustering">
