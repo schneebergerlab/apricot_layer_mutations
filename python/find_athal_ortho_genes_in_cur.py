@@ -405,6 +405,27 @@ def filter_orthologs():
     # </editor-fold>
 
 
+    # <editor-fold desc="Get sequence and structural orthologous for thaliana DNA repair genes">
+    dna_repair = pd.read_csv(f'TAIR_DNA_repair_gene_ids.txt', header=None)
+    genesids = set(dna_repair[0])
+    ortho = defaultdict(deque)
+    for l in open(orthogroups, 'r'):
+        for gene in genesids:
+            if len(re.findall(gene+'.', l)) > 0:
+                l2 = l.strip().split()
+                for g in l2[1:]:
+                    if g[:2] != 'AT':
+                        ortho[gene].append(g.replace('mRNA', 'Gene').rsplit('.', maxsplit=1)[0])
+
+    strortho = pd.read_table(strorthofin)
+    df = strortho.loc[strortho.athal_id.isin(genesids)].copy()
+    comb = set([(a, c) for a in genesids for c in ortho[a]] + [(a, c) for a in genesids for c in list(df.loc[df.athal_id == a, 'currot_id'])])
+    comb = pd.DataFrame(comb)
+    comb.sort_values([1], inplace=True)
+    comb.to_csv('dna_repair_genes_currot.tsv', sep='\t', header=False, index=False)
+
+    # </editor-fold>
+
     return
 # END
 
