@@ -382,6 +382,7 @@ def mutation_spectra():
              'mut_11_2': {'l1': (30, 200), 'l2': (20, 180)},
              'mut_15': {'l1': (40, 220), 'l2': (30, 220)}}
     genomesize = 233151598
+    chrom_genome_size = 228047739
     # </editor-fold>
 
 
@@ -495,6 +496,14 @@ def mutation_spectra():
 
     # </editor-fold>
 
+    def pretty_ticks(xmin, xmax, nticks, ax, axis='x'):
+        ticks = np.linspace(xmin, xmax, nticks)
+        if axis == 'x':
+            ax.set_xticks(ticks)
+        elif axis == 'y':
+            ax.set_yticks(ticks)
+        return ax
+
 
     # <editor-fold desc="Figure 1 plots">
     barwidth = 0.125
@@ -556,6 +565,7 @@ def mutation_spectra():
             .Layer.value_counts().to_dict()
         axB.bar(['L1', 'L2', 'shared'], [layercnts[l] for l in ('L1', 'L2', 'shared')], bottom=y_bottom, color=[colour[l, t] for l in ('L1', 'L2', 'shared')], width=0.75)
         y_bottom = [layercnts[l] for l in ('L1', 'L2', 'shared')]
+    axB = pretty_ticks(0, 125, 6, axB, 'y')
     axB.set_xlabel('')
     axB.set_ylabel("SMs")
     axB.tick_params(axis='x', rotation=45)
@@ -592,7 +602,14 @@ def mutation_spectra():
 
     # <editor-fold desc="F: Plot mutation load">
     """Consider each sample as separate lineage and divide by the diploid genome size"""
-    mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()/480000000
+    # mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()/480000000
+    mrates = allsmdata.groupby('branch tissue'.split()).position.nunique()
+    for b, l in mrates.index.values:
+        if l == 'leaf':
+            continue
+        uncallable = bt.BedTool(f'{bnamedict[b]}_{l.lower()}_uncallable_positions.merged.bed').filter(lambda x: 'CUR' in x[0]).saveas()
+        uncallable_size = sum([int(b[2]) - int(b[1]) for b in uncallable])
+        mrates[(b, l)] /= (genomesize - uncallable_size)*2
     mrates = pd.DataFrame(mrates)
     mrates.reset_index(inplace=True)
     mrates.columns = 'branch tissue value'.split()
@@ -603,15 +620,17 @@ def mutation_spectra():
     plt.setp(axF.collections, alpha=.2)
     ylim = axF.get_ylim()
     axF = sns.stripplot(data=mrates, x="mrate", y="value", jitter=True, palette=colour, zorder=1, ax=axF, hue='tissue', legend=False, s=3)
-    axF.set_ylim(ylim)
+    axF = pretty_ticks(0, 2e-07, 3, axF, 'y')
+    axF.set_ylim(ylim[0], 2e-07)
     axF.set_title('')
     axF.set_ylabel('Mutation load (x$10^{-7}$)')
     axF.set_xlabel("All SMs")
     axF.ticklabel_format(axis='y', useOffset=False, style='plain')
     yticks = axF.get_yticks()
     yticksl = yticks*10000000
-    axF.set_yticks(yticks[1:-1])
-    axF.set_yticklabels(yticksl[1:-1])
+    axF.set_yticklabels(yticksl)
+    # axF.set_yticks(yticks[1:-1])
+    # axF.set_yticklabels(yticksl[1:-1])
     axF.tick_params(axis='x', bottom=False, labelbottom=False)
     axF = cleanax(axF)
     axF.text(0, 1, 'C', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
@@ -717,6 +736,8 @@ def mutation_spectra():
     axE.axvline(1.5, linestyle='dashed', color='grey', linewidth=0.75)
     axE.set_ylim([0, 100])
     axE.set_xlim([-0.5, 5.5])
+    axE = pretty_ticks(0, 100, 5, axE, 'y')
+
     axE.set_ylabel('SMs (in %)')
     axE.set_xlabel('')
     axE.tick_params(axis='x', rotation=45)
@@ -845,20 +866,20 @@ def mutation_spectra():
     tripkeys = sorted(kmercnts, key=lambda x: sum([tripcntnorm[l][x] for l in 'L1 L2'.split()]), reverse=True)
     tripkeys = [t for t in tripkeys if tripcntnorm['L1'][t] + tripcntnorm['L2'][t] > 0]
     axwidth = (barwidth*len(tripkeys)/pltwidth)/1
-    axF = fig1.add_axes([0.5, 0.7, axwidth, 0.1])
+    axD = fig1.add_axes([0.5, 0.7, axwidth, 0.1])
     ybottom = np.zeros_like(tripkeys, dtype='float')
     for l in 'L1 L2'.split():
         y = [tripcntnorm[l][k] for k in tripkeys]
-        axF.bar(tripkeys, y, bottom=ybottom, width=0.75, label=l, color=colour[l])
+        axD.bar(tripkeys, y, bottom=ybottom, width=0.75, label=l, color=colour[l])
         ybottom += y
-    axF.ticklabel_format(axis='y', useOffset=False, style='plain')
-    axF.set_yticklabels(axF.get_yticks() * 1000000)
-    axF.set_xlim([-0.5, len(tripkeys)-0.5])
-    axF.set_xlabel('Triplet context')
-    axF.set_ylabel('SM ratio (x$10^{-6}$)')
-    axF = cleanax(axF)
-    axF.tick_params(axis='x', rotation=45)
-    axF.text(0, 1, 'E', transform=axF.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axD.ticklabel_format(axis='y', useOffset=False, style='plain')
+    axD.set_yticklabels(axD.get_yticks() * 1000000)
+    axD.set_xlim([-0.5, len(tripkeys)-0.5])
+    axD.set_xlabel('Triplet context')
+    axD.set_ylabel('SM ratio (x$10^{-6}$)')
+    axD = cleanax(axD)
+    axD.tick_params(axis='x', rotation=45)
+    axD.text(0, 1, 'E', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
@@ -974,7 +995,6 @@ def mutation_spectra():
 
     # Fisher's exact test shows that the CDS have lower than expected number of SMs
     stats = deque()
-    chrom_genome_size = 228047739
     for l in 'L1 L2'.split():
         poscnt = pos.loc[pos.Layer == l].anno.value_counts()
         for a in annotypes:
@@ -1365,7 +1385,8 @@ def mutation_spectra():
     trans = mtransforms.ScaledTranslation(-20/dpi, 5/dpi, fig2.dpi_scale_trans)
     constructor = DistanceTreeConstructor()
     treealgo = constructor.nj
-
+    suptree = plt.figure()
+    axC = suptree.add_subplot()
 
     # <editor-fold desc="A: Add tree image">
     def getcntplt(ax, branch, bar_width):
@@ -1409,7 +1430,7 @@ def mutation_spectra():
 
 
     # <editor-fold desc="B: Cluster samples based on all SMs">
-    axB = fig2.add_axes([0.46, 0.675, 0.1, 0.3])
+    axB = fig2.add_axes([0.5, 0.675, 0.2, 0.3])
     tissues = ['L1', 'L2']
     # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in branches]
@@ -1456,17 +1477,20 @@ def mutation_spectra():
     axB.tick_params(left=False, labelleft=False)
     axB.tick_params(bottom=False, labelbottom=False)
     axB.set_xlabel('')
-    axB.set_ylabel('')
+    axB.set_ylabel('All somatic mutations')
     # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
     # ax.set_xticks()
     # axB.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axB.get_yticks(), rotation=0)
+    axB.text(0, 1, 'B', transform=axB.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
 
     # </editor-fold>
 
     l1allsample = list()
     l2allsample = list()
     # # <editor-fold desc="C: Cluster samples based on all SMs except those that are present in all L1">
-    axC = fig2.add_axes([0.64, 0.675, 0.1, 0.3])
+
+    # axC = fig2.add_axes([0.64, 0.675, 0.1, 0.3])
     tissues = ['L1', 'L2']
     # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     btiss_lab = ['_'.join([bnamedict[b], a]) for a in tissues for b in branches]
@@ -1527,6 +1551,9 @@ def mutation_spectra():
     axC.tick_params(bottom=False, labelbottom=False)
     axC.set_xlabel('')
     axC.set_ylabel('')
+    suptree.savefig('l1_l2.sm_tree.no_all_shared.pdf')
+    suptree.savefig('l1_l2.sm_tree.no_all_shared.png')
+    plt.close(suptree)
     # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
     # ax.set_xticks()
     # print(leaves_list(Z))
@@ -1537,7 +1564,7 @@ def mutation_spectra():
 
     # <editor-fold desc="D: Cluster subset of samples based on all SMs except those that are present in all L1">
     # WT samples
-    axD = fig2.add_axes([0.82, 0.85, 0.1, 0.15])
+    axD = fig2.add_axes([0.775, 0.85, 0.2, 0.125])
     tissues = ['L1', 'L2']
     # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     wtbranches = ['wt_1', 'wt_7', 'wt_18']
@@ -1598,17 +1625,19 @@ def mutation_spectra():
     axD.tick_params(left=False, labelleft=False)
     axD.tick_params(bottom=False, labelbottom=False)
     axD.set_xlabel('')
-    axD.set_ylabel('')
+    axD.set_ylabel('Mutations in right sub-tree')
     # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
     # ax.set_xticks()
     # print(leaves_list(Z))
     # axD.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axD.get_yticks(), rotation=0)
+    axD.text(0, 1, 'C', transform=axD.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+
     # </editor-fold>
 
 
     # <editor-fold desc="E: Cluster subset of samples based on all SMs except those that are present in all L1">
     # MUT samples
-    axE = fig2.add_axes([0.82, 0.675, 0.1, 0.15])
+    axE = fig2.add_axes([0.775, 0.675, 0.2, 0.125])
     tissues = ['L1', 'L2']
     # btiss = ['_'.join([b, a]) for a in tissues for b in branches]
     mutbranches = ['mut_11_1', 'mut_11_2', 'mut_15']
@@ -1666,13 +1695,14 @@ def mutation_spectra():
     axE.tick_params(left=False, labelleft=False)
     axE.tick_params(bottom=False, labelbottom=False)
     axE.set_xlabel('')
-    axE.set_ylabel('')
+    axE.set_ylabel('Mutations in left sub-tree')
     # ax.set_xticks(labels=[bnamedict[branches[i]] for i in leaves_list(Z)], ticks=ax.get_xticks(), rotation=0)
     # ax.set_xticks()
     # print(leaves_list(Z))
     # axE.set_yticks(labels=[btiss_lab[i] for i in garb['leaves']], ticks=axE.get_yticks(), rotation=0)
-    # </editor-fold>
+    axE.text(0, 1, 'D', transform=axE.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
+    # </editor-fold>
 
 
     # plt.savefig('tmp2.png')
@@ -1865,14 +1895,15 @@ def mutation_spectra():
                        labelleft=False)
         ax.set_ylim([-0.5, 14.5])
         ax.set_xlabel(f'{l} SMs')
-        ax.axhline(y=7.5, color='grey', linestyle='dotted')
+        ax.axhline(y=6.5, color='grey', linestyle='dotted')
+        ax.axhline(y=13.5, color='grey', linestyle='dotted')
         ax=cleanax(ax)
         ax.grid(which='major', axis='y')
         ax.set_axisbelow(True)
         # ax.set_xlim([0, [0.25, 0.25, 0.55][i]])
         ax.set_xlim([0, 25])
 
-    axC0.text(0.25, 1, 'J', transform=axC0.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
+    axC0.text(0.25, 1, 'E', transform=axC0.transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
     # </editor-fold>
 
@@ -2047,6 +2078,7 @@ def mutation_spectra():
             for b in branches:
                 bsm = allsmdata.loc[(allsmdata.branch == b) & (allsmdata.tissue.isin(tissues))].copy()
                 bsm = bsm.loc[[t[0] not in '+-' for t in bsm.alt_allele]]
+                print(bsm.shape)
                 bsm = bsm.set_index('chromosome position alt_allele'.split())
                 # for j, t in enumerate('SNP Indel'.split()):
                 # Plots SNP heatmaps
@@ -2203,7 +2235,7 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    plt.savefig(f"{figout}/fig3.png", dpi=300)
+    plt.savefig(f"fig3.png", dpi=300)
     plt.savefig(f"{figout}/fig3.pdf", dpi=300)
     plt.close()
     # </editor-fold>
@@ -2255,6 +2287,7 @@ def mutation_spectra():
         if bdfi.shape[0] > 0:
             ax.text(np.median(bdfi.UMAP_1), np.median(bdfi.UMAP_2), j, weight="normal")
     ax.scatter(df.UMAP_1, df.UMAP_2, s=2, c=df.clscols, linewidth=0.1)
+    ax = pretty_ticks(-10, 10, 5, ax, 'x')
     ax.set_xlabel('UMAP 1')
     ax.set_ylabel('UMAP 2')
     ax = cleanax(ax)
@@ -2386,7 +2419,7 @@ def mutation_spectra():
         for i, b in enumerate(['wt_1', 'wt_19', 'mut_15', 'mut_11_1']):
             bdf = df.loc[df.branch == b].copy()
             bdf.clscols = [[0.75, 0.75, 0.75, 1]] * bdf.shape[0]
-            bdf['zorder'] = 0
+            bdf['zorder'] = 1
             bdf['psize'] = 0.5
             bdf['lwd'] = 0
             bcb = grp[1].loc[grp[1][0] == b, 3]
@@ -2398,14 +2431,13 @@ def mutation_spectra():
                     bcb.remove('TTCATTGCAAAGACTA-1_2') # Remove the barcode which has mis-aligned reads resulting in wrong genotyping
                 bdf['clscols'] = [clscols[r.cluster] if r.bc in bcb else r.clscols for r in bdf.itertuples()]
                 bdf['lwd'] = [0.5 if r.bc in bcb else r.lwd for r in bdf.itertuples()]
-                bdf['zorder'] = [1 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
+                bdf['zorder'] = [2 if r.bc in bcb else r.zorder for r in bdf.itertuples()]
                 bdf['psize'] = [30 if r.bc in bcb else 0.5 for r in bdf.itertuples()]
                 bdf.sort_values('zorder', inplace=True)
-            ax = fig4.add_axes([0.06 + (i*0.235), 0.51 - (j*0.1), 0.22, 0.09])
+            # ax = fig4.add_axes([0.06 + (i*0.235), 0.51 - (j*0.1), 0.22, 0.09])
+            ax = fig4.add_axes([0.06 + (i*0.23), 0.51 - (j*0.1), 0.23, 0.1])
             ax.scatter(bdf.UMAP_1, bdf.UMAP_2, s=bdf.psize, c=bdf.clscols, linewidth=bdf.lwd, edgecolor='black')
-            ax = cleanax(ax)
             ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
-            ax.spines[:].set_visible(False)
             if j == 0:
                 ax.set_title(bnamedict[b].replace('B', 'Branch '), pad=8, fontdict={'fontweight': 700})
             if i == 0:
@@ -2416,6 +2448,15 @@ def mutation_spectra():
             axD.append(ax)
             # if j == 5:
             #     ax.set_xlabel(bnamedict[b])
+    for i, ax in enumerate(axD):
+        ax.spines[:].set_color('grey')
+        if i in (2, 4, 11, 12, 19, 20):
+            # axD[i].spines[:].set_linewidth(3)
+            ax.patch.set_facecolor('lightgreen')
+        # else:
+        # ax.patch.set_facecolor('red')
+        ax.patch.set_alpha(0.2)
+        ax.patch.set_zorder(0)
     axD[0].text(-0.1, 1.1, 'C', transform=axD[0].transAxes + trans, fontsize=BIGGER_SIZE, va='bottom', weight='bold')
 
 
@@ -2446,8 +2487,8 @@ def mutation_spectra():
     # </editor-fold>
 
 
-    plt.savefig(f"{figout}/fig4.png", dpi=300)
-    plt.savefig(f"{figout}/fig4.pdf", dpi=300)
+    plt.savefig(f"fig4_v2.png", dpi=300)
+    plt.savefig(f"fig4_v2.pdf", dpi=300)
     plt.close()
     # </editor-fold>
 
@@ -3003,13 +3044,14 @@ def mutation_spectra():
     # cnts = cnts[['wt_1', 'wt_19', 'mut_11_1', 'mut_15']]
     border = ['mut_11_1', 'mut_15', 'wt_19', 'wt_1']
     cnts = cnts[border]
-    fig = plt.figure(figsize=[4,2])
+    fig = plt.figure(figsize=[5, 2])
     # axB = fig4.add_axes([0.725, 0.875, 0.26, 0.075])
     axB = fig.add_subplot()
     y_bot = np.array([0] * 4, dtype='float')
     for row in cnts.itertuples():
-        axB.barh(y=border, width=row[1:], left=y_bot, color=clscols[row[0]], edgecolor='black', linewidth=0.5)
+        axB.barh(y=border, width=row[1:], left=y_bot, color=clscols[row[0]], edgecolor='black', linewidth=0.5, label=row.Index)
         y_bot += row[1:]
+    axB.legend(bbox_to_anchor=(1.01, 1.01), ncol=2)
     axB.set_xlabel('Cells (in %)')
     axB.set_ylabel('')
     axB.set_xlim([0, 1])
