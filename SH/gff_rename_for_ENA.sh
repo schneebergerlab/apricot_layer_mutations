@@ -46,9 +46,9 @@ java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.
 # Affected genes: Gene.7652, Gene.23443, Gene.45811
 
 # After this the submission was succesfully validated and we submit the data
-#java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password Mpipzmpipz2021! -context genome -manifest cur_manifest2.txt -submit
+#java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest cur_manifest2.txt -submit
 # Ran on local PC as webin submit didnt work from the cluster
-java -jar /home/ra98jam/software/webin/webin-cli-7.2.0.jar -username Webin-59528 -password Mpipzmpipz2021! -context genome -manifest cur_manifest2.txt -submit
+java -jar /home/ra98jam/software/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest cur_manifest2.txt -submit
 
 # </editor-fold>
 
@@ -81,7 +81,7 @@ EMBLmyGFF3 ora.pasa_out.3utr.sort.no_source.no_dup.gff3 ora.genome.v1.fasta \
 # Gzip the file
 pigz -p 4 ora.genome.v1.embl
 # Validate using webin
-java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password Mpipzmpipz2021! -context genome -manifest ora_manifest.txt -validate
+java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest ora_manifest.txt -validate
 # Use the output of validation to remove any remaining duplicated entries using the GFF_rename_for_ENA.py
 
 # Fix the ERRORs identified in ora.pasa_out.3utr.sort.no_source.no_dup.gff3 using the code in GFF_rename_for_ENA.py
@@ -104,12 +104,31 @@ EMBLmyGFF3 ora.pasa_out.3utr.sort2.no_source.no_dup.gff3 ora.genome.v1.fasta \
 # Gzip the file
 pigz -p 4 ora.genome2.v1.embl
 # Validate using webin
-java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password Mpipzmpipz2021! -context genome -manifest ora_manifest2.txt -validate
+java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest ora_manifest2.txt -validate
 # Use the output of validation to remove any remaining duplicated entries using the GFF_rename_for_ENA.py
 
 # Few positions were still problematic. Fixed them manually in ora.pasa_out.3utr.sort2.no_source.no_dup.gff3
 # Affected genes: Gene.19416, Gene.25621, Gene.32832, Gene.43189, Gene.49266
-java -jar /home/ra98jam/software/webin/webin-cli-7.2.0.jar -username Webin-59528 -password Mpipzmpipz2021! -context genome -manifest ora_manifest2.txt -submit
+java -jar /home/ra98jam/software/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest ora_manifest2.txt -submit
 
+
+# </editor-fold>
+
+
+# <editor-fold desc=2024.08.24: Reupload the Currot assembly to a separate Biosample>
+# ENA allows one assembly per Biosample, so the earlier upload incorrectly set ORA assembly as the "updated" version
+# of the CUR assembly. Reuploading the CUR assembly using a new dummy biosample.
+
+
+# Validate using webin
+java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest cur_manifest2.txt -validate
+
+# Few positions were still problematic. Fixed them manually in cur.pasa_out.3utr.sort2.no_source.no_dup.gff3
+# Affected genes: Gene.7652, Gene.23443, Gene.45811
+
+# After this the submission was succesfully validated and we submit the data
+#java -jar ../../../../pn29fi-dss-0003/software/bin_manish/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest cur_manifest2.txt -submit
+# Ran on local PC as webin submit didnt work from the cluster
+java -jar /home/ra98jam/software/webin/webin-cli-7.2.0.jar -username Webin-59528 -password [PWD] -context genome -manifest cur_manifest2.txt -submit
 
 # </editor-fold>
